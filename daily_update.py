@@ -454,6 +454,73 @@ def _compute_factor_series(df_detail, factor_def):
     }
 
 
+def update_merged_data():
+    """追加新数据到合并后的 JSON（增量更新，不重新解析旧文件）"""
+    if not os.path.exists(FACTOR_MERGED_DATA):
+        log.warning("  合并数据不存在，请先运行 prepare_merged_data.py 生成")
+        return False
+    if not os.path.exists(BOND_DATA_EXCEL):
+        log.warning("  新文件不存在，跳过合并数据更新")
+        return False
+
+    with open(FACTOR_MERGED_DATA, "r", encoding="utf-8") as f:
+        merged = json.load(f)
+    existing_dates = set(r["date"] for r in merged["detail"])
+    log.info(f"  现有合并数据: {len(merged['detail'])} 条, 日期到 {merged['meta']['date_range'][1]}")
+
+    df = pd.read_excel(BOND_DATA_EXCEL, sheet_name=11)
+    date_counts = df.iloc[:, 0].value_counts().sort_index()
+    new_records = []
+
+    for day_offset, date_val in enumerate(date_counts.index):
+        date_str = format_date(date_val)
+        if date_str in existing_dates:
+            continue
+        start_idx = day_offset * 5
+        for bond_offset in range(5):
+            row_idx = start_idx + bond_offset
+            if row_idx >= len(df):
+                break
+            row = df.iloc[row_idx]
+            bond_type = BOND_TYPES_DETAIL[bond_offset]
+            for inst_idx, inst_name in enumerate(INSTITUTIONS):
+                col_start = inst_idx * 10 + 1
+                for mat_idx, mat_name in enumerate(MATURITIES):
+                    val = row.iloc[col_start + mat_idx]
+                    if pd.notna(val) and float(val) != 0:
+                        new_records.append({
+                            "date": date_str, "bond_type": bond_type,
+                            "institution": inst_name, "maturity": mat_name,
+                            "value": round(float(val), 4),
+                        })
+                total_val = row.iloc[col_start + 9]
+                if pd.notna(total_val):
+                    new_records.append({
+                        "date": date_str, "bond_type": bond_type,
+                        "institution": inst_name, "maturity": "合计",
+                        "value": round(float(total_val), 4),
+                    })
+
+    if not new_records:
+        log.info("  无新日期数据，合并数据无需更新")
+        return True
+
+    log.info(f"  新增 {len(new_records)} 条记录（{len(set(r['date'] for r in new_records))} 天）")
+    merged["detail"].extend(new_records)
+    merged["detail"].sort(key=lambda r: (r["date"], r["bond_type"], r["institution"], r["maturity"]))
+    all_dates = sorted(set(r["date"] for r in merged["detail"]))
+    merged["meta"]["date_range"] = [all_dates[0], all_dates[-1]]
+    merged["meta"]["total_records"] = len(merged["detail"])
+    merged["meta"]["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    tmp = FACTOR_MERGED_DATA + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(merged, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, FACTOR_MERGED_DATA)
+    log.info(f"  合并数据已更新: {all_dates[0]} ~ {all_dates[-1]}, 共 {len(merged['detail'])} 条")
+    return True
+
+
 def update_factor_data():
     """计算机构行为因子（依赖合并后的 bond_trading_data_merged.json）"""
     if not os.path.exists(FACTOR_MERGED_DATA):
@@ -538,18 +605,27 @@ def main():
 
     ok4 = True
     try:
-        log.info("[4/4] 因子数据 (依赖 bond_trading_data.json)")
-        ok4 = update_factor_data()
+        log.info("[4/5] 增量更新合并数据 (追加新日期)")
+        ok4 = update_merged_data()
+    except Exception as e:
+        log.exception(f"合并数据更新失败: {e}")
+        ok4 = False
+
+    ok5 = True
+    try:
+        log.info("[5/5] 因子数据 (依赖合并数据)")
+        ok5 = update_factor_data()
     except Exception as e:
         log.exception(f"因子数据处理失败: {e}")
-        ok4 = False
+        ok5 = False
 
     log.info("=" * 50)
     log.info(f"完成: 机构行为={'成功' if ok1 else '失败'}, "
              f"FICC={'成功' if ok2 else '失败'}, "
              f"曲线={'成功' if ok3 else '失败'}, "
-             f"因子={'成功' if ok4 else '失败'}")
-    return ok1 and ok2 and ok3 and ok4
+             f"合并={'成功' if ok4 else '失败'}, "
+             f"因子={'成功' if ok5 else '失败'}")
+    return ok1 and ok2 and ok3 and ok4 and ok5
 
 
 if __name__ == "__main__":
