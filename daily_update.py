@@ -362,12 +362,23 @@ def update_yield_curve_data():
 
 
 # ── 因子数据处理 ──
+FACTOR_BOND_TYPE = "国债"  # legacy, 实际 bond_type 在 FACTOR_DEFS 中定义
+FACTOR_MATURITY = "20-30年"  # legacy
+FACTOR_MA_WINDOW = 10
+FACTOR_PERC_WINDOW = 100
+FACTOR_PERC_MIN_PERIODS = 60
+FACTOR_FINAL_MA = 10
+FACTOR_MERGED_DATA = os.path.join(SCRIPT_DIR, "bond_trading_data_merged.json")
+
+# 因子定义（使用合并数据，5年历史）
 FACTOR_DEFS = [
     {
         "name": "基金公司及产品·超长国债净买入因子",
         "short_name": "基金·超长债因子",
         "category": "机构行为",
         "institution": "基金公司及产品",
+        "bond_type": "国债",
+        "maturity": "20-30年",
         "description": "基金公司及产品对20-30年国债净买入的MA10在过去100天的百分位（再MA10）",
     },
     {
@@ -375,15 +386,29 @@ FACTOR_DEFS = [
         "short_name": "中小银行·超长债因子",
         "category": "机构行为",
         "institution": "中小型银行",
+        "bond_type": "国债",
+        "maturity": "20-30年",
         "description": "中小型银行对20-30年国债净买入的MA10在过去100天的百分位（再MA10）",
     },
+    {
+        "name": "基金公司及产品·7-10年国开债净买入因子",
+        "short_name": "基金·国开因子",
+        "category": "机构行为",
+        "institution": "基金公司及产品",
+        "bond_type": "政金债",
+        "maturity": "7-10年",
+        "description": "基金公司及产品对7-10年政金债净买入的MA10在过去100天的百分位（再MA10）",
+    },
+    {
+        "name": "保险公司·超长国债净买入因子",
+        "short_name": "保险·超长债因子",
+        "category": "机构行为",
+        "institution": "保险公司",
+        "bond_type": "国债",
+        "maturity": "20-30年",
+        "description": "保险公司对20-30年国债净买入的MA10在过去100天的百分位（再MA10）",
+    },
 ]
-FACTOR_BOND_TYPE = "国债"
-FACTOR_MATURITY = "20-30年"
-FACTOR_MA_WINDOW = 10
-FACTOR_PERC_WINDOW = 100
-FACTOR_PERC_MIN_PERIODS = 60
-FACTOR_FINAL_MA = 10
 
 
 def _percentile_rank(series):
@@ -396,10 +421,12 @@ def _percentile_rank(series):
 
 def _compute_factor_series(df_detail, factor_def):
     inst = factor_def["institution"]
+    bt = factor_def.get("bond_type", "国债")
+    mat = factor_def.get("maturity", "20-30年")
     mask = (
         (df_detail["institution"] == inst) &
-        (df_detail["bond_type"] == FACTOR_BOND_TYPE) &
-        (df_detail["maturity"] == FACTOR_MATURITY)
+        (df_detail["bond_type"] == bt) &
+        (df_detail["maturity"] == mat)
     )
     sub = df_detail[mask].copy()
     if len(sub) == 0:
@@ -428,13 +455,14 @@ def _compute_factor_series(df_detail, factor_def):
 
 
 def update_factor_data():
-    """计算机构行为因子（依赖 bond_trading_data.json）"""
-    if not os.path.exists(BOND_DATA_OUTPUT):
-        log.warning(f"机构行为数据不存在，跳过因子计算: {BOND_DATA_OUTPUT}")
+    """计算机构行为因子（依赖合并后的 bond_trading_data_merged.json）"""
+    if not os.path.exists(FACTOR_MERGED_DATA):
+        log.warning(f"合并数据不存在，跳过因子计算: {FACTOR_MERGED_DATA}")
+        log.warning("  请先运行 prepare_merged_data.py 生成合并数据")
         return False
 
     log.info("  开始计算因子数据...")
-    with open(BOND_DATA_OUTPUT, "r", encoding="utf-8") as f:
+    with open(FACTOR_MERGED_DATA, "r", encoding="utf-8") as f:
         data = json.load(f)
     df = pd.DataFrame(data["detail"])
 
