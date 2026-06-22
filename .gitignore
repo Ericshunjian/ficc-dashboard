@@ -1,8 +1,5 @@
-# 数据文件（由脚本生成，不入版本控制）
-*.json
+# 日志和缓存
 *.log
-
-# 缓存
 *.tmp
 __pycache__/
 *.pyc
@@ -18,3 +15,9 @@ README_bond_futures.md
 
 # 工作区元数据
 .workbuddy/
+
+# 合并数据（44MB，太大不入库；因子计算后只需 factor_data.json）
+bond_trading_data_merged.json
+
+# 因子演示脚本（一次性验证用）
+factor_demo.py
