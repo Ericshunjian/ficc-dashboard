@@ -694,7 +694,7 @@ def main():
              f"合并={'成功' if ok4 else '失败'}, "
              f"因子={'成功' if ok5 else '失败'}")
 
-    # push 数据到 Gitee + GitCode
+    # push 到 Gitee + GitCode + GitHub
     if ok1 or ok2 or ok3 or ok5:
         try:
             log.info("推送数据到远程仓库...")
@@ -769,6 +769,13 @@ def git_push_data():
         log.info("  GitCode 推送成功")
     else:
         log.warning("  GitCode 推送失败")
+
+    # push 到 GitHub
+    log.info("  推送到 GitHub...")
+    if run_git('push', 'github', 'main'):
+        log.info("  GitHub 推送成功")
+    else:
+        log.warning("  GitHub 推送失败")
 
 
 if __name__ == "__main__":
