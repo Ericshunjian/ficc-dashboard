@@ -20,6 +20,7 @@ FICC_EXCEL = r"D:\工作1\研究课题\收益率曲线\FICC原始数据（现券
 FICC_OUTPUT = os.path.join(SCRIPT_DIR, "bond_yield_data.json")
 CURVE_EXCEL = r"D:\工作1\研究课题\收益率曲线\FICC原始数据（衍生品、收益率曲线）.xlsx"
 CURVE_OUTPUT = os.path.join(SCRIPT_DIR, "yield_curve_data.json")
+FACTOR_OUTPUT = os.path.join(SCRIPT_DIR, "factor_data.json")
 LOG_PATH = os.path.join(SCRIPT_DIR, "daily_update.log")
 
 logging.basicConfig(
@@ -360,13 +361,132 @@ def update_yield_curve_data():
     return True
 
 
+# ── 因子数据处理 ──
+FACTOR_DEFS = [
+    {
+        "name": "基金公司及产品·超长国债净买入因子",
+        "short_name": "基金·超长债因子",
+        "category": "机构行为",
+        "institution": "基金公司及产品",
+        "description": "基金公司及产品对20-30年国债净买入的MA10在过去100天的百分位（再MA10）",
+    },
+    {
+        "name": "中小型银行·超长国债净买入因子",
+        "short_name": "中小银行·超长债因子",
+        "category": "机构行为",
+        "institution": "中小型银行",
+        "description": "中小型银行对20-30年国债净买入的MA10在过去100天的百分位（再MA10）",
+    },
+]
+FACTOR_BOND_TYPE = "国债"
+FACTOR_MATURITY = "20-30年"
+FACTOR_MA_WINDOW = 10
+FACTOR_PERC_WINDOW = 100
+FACTOR_PERC_MIN_PERIODS = 60
+FACTOR_FINAL_MA = 10
+
+
+def _percentile_rank(series):
+    if len(series) < 2:
+        return 50.0
+    current = series.iloc[-1]
+    rank = (series < current).sum()
+    return rank / (len(series) - 1) * 100
+
+
+def _compute_factor_series(df_detail, factor_def):
+    inst = factor_def["institution"]
+    mask = (
+        (df_detail["institution"] == inst) &
+        (df_detail["bond_type"] == FACTOR_BOND_TYPE) &
+        (df_detail["maturity"] == FACTOR_MATURITY)
+    )
+    sub = df_detail[mask].copy()
+    if len(sub) == 0:
+        return {"dates": [], "values": [], "net_buys": [], "ma10": [], "percentile": []}
+
+    daily = sub.groupby("date")["value"].sum().sort_index()
+    ma10 = daily.rolling(window=FACTOR_MA_WINDOW, min_periods=FACTOR_MA_WINDOW).mean()
+    perc = ma10.rolling(window=FACTOR_PERC_WINDOW, min_periods=FACTOR_PERC_MIN_PERIODS).apply(_percentile_rank, raw=False)
+    factor = perc.rolling(window=FACTOR_FINAL_MA, min_periods=1).mean()
+
+    valid = factor.dropna()
+    if len(valid) == 0:
+        return {"dates": [], "values": [], "net_buys": [], "ma10": [], "percentile": []}
+
+    df_all = pd.concat([daily, ma10, perc, factor], axis=1)
+    df_all.columns = ["net_buy", "ma10", "percentile", "factor"]
+    df_valid = df_all.loc[valid.index]
+
+    return {
+        "dates": valid.index.tolist(),
+        "values": [round(float(v), 4) for v in valid.values],
+        "net_buys": [round(float(v), 4) if pd.notna(v) else None for v in df_valid["net_buy"].tolist()],
+        "ma10": [round(float(v), 4) if pd.notna(v) else None for v in df_valid["ma10"].tolist()],
+        "percentile": [round(float(v), 4) if pd.notna(v) else None for v in df_valid["percentile"].tolist()],
+    }
+
+
+def update_factor_data():
+    """计算机构行为因子（依赖 bond_trading_data.json）"""
+    if not os.path.exists(BOND_DATA_OUTPUT):
+        log.warning(f"机构行为数据不存在，跳过因子计算: {BOND_DATA_OUTPUT}")
+        return False
+
+    log.info("  开始计算因子数据...")
+    with open(BOND_DATA_OUTPUT, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    df = pd.DataFrame(data["detail"])
+
+    factors = {}
+    categories = {}
+    for fd in FACTOR_DEFS:
+        log.info(f"    计算: {fd['short_name']} ({fd['institution']})")
+        result = _compute_factor_series(df, fd)
+        factors[fd["short_name"]] = result
+        categories.setdefault(fd["category"], []).append(fd["short_name"])
+        log.info(f"      有效天数: {len(result['dates'])}")
+
+    all_dates = set()
+    for f in factors.values():
+        all_dates.update(f["dates"])
+    all_dates = sorted(all_dates)
+
+    output = {
+        "meta": {
+            "data_source": "bond_trading_data.json",
+            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "date_range": [all_dates[0] if all_dates else "", all_dates[-1] if all_dates else ""],
+            "categories": categories,
+            "factor_defs": FACTOR_DEFS,
+            "params": {
+                "target_bond_type": FACTOR_BOND_TYPE,
+                "target_maturity": FACTOR_MATURITY,
+                "ma_window": FACTOR_MA_WINDOW,
+                "percentile_window": FACTOR_PERC_WINDOW,
+                "percentile_min_periods": FACTOR_PERC_MIN_PERIODS,
+                "final_ma": FACTOR_FINAL_MA,
+            },
+        },
+        "series": factors,
+    }
+
+    tmp = FACTOR_OUTPUT + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(output, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, FACTOR_OUTPUT)
+    log.info(f"  输出: {FACTOR_OUTPUT} ({os.path.getsize(FACTOR_OUTPUT)/1024:.1f} KB)")
+    log.info(f"  因子数: {len(factors)}")
+    return True
+
+
 def main():
     log.info("=" * 50)
     log.info("每日数据更新任务启动")
 
     ok1 = True
     try:
-        log.info("[1/3] 机构行为数据 (bond_data.xlsx)")
+        log.info("[1/4] 机构行为数据 (bond_data.xlsx)")
         ok1 = update_bond_trading_data()
     except Exception as e:
         log.exception(f"机构行为数据处理失败: {e}")
@@ -374,7 +494,7 @@ def main():
 
     ok2 = True
     try:
-        log.info("[2/3] FICC 现券收益率 (FICC原始数据（现券）.xlsx)")
+        log.info("[2/4] FICC 现券收益率 (FICC原始数据（现券）.xlsx)")
         ok2 = update_ficc_yield_data()
     except Exception as e:
         log.exception(f"FICC 数据处理失败: {e}")
@@ -382,17 +502,26 @@ def main():
 
     ok3 = True
     try:
-        log.info("[3/3] 收益率曲线 (FICC原始数据（衍生品、收益率曲线）.xlsx)")
+        log.info("[3/4] 收益率曲线 (FICC原始数据（衍生品、收益率曲线）.xlsx)")
         ok3 = update_yield_curve_data()
     except Exception as e:
         log.exception(f"收益率曲线数据处理失败: {e}")
         ok3 = False
 
+    ok4 = True
+    try:
+        log.info("[4/4] 因子数据 (依赖 bond_trading_data.json)")
+        ok4 = update_factor_data()
+    except Exception as e:
+        log.exception(f"因子数据处理失败: {e}")
+        ok4 = False
+
     log.info("=" * 50)
     log.info(f"完成: 机构行为={'成功' if ok1 else '失败'}, "
              f"FICC={'成功' if ok2 else '失败'}, "
-             f"曲线={'成功' if ok3 else '失败'}")
-    return ok1 and ok2 and ok3
+             f"曲线={'成功' if ok3 else '失败'}, "
+             f"因子={'成功' if ok4 else '失败'}")
+    return ok1 and ok2 and ok3 and ok4
 
 
 if __name__ == "__main__":

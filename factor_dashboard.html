@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>因子分析</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --panel-bg: #ffffff;
+    --text: #2c3e50;
+    --text-secondary: #7f8c8d;
+    --border: #e8ecf1;
+    --primary: #5470c6;
+    --primary-light: #e8edff;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --radius: 8px;
+    --sidebar-w: 360px;
+    --success: #22c55e;
+    --danger: #ef4444;
+    --accent: #ee6666;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+
+  .sidebar {
+    width: var(--sidebar-w);
+    background: var(--panel-bg);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow);
+    z-index: 10;
+    flex-shrink: 0;
+  }
+  .sidebar-header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .sidebar-header h2 {
+    font-size: 18px; font-weight: 700;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .sidebar-header h2 .icon { font-size: 22px; }
+  .sidebar-header .subtitle {
+    font-size: 12px; color: var(--text-secondary); margin-top: 4px;
+  }
+  .back-home {
+    position: absolute; top: 20px; right: 24px;
+    font-size: 12px; color: var(--text-secondary);
+    text-decoration: none; padding: 4px 10px;
+    border: 1px solid var(--border); border-radius: 4px;
+    transition: all 0.15s;
+  }
+  .back-home:hover { color: var(--primary); border-color: var(--primary); }
+
+  .filter-body {
+    flex: 1; overflow-y: auto;
+    padding: 16px 24px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+
+  .filter-group { display: flex; flex-direction: column; gap: 8px; }
+  .filter-label {
+    font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .filter-label .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--primary);
+  }
+
+  .tag-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    padding: 5px 12px; border-radius: 16px; font-size: 12px;
+    cursor: pointer; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text-secondary);
+    transition: all 0.15s; user-select: none; white-space: nowrap;
+  }
+  .tag:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+  .tag.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+  .hint {
+    font-size: 11px; color: var(--text-secondary);
+    margin-top: 2px; line-height: 1.5;
+  }
+
+  /* 因子池 */
+  .factor-pool {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .factor-pool-item {
+    padding: 8px 10px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: grab;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .factor-pool-item:hover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+  .factor-pool-item:active { cursor: grabbing; }
+  .factor-pool-item.dragging { opacity: 0.4; }
+  .factor-pool-item .name { font-weight: 600; display: block; }
+  .factor-pool-item .desc { color: var(--text-secondary); font-size: 10px; display: block; margin-top: 2px; }
+  .factor-pool-item.in-selected { opacity: 0.5; background: #e8f5e9; }
+  .factor-pool-empty {
+    text-align: center; padding: 16px;
+    color: var(--text-secondary); font-size: 12px;
+  }
+
+  /* 已选因子区 */
+  .selected-zone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    min-height: 80px;
+    transition: all 0.15s;
+    background: var(--bg);
+  }
+  .selected-zone.drag-over {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+  .selected-zone.has-items {
+    border-style: solid;
+    border-color: var(--primary);
+    background: var(--panel-bg);
+  }
+  .selected-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .selected-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 16px;
+    font-size: 12px;
+    color: #fff;
+    font-weight: 600;
+  }
+  .selected-item .color-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #fff;
+  }
+  .selected-item .remove {
+    cursor: pointer;
+    opacity: 0.7;
+    font-size: 14px;
+    margin-left: 4px;
+  }
+  .selected-item .remove:hover { opacity: 1; }
+  .selected-empty {
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-align: center;
+    padding: 12px;
+    font-style: italic;
+  }
+
+  /* 对比基准选择 */
+  .benchmark-select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    background: var(--bg);
+    outline: none;
+  }
+  .benchmark-select:focus { border-color: var(--primary); }
+
+  .date-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .date-row input[type="date"] {
+    flex: 1; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 6px;
+    font-size: 13px; background: var(--bg); outline: none;
+  }
+  .date-row input[type="date"]:focus { border-color: var(--primary); }
+  .date-row span { font-size: 12px; color: var(--text-secondary); }
+
+  .sidebar-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .btn {
+    padding: 10px 16px; border-radius: 6px;
+    font-size: 14px; font-weight: 600;
+    cursor: pointer; border: none; transition: all 0.15s;
+    font-family: inherit;
+  }
+  .btn-outline {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .main-header {
+    padding: 14px 28px;
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .main-header .title-area h3 { font-size: 16px; font-weight: 600; }
+  .main-header .title-area .desc {
+    font-size: 12px; color: var(--text-secondary); margin-top: 2px;
+  }
+
+  .kpi-row { display: flex; gap: 12px; }
+  .kpi-card {
+    padding: 8px 14px; background: var(--bg);
+    border-radius: 8px; text-align: center; min-width: 100px;
+  }
+  .kpi-card .kpi-value { font-size: 16px; font-weight: 700; }
+  .kpi-card .kpi-label { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+  .chart-area {
+    flex: 1; padding: 12px 28px 16px;
+    display: flex; flex-direction: column; gap: 12px;
+    overflow: hidden;
+  }
+  .chart-box {
+    background: var(--panel-bg); border-radius: var(--radius);
+    padding: 12px 20px 8px; box-shadow: var(--shadow);
+    min-height: 0; display: flex; flex-direction: column;
+  }
+  .chart-box.factor-chart { flex: 3; }
+  .chart-box.compare-chart { flex: 2; }
+  .chart-box.factor-chart .chart-label::before { background: var(--primary); border-radius: 2px; }
+  .chart-box.compare-chart .chart-label::before { background: var(--accent); border-radius: 50%; }
+  .chart-box .chart-label {
+    font-size: 12px; font-weight: 600; color: var(--text-secondary);
+    margin-bottom: 4px; display: flex; align-items: center; gap: 6px;
+  }
+  .chart-box .chart-label::before {
+    content: ''; display: inline-block;
+    width: 8px; height: 8px;
+  }
+  .chart-wrap { flex: 1; min-height: 0; position: relative; }
+  .chart-box canvas { width: 100% !important; height: 100% !important; }
+
+  .no-data {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; color: var(--text-secondary);
+    font-size: 15px; flex-direction: column; gap: 8px;
+  }
+  .no-data .icon { font-size: 40px; opacity: 0.3; }
+
+  .filter-body::-webkit-scrollbar,
+  .factor-pool::-webkit-scrollbar { width: 4px; }
+  .filter-body::-webkit-scrollbar-thumb,
+  .factor-pool::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 4px; }
+
+  .source-note {
+    padding: 8px 28px; font-size: 11px; color: var(--text-secondary);
+    border-top: 1px solid var(--border); background: var(--panel-bg);
+  }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <h2><span class="icon">🔬</span>因子分析</h2>
+    <p class="subtitle">选分类 → 拖拽因子到选区</p>
+    <a href="index.html" class="back-home">← 返回首页</a>
+  </div>
+
+  <div class="filter-body">
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>步骤 1：选因子分类</label>
+      <div class="tag-grid" id="category-tags"></div>
+    </div>
+
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>步骤 2：从因子池拖拽</label>
+      <div class="factor-pool" id="factor-pool"></div>
+      <p class="hint">拖拽到下方"已选因子"区，或双击快速添加</p>
+    </div>
+
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>已选因子</label>
+      <div class="selected-zone" id="selected-zone">
+        <div class="selected-empty">拖拽因子到此处</div>
+      </div>
+      <p class="hint" id="selected-hint">最多 6 个因子</p>
+    </div>
+
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>对比基准（下图右轴）</label>
+      <select class="benchmark-select" id="benchmark"></select>
+      <p class="hint">选择收益率曲线作为对比基准</p>
+    </div>
+
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>时间范围（可选）</label>
+      <div class="date-row">
+        <input type="date" id="date-start">
+        <span>至</span>
+        <input type="date" id="date-end">
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <button class="btn btn-outline" onclick="resetFilters()">清空选择</button>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="main-header">
+    <div class="title-area">
+      <h3 id="chart-title">因子分析</h3>
+      <p class="desc" id="chart-desc">请拖拽因子到选区</p>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi-card"><div class="kpi-value" id="kpi-factors">0</div><div class="kpi-label">已选因子</div></div>
+      <div class="kpi-card"><div class="kpi-value" id="kpi-days">--</div><div class="kpi-label">样本天数</div></div>
+    </div>
+  </div>
+
+  <div class="chart-area">
+    <div class="chart-box factor-chart">
+      <div class="chart-label">因子走势（百分位 0-100）</div>
+      <div class="chart-wrap"><canvas id="chart-factor"></canvas></div>
+      <div class="no-data" id="no-data">
+        <span class="icon">🔬</span>
+        <span>请拖拽因子到选区查看走势</span>
+      </div>
+    </div>
+
+    <div class="chart-box compare-chart" id="compare-box" style="display:none">
+      <div class="chart-label" id="compare-label">因子 vs 基准收益率</div>
+      <div class="chart-wrap"><canvas id="chart-compare"></canvas></div>
+    </div>
+  </div>
+
+  <div class="source-note" id="source-note">
+    因子计算：机构净买入 → MA10 → 100天百分位 → MA10 ｜ min_periods=60
+  </div>
+</main>
+
+<script>
+// ============================================
+// State
+// ============================================
+let factorData = { meta: { categories: {} }, series: {} };
+let curveData = { meta: { categories: {} }, series: {} };
+let chartFactor = null;
+let chartCompare = null;
+let selectedCategory = '';
+let selectedFactors = [];  // [{name, color}]
+let draggedName = '';
+let benchmark = '';
+
+const PALETTE = [
+  '#5470c6', '#ee6666', '#91cc75', '#fac858',
+  '#73c0de', '#9a60b4',
+];
+const MAX_FACTORS = 6;
+const COLOR_BENCHMARK = '#2c3e50';
+
+// ============================================
+// Init
+// ============================================
+async function init() {
+  try {
+    // 并行加载因子数据和收益率曲线数据
+    const [fResp, cResp] = await Promise.all([
+      fetch('factor_data.json?t=' + Date.now()),
+      fetch('yield_curve_data.json?t=' + Date.now()),
+    ]);
+    factorData = await fResp.json();
+    curveData = await cResp.json();
+
+    // 因子分类
+    const cats = Object.keys(factorData.meta.categories);
+    selectedCategory = cats[0];
+    renderCategoryTags(cats);
+    renderFactorPool();
+
+    // 基准下拉：收益率曲线中的"债券"分类
+    const benchCats = Object.keys(curveData.meta.categories);
+    const benchSelect = document.getElementById('benchmark');
+    benchSelect.innerHTML = '<option value="">（不对比）</option>';
+    // 默认列出"债券"分类下的曲线
+    benchCats.forEach(cat => {
+      const optgroup = document.createElement('optgroup');
+      optgroup.label = cat;
+      (curveData.meta.categories[cat] || []).forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        optgroup.appendChild(opt);
+      });
+      benchSelect.appendChild(optgroup);
+    });
+    // 默认选 10年国债
+    benchmark = '10年国债';
+    benchSelect.value = benchmark;
+    benchSelect.addEventListener('change', e => {
+      benchmark = e.target.value;
+      updateChart();
+    });
+
+    // 时间范围
+    document.getElementById('date-start').value = factorData.meta.date_range[0] || '';
+    document.getElementById('date-end').value = factorData.meta.date_range[1] || '';
+    document.getElementById('date-start').addEventListener('change', updateChart);
+    document.getElementById('date-end').addEventListener('change', updateChart);
+
+    // 拖放区
+    setupDropZone();
+
+    // 默认加第一个因子
+    const firstFactor = factorData.meta.categories[selectedCategory]?.[0];
+    if (firstFactor) addFactor(firstFactor);
+
+    updateChart();
+  } catch (err) {
+    console.error('Data load error:', err);
+    document.getElementById('no-data').style.display = 'flex';
+    document.getElementById('no-data').querySelector('span:last-child').textContent =
+      '数据加载失败，请确认 factor_data.json 已生成';
+  }
+}
+
+// ============================================
+// 分类标签
+// ============================================
+function renderCategoryTags(cats) {
+  const container = document.getElementById('category-tags');
+  container.innerHTML = '';
+  cats.forEach(c => {
+    const tag = document.createElement('div');
+    tag.className = 'tag' + (c === selectedCategory ? ' active' : '');
+    tag.textContent = c;
+    tag.onclick = () => {
+      selectedCategory = c;
+      renderCategoryTags(cats);
+      renderFactorPool();
+    };
+    container.appendChild(tag);
+  });
+}
+
+// ============================================
+// 因子池
+// ============================================
+function renderFactorPool() {
+  const pool = document.getElementById('factor-pool');
+  pool.innerHTML = '';
+
+  const names = factorData.meta.categories[selectedCategory] || [];
+  if (names.length === 0) {
+    pool.innerHTML = '<div class="factor-pool-empty">该分类下无因子</div>';
+    return;
+  }
+
+  const selectedSet = new Set(selectedFactors.map(f => f.name));
+  names.forEach(name => {
+    // 从 factor_defs 找描述
+    const fd = factorData.meta.factor_defs?.find(d => d.short_name === name);
+    const desc = fd ? fd.description : '';
+    const item = document.createElement('div');
+    item.className = 'factor-pool-item' + (selectedSet.has(name) ? ' in-selected' : '');
+    item.draggable = true;
+    item.dataset.name = name;
+    item.innerHTML = `
+      <span class="name">${name}</span>
+      <span class="desc">${desc}</span>
+    `;
+    item.addEventListener('dragstart', (e) => {
+      draggedName = name;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', name);
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      draggedName = '';
+    });
+    item.addEventListener('dblclick', () => addFactor(name));
+    pool.appendChild(item);
+  });
+}
+
+// ============================================
+// 选区
+// ============================================
+function setupDropZone() {
+  const zone = document.getElementById('selected-zone');
+  zone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    zone.classList.add('drag-over');
+  });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const name = draggedName || e.dataTransfer.getData('text/plain');
+    if (name) addFactor(name);
+  });
+}
+
+function addFactor(name) {
+  if (selectedFactors.length >= MAX_FACTORS) {
+    alert(`最多 ${MAX_FACTORS} 个因子，请先移除部分因子`);
+    return;
+  }
+  if (selectedFactors.find(f => f.name === name)) return;
+  const color = PALETTE[selectedFactors.length % PALETTE.length];
+  selectedFactors.push({ name, color });
+  renderSelected();
+  renderFactorPool();
+  updateChart();
+}
+
+function removeFactor(name) {
+  selectedFactors = selectedFactors.filter(f => f.name !== name);
+  selectedFactors.forEach((f, i) => f.color = PALETTE[i % PALETTE.length]);
+  renderSelected();
+  renderFactorPool();
+  updateChart();
+}
+
+function renderSelected() {
+  const zone = document.getElementById('selected-zone');
+  if (selectedFactors.length === 0) {
+    zone.classList.remove('has-items');
+    zone.innerHTML = '<div class="selected-empty">拖拽因子到此处</div>';
+    document.getElementById('selected-hint').textContent = `最多 ${MAX_FACTORS} 个因子`;
+    return;
+  }
+  zone.classList.add('has-items');
+  const list = document.createElement('div');
+  list.className = 'selected-list';
+  selectedFactors.forEach(f => {
+    const item = document.createElement('div');
+    item.className = 'selected-item';
+    item.style.background = f.color;
+    item.innerHTML = `
+      <span class="color-dot"></span>
+      <span>${f.name}</span>
+      <span class="remove" title="移除">×</span>
+    `;
+    item.querySelector('.remove').onclick = () => removeFactor(f.name);
+    list.appendChild(item);
+  });
+  zone.innerHTML = '';
+  zone.appendChild(list);
+  document.getElementById('selected-hint').textContent =
+    `${selectedFactors.length}/${MAX_FACTORS} 个因子已选`;
+}
+
+// ============================================
+// 构建因子数据序列（对齐日期）
+// ============================================
+function buildFactorSeries() {
+  if (selectedFactors.length === 0) return { dates: [], datasets: [] };
+
+  const allDates = new Set();
+  selectedFactors.forEach(f => {
+    const s = factorData.series[f.name];
+    if (s) s.dates.forEach(d => allDates.add(d));
+  });
+
+  const startDate = document.getElementById('date-start').value;
+  const endDate = document.getElementById('date-end').value;
+  let dates = [...allDates].filter(d =>
+    (!startDate || d >= startDate) && (!endDate || d <= endDate)
+  ).sort();
+
+  const datasets = selectedFactors.map(f => {
+    const s = factorData.series[f.name];
+    if (!s) return { label: f.name, data: [], borderColor: f.color };
+    const valMap = {};
+    s.dates.forEach((d, i) => valMap[d] = s.values[i]);
+    const data = dates.map(d => {
+      const v = valMap[d];
+      return v !== undefined ? v : null;
+    });
+    return {
+      label: f.name,
+      data,
+      borderColor: f.color,
+      backgroundColor: f.color + '15',
+      borderWidth: 2,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0.15,
+      fill: false,
+      spanGaps: true,
+    };
+  });
+
+  return { dates, datasets };
+}
+
+// ============================================
+// 构建对比图数据
+// ============================================
+function buildCompareSeries(factorDates) {
+  if (!benchmark || factorDates.length === 0) return null;
+
+  const curve = curveData.series[benchmark];
+  if (!curve) return null;
+
+  const valMap = {};
+  curve.dates.forEach((d, i) => valMap[d] = curve.values[i]);
+
+  // 因子数据集
+  const factorDatasets = selectedFactors.map(f => {
+    const s = factorData.series[f.name];
+    if (!s) return null;
+    const fMap = {};
+    s.dates.forEach((d, i) => fMap[d] = s.values[i]);
+    const data = factorDates.map(d => {
+      const v = fMap[d];
+      return v !== undefined ? v : null;
+    });
+    return {
+      label: f.name,
+      data,
+      yAxisID: 'y-factor',
+      borderColor: f.color,
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0.15,
+      fill: false,
+      spanGaps: true,
+    };
+  }).filter(Boolean);
+
+  // 基准数据集
+  const benchmarkData = factorDates.map(d => {
+    const v = valMap[d];
+    return v !== undefined ? v : null;
+  });
+
+  const allDatasets = [
+    ...factorDatasets,
+    {
+      label: `${benchmark} (%)`,
+      data: benchmarkData,
+      yAxisID: 'y-bench',
+      borderColor: COLOR_BENCHMARK,
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      borderDash: [4, 4],
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0.15,
+      fill: false,
+      spanGaps: true,
+    },
+  ];
+
+  return allDatasets;
+}
+
+// ============================================
+// 更新图表
+// ============================================
+function updateChart() {
+  document.getElementById('kpi-factors').textContent = selectedFactors.length;
+
+  if (selectedFactors.length === 0) {
+    showNoData('请拖拽因子到选区查看走势');
+    document.getElementById('compare-box').style.display = 'none';
+    return;
+  }
+
+  const { dates, datasets } = buildFactorSeries();
+  if (dates.length === 0) {
+    showNoData('选定因子在选定时间范围内无数据');
+    document.getElementById('compare-box').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('kpi-days').textContent = dates.length;
+  const factorStr = selectedFactors.map(f => f.name).join('、');
+  document.getElementById('chart-title').textContent = '因子走势分析';
+  document.getElementById('chart-desc').textContent =
+    `因子：${factorStr} ｜ ${dates[0]} ~ ${dates[dates.length-1]}`;
+
+  document.getElementById('no-data').style.display = 'none';
+  document.getElementById('chart-factor').style.display = 'block';
+
+  // ── 上图：因子走势 ──
+  if (chartFactor) chartFactor.destroy();
+  chartFactor = new Chart(document.getElementById('chart-factor'), {
+    type: 'line',
+    data: { labels: dates, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { usePointStyle: true, pointStyleWidth: 8, padding: 12, font: { size: 11 } },
+        },
+        tooltip: {
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          titleColor: '#2c3e50', bodyColor: '#2c3e50',
+          borderColor: '#e8ecf1', borderWidth: 1, cornerRadius: 6, padding: 12,
+          callbacks: {
+            label: function(ctx) {
+              return `${ctx.dataset.label}: ${ctx.parsed.y !== null ? ctx.parsed.y.toFixed(2) : '--'}`;
+            },
+          },
+        },
+        zoom: {
+          pan: { enabled: true, mode: 'x' },
+          zoom: {
+            wheel: { enabled: true, speed: 0.1 },
+            pinch: { enabled: true },
+            mode: 'x',
+            onDoubleClick: function(chart) { chart.resetZoom(); return false; },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 },
+          grid: { display: false },
+        },
+        y: {
+          title: { display: true, text: '因子值 (0-100)', font: { size: 11 } },
+          ticks: { font: { size: 10 } },
+          grid: { color: '#f0f0f0' },
+          min: 0, max: 100,
+        },
+      },
+    },
+  });
+
+  // ── 下图：因子 vs 基准 ──
+  const compareDatasets = buildCompareSeries(dates);
+  const compareBox = document.getElementById('compare-box');
+  if (compareDatasets) {
+    compareBox.style.display = 'flex';
+    document.getElementById('compare-label').textContent =
+      `因子（左轴）vs ${benchmark} 收益率（右轴）`;
+
+    if (chartCompare) chartCompare.destroy();
+    chartCompare = new Chart(document.getElementById('chart-compare'), {
+      type: 'line',
+      data: { labels: dates, datasets: compareDatasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { usePointStyle: true, pointStyleWidth: 8, padding: 12, font: { size: 11 } },
+          },
+          tooltip: {
+            backgroundColor: 'rgba(255,255,255,0.95)',
+            titleColor: '#2c3e50', bodyColor: '#2c3e50',
+            borderColor: '#e8ecf1', borderWidth: 1, cornerRadius: 6, padding: 12,
+            callbacks: {
+              label: function(ctx) {
+                const v = ctx.parsed.y;
+                if (ctx.dataset.yAxisID === 'y-bench') {
+                  return `${ctx.dataset.label}: ${v !== null ? v.toFixed(3) + ' %' : '--'}`;
+                }
+                return `${ctx.dataset.label}: ${v !== null ? v.toFixed(2) : '--'}`;
+              },
+            },
+          },
+          zoom: {
+            pan: { enabled: true, mode: 'x' },
+            zoom: {
+              wheel: { enabled: true, speed: 0.1 },
+              pinch: { enabled: true },
+              mode: 'x',
+              onDoubleClick: function(chart) { chart.resetZoom(); return false; },
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 },
+            grid: { display: false },
+          },
+          'y-factor': {
+            type: 'linear', position: 'left',
+            title: { display: true, text: '因子值 (0-100)', font: { size: 11 } },
+            ticks: { font: { size: 10 } },
+            grid: { color: '#f0f0f0' },
+            min: 0, max: 100,
+          },
+          'y-bench': {
+            type: 'linear', position: 'right',
+            title: { display: true, text: '收益率 (%)', font: { size: 11 } },
+            ticks: { font: { size: 10 }, callback: v => v.toFixed(2) + '%' },
+            grid: { display: false },
+          },
+        },
+      },
+    });
+  } else {
+    compareBox.style.display = 'none';
+    if (chartCompare) { chartCompare.destroy(); chartCompare = null; }
+  }
+}
+
+function showNoData(msg) {
+  document.getElementById('no-data').style.display = 'flex';
+  document.getElementById('no-data').querySelector('span:last-child').textContent = msg;
+  document.getElementById('chart-factor').style.display = 'none';
+  document.getElementById('chart-title').textContent = '因子分析';
+  document.getElementById('chart-desc').textContent = '请拖拽因子到选区';
+  document.getElementById('kpi-days').textContent = '--';
+}
+
+function resetFilters() {
+  selectedFactors = [];
+  benchmark = '';
+  document.getElementById('benchmark').value = '';
+  renderSelected();
+  renderFactorPool();
+  document.getElementById('date-start').value = factorData.meta.date_range[0] || '';
+  document.getElementById('date-end').value = factorData.meta.date_range[1] || '';
+  updateChart();
+}
+
+// Start
+init();
+</script>
+</body>
+</html>
