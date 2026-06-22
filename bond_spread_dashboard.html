@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>债券个券利差走势分析</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --panel-bg: #ffffff;
+    --text: #2c3e50;
+    --text-secondary: #7f8c8d;
+    --border: #e8ecf1;
+    --primary: #5470c6;
+    --primary-light: #e8edff;
+    --hover: #f0f3ff;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --radius: 8px;
+    --sidebar-w: 360px;
+    --success: #22c55e;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --accent: #ee6666;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: var(--sidebar-w);
+    background: var(--panel-bg);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow);
+    z-index: 10;
+    flex-shrink: 0;
+  }
+  .sidebar-header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .sidebar-header h2 {
+    font-size: 18px; font-weight: 700;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .sidebar-header h2 .icon { font-size: 22px; }
+  .sidebar-header .subtitle {
+    font-size: 12px; color: var(--text-secondary); margin-top: 4px;
+  }
+  .back-home {
+    position: absolute; top: 20px; right: 24px;
+    font-size: 12px; color: var(--text-secondary);
+    text-decoration: none; padding: 4px 10px;
+    border: 1px solid var(--border); border-radius: 4px;
+    transition: all 0.15s;
+  }
+  .back-home:hover { color: var(--primary); border-color: var(--primary); }
+
+  .filter-body {
+    flex: 1; overflow-y: auto;
+    padding: 16px 24px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+
+  .filter-group { display: flex; flex-direction: column; gap: 8px; }
+  .filter-label {
+    font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .filter-label .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--primary);
+  }
+
+  .tag-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    padding: 5px 12px; border-radius: 16px; font-size: 12px;
+    cursor: pointer; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text-secondary);
+    transition: all 0.15s; user-select: none; white-space: nowrap;
+  }
+  .tag:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+  .tag.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+  .hint {
+    font-size: 11px; color: var(--text-secondary);
+    margin-top: 2px; line-height: 1.5;
+  }
+
+  /* ── 券池（可拖拽源） ── */
+  .bond-pool {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .bond-pool-item {
+    padding: 6px 10px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: grab;
+    transition: all 0.15s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+  }
+  .bond-pool-item:hover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+  .bond-pool-item:active { cursor: grabbing; }
+  .bond-pool-item.dragging { opacity: 0.4; }
+  .bond-pool-item .code { font-weight: 600; }
+  .bond-pool-item .dur { color: var(--text-secondary); font-size: 11px; }
+  .bond-pool-empty {
+    text-align: center; padding: 16px;
+    color: var(--text-secondary); font-size: 12px;
+  }
+
+  /* ── A/B 拖放目标框 ── */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.15s;
+    background: var(--bg);
+  }
+  .drop-zone.drag-over {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+  .drop-zone.filled {
+    border-style: solid;
+    border-color: var(--accent-color, var(--primary));
+    background: var(--panel-bg);
+  }
+  .drop-zone-a { --accent-color: var(--primary); }
+  .drop-zone-b { --accent-color: var(--accent); }
+
+  .drop-zone .badge {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; color: #fff;
+    flex-shrink: 0;
+  }
+  .badge-a { background: var(--primary); }
+  .badge-b { background: var(--accent); }
+
+  .drop-zone .zone-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .drop-zone .zone-empty {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-style: italic;
+  }
+  .drop-zone .zone-code {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .drop-zone .zone-meta {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+  .drop-zone .clear-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.15s;
+  }
+  .drop-zone .clear-btn:hover {
+    color: var(--danger);
+    background: rgba(239, 68, 68, 0.1);
+  }
+
+  .date-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .date-row input[type="date"] {
+    flex: 1;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    background: var(--bg);
+    outline: none;
+  }
+  .date-row input[type="date"]:focus { border-color: var(--primary); }
+  .date-row span { font-size: 12px; color: var(--text-secondary); }
+
+  .sidebar-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .btn {
+    padding: 10px 16px; border-radius: 6px;
+    font-size: 14px; font-weight: 600;
+    cursor: pointer; border: none; transition: all 0.15s;
+    font-family: inherit;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-outline {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+
+  /* ── Main ── */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .main-header {
+    padding: 14px 28px;
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .main-header .title-area h3 { font-size: 16px; font-weight: 600; }
+  .main-header .title-area .desc {
+    font-size: 12px; color: var(--text-secondary); margin-top: 2px;
+  }
+
+  .kpi-row { display: flex; gap: 12px; }
+  .kpi-card {
+    padding: 8px 14px; background: var(--bg);
+    border-radius: 8px; text-align: center; min-width: 100px;
+  }
+  .kpi-card .kpi-value { font-size: 16px; font-weight: 700; }
+  .kpi-card .kpi-label { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+  .kpi-card.positive .kpi-value { color: var(--danger); }
+  .kpi-card.negative .kpi-value { color: var(--success); }
+
+  .chart-area {
+    flex: 1; padding: 12px 28px 16px;
+    display: flex; flex-direction: column; gap: 12px;
+    overflow: hidden;
+  }
+  .chart-box {
+    background: var(--panel-bg); border-radius: var(--radius);
+    padding: 12px 20px 8px; box-shadow: var(--shadow);
+    min-height: 0; display: flex; flex-direction: column;
+  }
+  .chart-box.yield-chart { flex: 3; }
+  .chart-box.spread-chart { flex: 2; }
+  .chart-box.yield-chart .chart-label::before { background: var(--primary); border-radius: 2px; }
+  .chart-box.spread-chart .chart-label::before { background: var(--accent); border-radius: 50%; }
+  .chart-box .chart-label {
+    font-size: 12px; font-weight: 600; color: var(--text-secondary);
+    margin-bottom: 4px; display: flex; align-items: center; gap: 6px;
+  }
+  .chart-box .chart-label::before {
+    content: ''; display: inline-block;
+    width: 8px; height: 8px;
+  }
+  .chart-wrap { flex: 1; min-height: 0; position: relative; }
+  .chart-box canvas { width: 100% !important; height: 100% !important; }
+
+  .no-data {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; color: var(--text-secondary);
+    font-size: 15px; flex-direction: column; gap: 8px;
+  }
+  .no-data .icon { font-size: 40px; opacity: 0.3; }
+
+  .filter-body::-webkit-scrollbar { width: 4px; }
+  .filter-body::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 4px; }
+  .bond-pool::-webkit-scrollbar { width: 4px; }
+  .bond-pool::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 4px; }
+
+  .source-note {
+    padding: 8px 28px; font-size: 11px; color: var(--text-secondary);
+    border-top: 1px solid var(--border); background: var(--panel-bg);
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <h2><span class="icon">📊</span>利差分析</h2>
+    <p class="subtitle">选期限 → 从券池拖拽到 A/B 框</p>
+    <a href="index.html" class="back-home">← 返回首页</a>
+  </div>
+
+  <div class="filter-body">
+    <!-- 步骤 1：选期限 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>步骤 1：选期限筛选券池</label>
+      <div class="tag-grid" id="term-tags"></div>
+      <p class="hint">选"全部"显示所有券；选某期限只显示该期限券</p>
+    </div>
+
+    <!-- 步骤 2：券池 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>步骤 2：从券池拖拽个券</label>
+      <div class="bond-pool" id="bond-pool"></div>
+      <p class="hint">拖拽下方个券到 A、B 框中比较利差</p>
+    </div>
+
+    <!-- A 框 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>债券 A（基准券）</label>
+      <div class="drop-zone drop-zone-a" id="drop-a" data-slot="a">
+        <span class="badge badge-a">A</span>
+        <div class="zone-content">
+          <span class="zone-empty">拖拽券到此处</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- B 框 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>债券 B（对比券）</label>
+      <div class="drop-zone drop-zone-b" id="drop-b" data-slot="b">
+        <span class="badge badge-b">B</span>
+        <div class="zone-content">
+          <span class="zone-empty">拖拽券到此处</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 时间范围 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>时间范围（可选）</label>
+      <div class="date-row">
+        <input type="date" id="date-start">
+        <span>至</span>
+        <input type="date" id="date-end">
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <button class="btn btn-outline" onclick="resetFilters()">重置</button>
+  </div>
+</aside>
+
+<!-- ── Main ── -->
+<main class="main">
+  <div class="main-header">
+    <div class="title-area">
+      <h3 id="chart-title">个券利差走势</h3>
+      <p class="desc" id="chart-desc">请拖拽两只债券到 A、B 框</p>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi-card" id="kpi-spread"><div class="kpi-value">--</div><div class="kpi-label">最新利差 (bp)</div></div>
+      <div class="kpi-card" id="kpi-avg"><div class="kpi-value">--</div><div class="kpi-label">日均利差 (bp)</div></div>
+      <div class="kpi-card" id="kpi-days"><div class="kpi-value">--</div><div class="kpi-label">样本天数</div></div>
+    </div>
+  </div>
+
+  <div class="chart-area">
+    <div class="chart-box yield-chart">
+      <div class="chart-label">A、B 收益率走势 (%)</div>
+      <div class="chart-wrap"><canvas id="chart-yield"></canvas></div>
+      <div class="no-data" id="no-data">
+        <span class="icon">📈</span>
+        <span>请拖拽两只债券到 A、B 框查看利差</span>
+      </div>
+    </div>
+
+    <div class="chart-box spread-chart" id="spread-box" style="display:none">
+      <div class="chart-label" id="spread-label">利差走势 (bp)</div>
+      <div class="chart-wrap"><canvas id="chart-spread"></canvas></div>
+    </div>
+  </div>
+
+  <div class="source-note">
+    数据来源：FICC原始数据（现券）.xlsx ｜ 自动过滤未来日期与0值 ｜ 剩余期限单位：年
+  </div>
+</main>
+
+<script>
+// ============================================
+// State
+// ============================================
+let allData = { meta: { terms: {} }, series: {} };
+let chartYield = null;
+let chartSpread = null;
+let selectedTerm = '全部';
+let codeA = '';
+let codeB = '';
+let draggedCode = '';
+
+const COLOR_A = '#5470c6';
+const COLOR_B = '#ee6666';
+const COLOR_SPREAD = '#fac858';
+
+// ============================================
+// Init
+// ============================================
+async function init() {
+  try {
+    const resp = await fetch('bond_yield_data.json?t=' + Date.now());
+    allData = await resp.json();
+
+    const terms = Object.keys(allData.meta.terms);
+    renderTermTags(terms);
+    renderBondPool();
+    setupDropZones();
+
+    document.getElementById('date-start').value = allData.meta.date_range[0];
+    document.getElementById('date-end').value = allData.meta.date_range[1];
+
+    updateChart();
+  } catch (err) {
+    console.error('Data load error:', err);
+    document.getElementById('no-data').style.display = 'flex';
+    document.getElementById('no-data').querySelector('span:last-child').textContent =
+      '数据加载失败，请确认 bond_yield_data.json 已生成';
+  }
+}
+
+function getAllCodes() {
+  const out = [];
+  Object.keys(allData.meta.terms).forEach(t => {
+    allData.meta.terms[t].forEach(c => out.push(c));
+  });
+  return out;
+}
+
+function formatDur(d) {
+  if (d === null || d === undefined) return '--';
+  return d.toFixed(2) + '年';
+}
+
+// ============================================
+// 期限标签
+// ============================================
+function renderTermTags(terms) {
+  const container = document.getElementById('term-tags');
+  container.innerHTML = '';
+  ['全部', ...terms].forEach(t => {
+    const tag = document.createElement('div');
+    tag.className = 'tag' + (t === selectedTerm ? ' active' : '');
+    tag.textContent = t;
+    tag.onclick = () => {
+      selectedTerm = t;
+      renderTermTags(terms);
+      renderBondPool();
+    };
+    container.appendChild(tag);
+  });
+}
+
+// ============================================
+// 券池渲染 + 拖拽源
+// ============================================
+function renderBondPool() {
+  const pool = document.getElementById('bond-pool');
+  pool.innerHTML = '';
+
+  const codes = selectedTerm === '全部' ? getAllCodes() : (allData.meta.terms[selectedTerm] || []);
+
+  if (codes.length === 0) {
+    pool.innerHTML = '<div class="bond-pool-empty">该筛选下无个券</div>';
+    return;
+  }
+
+  codes.forEach(code => {
+    const s = allData.series[code];
+    if (!s) return;
+    const item = document.createElement('div');
+    item.className = 'bond-pool-item';
+    item.draggable = true;
+    item.dataset.code = code;
+    item.innerHTML = `
+      <span class="code">${code}</span>
+      <span class="dur">${formatDur(s.duration)}</span>
+    `;
+    item.addEventListener('dragstart', (e) => {
+      draggedCode = code;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', code);
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      draggedCode = '';
+    });
+    // 双击快捷放入空闲框
+    item.addEventListener('dblclick', () => {
+      if (!codeA) setSlot('a', code);
+      else if (!codeB) setSlot('b', code);
+      else setSlot('b', code); // 都满了替换 B
+    });
+    pool.appendChild(item);
+  });
+}
+
+// ============================================
+// 拖放目标 A/B
+// ============================================
+function setupDropZones() {
+  ['drop-a', 'drop-b'].forEach(id => {
+    const zone = document.getElementById(id);
+    const slot = zone.dataset.slot;
+
+    zone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      zone.classList.add('drag-over');
+    });
+    zone.addEventListener('dragleave', () => {
+      zone.classList.remove('drag-over');
+    });
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('drag-over');
+      const code = draggedCode || e.dataTransfer.getData('text/plain');
+      if (code) setSlot(slot, code);
+    });
+  });
+}
+
+function setSlot(slot, code) {
+  if (slot === 'a') codeA = code;
+  else codeB = code;
+  renderSlots();
+  updateChart();
+}
+
+function clearSlot(slot) {
+  if (slot === 'a') codeA = '';
+  else codeB = '';
+  renderSlots();
+  updateChart();
+}
+
+function renderSlots() {
+  ['a', 'b'].forEach(slot => {
+    const zone = document.getElementById('drop-' + slot);
+    const code = slot === 'a' ? codeA : codeB;
+    const s = code ? allData.series[code] : null;
+
+    if (s) {
+      zone.classList.add('filled');
+      const content = zone.querySelector('.zone-content');
+      content.innerHTML = `
+        <span class="zone-code">${code}</span>
+        <span class="zone-meta">${s.category} ｜ 剩余期限 ${formatDur(s.duration)}</span>
+      `;
+      // 清除按钮
+      let btn = zone.querySelector('.clear-btn');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.className = 'clear-btn';
+        btn.innerHTML = '×';
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          clearSlot(slot);
+        };
+        zone.appendChild(btn);
+      }
+    } else {
+      zone.classList.remove('filled');
+      const content = zone.querySelector('.zone-content');
+      content.innerHTML = '<span class="zone-empty">拖拽券到此处</span>';
+      const btn = zone.querySelector('.clear-btn');
+      if (btn) btn.remove();
+    }
+  });
+}
+
+// ============================================
+// 数据序列构建
+// ============================================
+function buildSeries() {
+  const sA = allData.series[codeA];
+  const sB = allData.series[codeB];
+  if (!sA || !sB) return { dates: [], spreads: [], yieldsA: [], yieldsB: [] };
+
+  const mapA = {};
+  sA.dates.forEach((d, i) => mapA[d] = sA.yields[i]);
+  const mapB = {};
+  sB.dates.forEach((d, i) => mapB[d] = sB.yields[i]);
+
+  const commonDates = sA.dates.filter(d => mapB[d] !== undefined && mapA[d] !== undefined);
+
+  const startDate = document.getElementById('date-start').value;
+  const endDate = document.getElementById('date-end').value;
+  const filtered = commonDates.filter(d => (!startDate || d >= startDate) && (!endDate || d <= endDate));
+
+  const spreads = filtered.map(d => +((mapA[d] - mapB[d]) * 100).toFixed(2));
+  const yieldsA = filtered.map(d => mapA[d]);
+  const yieldsB = filtered.map(d => mapB[d]);
+
+  return { dates: filtered, spreads, yieldsA, yieldsB };
+}
+
+// ============================================
+// 更新图表
+// ============================================
+function updateChart() {
+  if (!codeA || !codeB) {
+    showNoData('请拖拽两只债券到 A、B 框');
+    return;
+  }
+  if (codeA === codeB) {
+    showNoData('请选择两只不同的债券');
+    return;
+  }
+
+  const { dates, spreads, yieldsA, yieldsB } = buildSeries();
+
+  if (dates.length === 0) {
+    showNoData('选定券在选定时间范围内无共同交易日数据');
+    return;
+  }
+
+  const latestSpread = spreads[spreads.length - 1];
+  const avgSpread = spreads.reduce((a, b) => a + b, 0) / spreads.length;
+  document.getElementById('kpi-spread').querySelector('.kpi-value').textContent = latestSpread.toFixed(1);
+  document.getElementById('kpi-avg').querySelector('.kpi-value').textContent = avgSpread.toFixed(1);
+  document.getElementById('kpi-days').querySelector('.kpi-value').textContent = dates.length;
+
+  ['kpi-spread', 'kpi-avg'].forEach(id => {
+    const card = document.getElementById(id);
+    const val = parseFloat(card.querySelector('.kpi-value').textContent);
+    card.classList.remove('positive', 'negative');
+    if (val > 0) card.classList.add('positive');
+    else if (val < 0) card.classList.add('negative');
+  });
+
+  const sA = allData.series[codeA];
+  const sB = allData.series[codeB];
+  const durStr = `A: ${formatDur(sA.duration)}  B: ${formatDur(sB.duration)}`;
+  document.getElementById('chart-title').textContent = `${codeA} vs ${codeB} · 利差走势`;
+  document.getElementById('chart-desc').textContent =
+    `A: ${codeA} (${sA.category})  B: ${codeB} (${sB.category}) ｜ ${durStr} ｜ ${dates[0]} ~ ${dates[dates.length-1]}`;
+
+  document.getElementById('no-data').style.display = 'none';
+  document.getElementById('chart-yield').style.display = 'block';
+
+  // ── 上图：A、B 收益率走势 ──
+  if (chartYield) chartYield.destroy();
+  chartYield = new Chart(document.getElementById('chart-yield'), {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [
+        {
+          label: `${codeA} 收益率 (%)`,
+          data: yieldsA,
+          borderColor: COLOR_A,
+          backgroundColor: COLOR_A + '15',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.15,
+          fill: false,
+        },
+        {
+          label: `${codeB} 收益率 (%)`,
+          data: yieldsB,
+          borderColor: COLOR_B,
+          backgroundColor: COLOR_B + '15',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.15,
+          fill: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      onHover: (evt, els) => syncHover('yield', els),
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { usePointStyle: true, pointStyleWidth: 8, padding: 12, font: { size: 11 } },
+        },
+        tooltip: {
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          titleColor: '#2c3e50', bodyColor: '#2c3e50',
+          borderColor: '#e8ecf1', borderWidth: 1, cornerRadius: 6, padding: 12,
+          callbacks: {
+            label: function(ctx) {
+              return `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(3)} %`;
+            },
+          },
+        },
+        zoom: {
+          pan: { enabled: true, mode: 'x' },
+          zoom: {
+            wheel: { enabled: true, speed: 0.1 },
+            pinch: { enabled: true },
+            mode: 'x',
+            onDoubleClick: function(chart) { chart.resetZoom(); return false; },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 },
+          grid: { display: false },
+        },
+        y: {
+          title: { display: true, text: '收益率 (%)', font: { size: 11 } },
+          ticks: { font: { size: 10 }, callback: v => v.toFixed(2) + '%' },
+          grid: { color: '#f0f0f0' },
+        },
+      },
+    },
+  });
+
+  // ── 下图：利差走势 ──
+  const spreadBox = document.getElementById('spread-box');
+  spreadBox.style.display = 'flex';
+  document.getElementById('spread-label').textContent =
+    `利差走势 (bp) · ${codeA} − ${codeB}`;
+
+  if (chartSpread) chartSpread.destroy();
+  chartSpread = new Chart(document.getElementById('chart-spread'), {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [
+        {
+          label: `利差 ${codeA}-${codeB} (bp)`,
+          data: spreads,
+          borderColor: COLOR_SPREAD,
+          backgroundColor: COLOR_SPREAD + '20',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.15,
+          fill: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      onHover: (evt, els) => syncHover('spread', els),
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { usePointStyle: true, pointStyleWidth: 8, padding: 12, font: { size: 11 } },
+        },
+        tooltip: {
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          titleColor: '#2c3e50', bodyColor: '#2c3e50',
+          borderColor: '#e8ecf1', borderWidth: 1, cornerRadius: 6, padding: 12,
+          callbacks: {
+            label: function(ctx) {
+              return `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} bp`;
+            },
+          },
+        },
+        zoom: {
+          pan: { enabled: true, mode: 'x' },
+          zoom: {
+            wheel: { enabled: true, speed: 0.1 },
+            pinch: { enabled: true },
+            mode: 'x',
+            onDoubleClick: function(chart) { chart.resetZoom(); return false; },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 },
+          grid: { display: false },
+        },
+        y: {
+          title: { display: true, text: '利差 (bp)', font: { size: 11 } },
+          ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + ' bp' },
+          grid: { color: '#f0f0f0' },
+        },
+      },
+    },
+  });
+}
+
+// ============================================
+// 图表联动：hover 任一图，另一图同步显示 tooltip
+// ============================================
+let _syncLock = false;  // 防止递归触发
+function syncHover(source, els) {
+  if (_syncLock) return;
+  if (!els || els.length === 0) return;
+  const idx = els[0].index;
+  const targetChart = source === 'yield' ? chartSpread : chartYield;
+  const sourceChart = source === 'yield' ? chartYield : chartSpread;
+  if (!targetChart || !sourceChart) return;
+
+  _syncLock = true;
+  // 设置目标图的 active elements
+  const meta = targetChart.getDatasetMeta(0);
+  if (meta.data[idx]) {
+    const targetEls = [];
+    for (let d = 0; d < targetChart.data.datasets.length; d++) {
+      const m = targetChart.getDatasetMeta(d);
+      if (m.data[idx]) targetEls.push({ datasetIndex: d, index: idx });
+    }
+    targetChart.setActiveElements(targetEls);
+    targetChart.tooltip.setActiveElements(targetEls, { x: 0, y: 0 });
+    targetChart.update();
+  }
+  _syncLock = false;
+}
+
+// 鼠标离开时清除另一图的 tooltip
+function clearSyncHover(source) {
+  if (_syncLock) return;
+  const targetChart = source === 'yield' ? chartSpread : chartYield;
+  if (!targetChart) return;
+  _syncLock = true;
+  targetChart.setActiveElements([]);
+  targetChart.tooltip.setActiveElements([], { x: 0, y: 0 });
+  targetChart.update();
+  _syncLock = false;
+}
+
+function showNoData(msg) {
+  document.getElementById('no-data').style.display = 'flex';
+  document.getElementById('no-data').querySelector('span:last-child').textContent = msg;
+  document.getElementById('chart-yield').style.display = 'none';
+  document.getElementById('spread-box').style.display = 'none';
+  document.getElementById('chart-title').textContent = '个券利差走势';
+  document.getElementById('chart-desc').textContent = '请拖拽两只债券到 A、B 框';
+  ['kpi-spread', 'kpi-avg', 'kpi-days'].forEach(id => {
+    document.getElementById(id).querySelector('.kpi-value').textContent = '--';
+  });
+}
+
+function resetFilters() {
+  const terms = Object.keys(allData.meta.terms);
+  selectedTerm = '全部';
+  codeA = '';
+  codeB = '';
+  renderTermTags(terms);
+  renderBondPool();
+  renderSlots();
+  document.getElementById('date-start').value = allData.meta.date_range[0];
+  document.getElementById('date-end').value = allData.meta.date_range[1];
+  updateChart();
+}
+
+// ============================================
+// Start
+// ============================================
+// 监听时间范围变化
+document.addEventListener('DOMContentLoaded', () => {
+  const ds = document.getElementById('date-start');
+  const de = document.getElementById('date-end');
+  if (ds) ds.addEventListener('change', updateChart);
+  if (de) de.addEventListener('change', updateChart);
+});
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>收益率曲线走势分析</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --panel-bg: #ffffff;
+    --text: #2c3e50;
+    --text-secondary: #7f8c8d;
+    --border: #e8ecf1;
+    --primary: #5470c6;
+    --primary-light: #e8edff;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --radius: 8px;
+    --sidebar-w: 360px;
+    --success: #22c55e;
+    --danger: #ef4444;
+    --accent: #ee6666;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: var(--sidebar-w);
+    background: var(--panel-bg);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow);
+    z-index: 10;
+    flex-shrink: 0;
+  }
+  .sidebar-header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .sidebar-header h2 {
+    font-size: 18px; font-weight: 700;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .sidebar-header h2 .icon { font-size: 22px; }
+  .sidebar-header .subtitle {
+    font-size: 12px; color: var(--text-secondary); margin-top: 4px;
+  }
+  .back-home {
+    position: absolute; top: 20px; right: 24px;
+    font-size: 12px; color: var(--text-secondary);
+    text-decoration: none; padding: 4px 10px;
+    border: 1px solid var(--border); border-radius: 4px;
+    transition: all 0.15s;
+  }
+  .back-home:hover { color: var(--primary); border-color: var(--primary); }
+
+  .filter-body {
+    flex: 1; overflow-y: auto;
+    padding: 16px 24px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+
+  .filter-group { display: flex; flex-direction: column; gap: 8px; }
+  .filter-label {
+    font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .filter-label .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--primary);
+  }
+
+  .tag-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    padding: 5px 12px; border-radius: 16px; font-size: 12px;
+    cursor: pointer; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text-secondary);
+    transition: all 0.15s; user-select: none; white-space: nowrap;
+  }
+  .tag:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+  .tag.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+  .hint {
+    font-size: 11px; color: var(--text-secondary);
+    margin-top: 2px; line-height: 1.5;
+  }
+
+  /* ── 曲线池 ── */
+  .curve-pool {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    max-height: 240px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .curve-pool-item {
+    padding: 6px 10px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: grab;
+    transition: all 0.15s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+  }
+  .curve-pool-item:hover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+  .curve-pool-item:active { cursor: grabbing; }
+  .curve-pool-item.dragging { opacity: 0.4; }
+  .curve-pool-item .name { font-weight: 600; }
+  .curve-pool-item .meta { color: var(--text-secondary); font-size: 10px; }
+  .curve-pool-item.in-selected {
+    opacity: 0.5;
+    background: var(--success-light, #e8f5e9);
+  }
+  .curve-pool-empty {
+    text-align: center; padding: 16px;
+    color: var(--text-secondary); font-size: 12px;
+  }
+
+  /* ── 已选曲线区 ── */
+  .selected-zone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    min-height: 80px;
+    transition: all 0.15s;
+    background: var(--bg);
+  }
+  .selected-zone.drag-over {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+  .selected-zone.has-items {
+    border-style: solid;
+    border-color: var(--primary);
+    background: var(--panel-bg);
+  }
+  .selected-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .selected-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 16px;
+    font-size: 12px;
+    color: #fff;
+    font-weight: 600;
+  }
+  .selected-item .color-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #fff;
+  }
+  .selected-item .remove {
+    cursor: pointer;
+    opacity: 0.7;
+    font-size: 14px;
+    margin-left: 4px;
+  }
+  .selected-item .remove:hover { opacity: 1; }
+  .selected-empty {
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-align: center;
+    padding: 12px;
+    font-style: italic;
+  }
+
+  .date-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .date-row input[type="date"] {
+    flex: 1; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 6px;
+    font-size: 13px; background: var(--bg); outline: none;
+  }
+  .date-row input[type="date"]:focus { border-color: var(--primary); }
+  .date-row span { font-size: 12px; color: var(--text-secondary); }
+
+  .sidebar-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .btn {
+    padding: 10px 16px; border-radius: 6px;
+    font-size: 14px; font-weight: 600;
+    cursor: pointer; border: none; transition: all 0.15s;
+    font-family: inherit;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-outline {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+
+  /* ── Main ── */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .main-header {
+    padding: 14px 28px;
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .main-header .title-area h3 { font-size: 16px; font-weight: 600; }
+  .main-header .title-area .desc {
+    font-size: 12px; color: var(--text-secondary); margin-top: 2px;
+  }
+
+  .kpi-row { display: flex; gap: 12px; }
+  .kpi-card {
+    padding: 8px 14px; background: var(--bg);
+    border-radius: 8px; text-align: center; min-width: 100px;
+  }
+  .kpi-card .kpi-value { font-size: 16px; font-weight: 700; }
+  .kpi-card .kpi-label { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+  .chart-area {
+    flex: 1; padding: 12px 28px 16px;
+    display: flex; flex-direction: column; gap: 12px;
+    overflow: hidden;
+  }
+  .chart-box {
+    background: var(--panel-bg); border-radius: var(--radius);
+    padding: 12px 20px 8px; box-shadow: var(--shadow);
+    min-height: 0; display: flex; flex-direction: column;
+  }
+  .chart-box.curve-chart { flex: 3; }
+  .chart-box.spread-chart { flex: 2; }
+  .chart-box.spread-chart .chart-label::before {
+    background: var(--accent);
+    border-radius: 50%;
+  }
+  .chart-box .chart-label {
+    font-size: 12px; font-weight: 600; color: var(--text-secondary);
+    margin-bottom: 4px; display: flex; align-items: center; gap: 6px;
+  }
+  .chart-box .chart-label::before {
+    content: ''; display: inline-block;
+    width: 8px; height: 8px; background: var(--primary); border-radius: 2px;
+  }
+  .chart-wrap { flex: 1; min-height: 0; position: relative; }
+  .chart-box canvas { width: 100% !important; height: 100% !important; }
+
+  .no-data {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; color: var(--text-secondary);
+    font-size: 15px; flex-direction: column; gap: 8px;
+  }
+  .no-data .icon { font-size: 40px; opacity: 0.3; }
+
+  .filter-body::-webkit-scrollbar,
+  .curve-pool::-webkit-scrollbar { width: 4px; }
+  .filter-body::-webkit-scrollbar-thumb,
+  .curve-pool::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 4px; }
+
+  .source-note {
+    padding: 8px 28px; font-size: 11px; color: var(--text-secondary);
+    border-top: 1px solid var(--border); background: var(--panel-bg);
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <h2><span class="icon">📈</span>收益率曲线走势</h2>
+    <p class="subtitle">选分类 → 拖拽曲线到选区</p>
+    <a href="index.html" class="back-home">← 返回首页</a>
+  </div>
+
+  <div class="filter-body">
+    <!-- 步骤 1：选分类 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>步骤 1：选数据分类</label>
+      <div class="tag-grid" id="category-tags"></div>
+      <p class="hint">基准利率 / IRS / 期货 / 债券收益率</p>
+    </div>
+
+    <!-- 步骤 2：曲线池 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>步骤 2：从曲线池拖拽</label>
+      <div class="curve-pool" id="curve-pool"></div>
+      <p class="hint">拖拽到下方"已选曲线"区，或双击快速添加</p>
+    </div>
+
+    <!-- 已选曲线 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>已选曲线（可拖入或双击添加）</label>
+      <div class="selected-zone" id="selected-zone">
+        <div class="selected-empty">拖拽曲线到此处</div>
+      </div>
+      <p class="hint" id="selected-hint">最多 8 条曲线以保证可读性</p>
+    </div>
+
+    <!-- 利差配对 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>利差配对（可选）</label>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <select id="spread-a" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px; background:var(--bg); outline:none;"></select>
+        <span style="font-size:12px; color:var(--text-secondary);">−</span>
+        <select id="spread-b" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px; background:var(--bg); outline:none;"></select>
+      </div>
+      <p class="hint">从已选曲线中选两条，下方将显示利差 = A − B（bp）</p>
+    </div>
+
+    <!-- 时间范围 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>时间范围（可选）</label>
+      <div class="date-row">
+        <input type="date" id="date-start">
+        <span>至</span>
+        <input type="date" id="date-end">
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <button class="btn btn-outline" onclick="resetFilters()">清空选择</button>
+  </div>
+</aside>
+
+<!-- ── Main ── -->
+<main class="main">
+  <div class="main-header">
+    <div class="title-area">
+      <h3 id="chart-title">收益率曲线走势</h3>
+      <p class="desc" id="chart-desc">请拖拽曲线到选区查看走势</p>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi-card"><div class="kpi-value" id="kpi-curves">0</div><div class="kpi-label">已选曲线</div></div>
+      <div class="kpi-card"><div class="kpi-value" id="kpi-days">--</div><div class="kpi-label">样本天数</div></div>
+      <div class="kpi-card"><div class="kpi-value" id="kpi-range">--</div><div class="kpi-label">区间</div></div>
+    </div>
+  </div>
+
+  <div class="chart-area">
+    <div class="chart-box curve-chart">
+      <div class="chart-label">收益率走势 (%) · 单轴对比</div>
+      <div class="chart-wrap"><canvas id="chart-curve"></canvas></div>
+      <div class="no-data" id="no-data">
+        <span class="icon">📈</span>
+        <span>请拖拽曲线到选区查看走势</span>
+      </div>
+    </div>
+
+    <div class="chart-box spread-chart" id="spread-box" style="display:none">
+      <div class="chart-label" id="spread-label">利差走势 (bp)</div>
+      <div class="chart-wrap"><canvas id="chart-spread"></canvas></div>
+    </div>
+  </div>
+
+  <div class="source-note">
+    数据来源：FICC原始数据（衍生品、收益率曲线）.xlsx ｜ 自动过滤未来日期与0值
+  </div>
+</main>
+
+<script>
+// ============================================
+// State
+// ============================================
+let allData = { meta: { categories: {} }, series: {} };
+let chartCurve = null;
+let chartSpread = null;
+let selectedCategory = '';
+let selectedCurves = [];   // [{name, color}]
+let draggedName = '';
+let spreadA = '';
+let spreadB = '';
+
+const PALETTE = [
+  '#5470c6', '#ee6666', '#91cc75', '#fac858',
+  '#73c0de', '#3ba272', '#fc8452', '#9a60b4',
+  '#ea7ccc', '#ff9f7f', '#87e8de', '#b5e7a0',
+];
+const MAX_CURVES = 8;
+const COLOR_SPREAD = '#ee6666';
+
+// ============================================
+// Init
+// ============================================
+async function init() {
+  try {
+    const resp = await fetch('yield_curve_data.json?t=' + Date.now());
+    allData = await resp.json();
+
+    const cats = Object.keys(allData.meta.categories);
+    selectedCategory = cats[0];
+    renderCategoryTags(cats);
+    renderCurvePool();
+    setupDropZone();
+
+    document.getElementById('date-start').value = '2026-01-01';
+    document.getElementById('date-end').value = allData.meta.date_range[1];
+
+    // 默认加 2 条曲线做演示
+    const defaultNames = allData.meta.categories[selectedCategory].slice(0, 2);
+    defaultNames.forEach(n => addCurve(n));
+
+    // 监听利差下拉变化
+    document.getElementById('spread-a').addEventListener('change', e => {
+      spreadA = e.target.value;
+      updateChart();
+    });
+    document.getElementById('spread-b').addEventListener('change', e => {
+      spreadB = e.target.value;
+      updateChart();
+    });
+    // 监听时间范围变化
+    document.getElementById('date-start').addEventListener('change', updateChart);
+    document.getElementById('date-end').addEventListener('change', updateChart);
+
+    updateChart();
+  } catch (err) {
+    console.error('Data load error:', err);
+    document.getElementById('no-data').style.display = 'flex';
+    document.getElementById('no-data').querySelector('span:last-child').textContent =
+      '数据加载失败，请确认 yield_curve_data.json 已生成';
+  }
+}
+
+// ============================================
+// 分类标签
+// ============================================
+function renderCategoryTags(cats) {
+  const container = document.getElementById('category-tags');
+  container.innerHTML = '';
+  cats.forEach(c => {
+    const tag = document.createElement('div');
+    tag.className = 'tag' + (c === selectedCategory ? ' active' : '');
+    tag.textContent = c;
+    tag.onclick = () => {
+      selectedCategory = c;
+      renderCategoryTags(cats);
+      renderCurvePool();
+    };
+    container.appendChild(tag);
+  });
+}
+
+// ============================================
+// 曲线池渲染 + 拖拽源
+// ============================================
+function renderCurvePool() {
+  const pool = document.getElementById('curve-pool');
+  pool.innerHTML = '';
+
+  const names = allData.meta.categories[selectedCategory] || [];
+  if (names.length === 0) {
+    pool.innerHTML = '<div class="curve-pool-empty">该分类下无曲线</div>';
+    return;
+  }
+
+  const selectedSet = new Set(selectedCurves.map(c => c.name));
+  names.forEach(name => {
+    const s = allData.series[name];
+    if (!s) return;
+    const item = document.createElement('div');
+    item.className = 'curve-pool-item' + (selectedSet.has(name) ? ' in-selected' : '');
+    item.draggable = true;
+    item.dataset.name = name;
+    item.innerHTML = `
+      <span class="name">${name}</span>
+      <span class="meta">${s.dates.length} 天</span>
+    `;
+    item.addEventListener('dragstart', (e) => {
+      draggedName = name;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', name);
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      draggedName = '';
+    });
+    item.addEventListener('dblclick', () => {
+      addCurve(name);
+    });
+    pool.appendChild(item);
+  });
+}
+
+// ============================================
+// 选区拖放 + 渲染
+// ============================================
+function setupDropZone() {
+  const zone = document.getElementById('selected-zone');
+  zone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    zone.classList.add('drag-over');
+  });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const name = draggedName || e.dataTransfer.getData('text/plain');
+    if (name) addCurve(name);
+  });
+}
+
+function addCurve(name) {
+  if (selectedCurves.length >= MAX_CURVES) {
+    alert(`最多 ${MAX_CURVES} 条曲线，请先移除部分曲线`);
+    return;
+  }
+  if (selectedCurves.find(c => c.name === name)) return;  // 已存在
+  const color = PALETTE[selectedCurves.length % PALETTE.length];
+  selectedCurves.push({ name, color });
+  renderSelected();
+  renderCurvePool();
+  refreshSpreadSelectors();
+  updateChart();
+}
+
+function removeCurve(name) {
+  selectedCurves = selectedCurves.filter(c => c.name !== name);
+  // 重新分配颜色
+  selectedCurves.forEach((c, i) => c.color = PALETTE[i % PALETTE.length]);
+  // 若移除的券正在利差配对中，清空对应选项
+  if (spreadA === name) spreadA = '';
+  if (spreadB === name) spreadB = '';
+  renderSelected();
+  renderCurvePool();
+  refreshSpreadSelectors();
+  updateChart();
+}
+
+// 刷新利差下拉选项（只显示已选曲线）
+function refreshSpreadSelectors() {
+  ['spread-a', 'spread-b'].forEach(id => {
+    const sel = document.getElementById(id);
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">（选择）</option>';
+    selectedCurves.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.name;
+      opt.textContent = c.name;
+      sel.appendChild(opt);
+    });
+    // 保留之前的选择（若仍在已选列表中）
+    if (selectedCurves.find(c => c.name === prev)) {
+      sel.value = prev;
+    } else {
+      if (id === 'spread-a') spreadA = '';
+      else spreadB = '';
+    }
+  });
+}
+
+function renderSelected() {
+  const zone = document.getElementById('selected-zone');
+  if (selectedCurves.length === 0) {
+    zone.classList.remove('has-items');
+    zone.innerHTML = '<div class="selected-empty">拖拽曲线到此处</div>';
+    document.getElementById('selected-hint').textContent = '最多 8 条曲线以保证可读性';
+    return;
+  }
+  zone.classList.add('has-items');
+  const list = document.createElement('div');
+  list.className = 'selected-list';
+  selectedCurves.forEach(c => {
+    const item = document.createElement('div');
+    item.className = 'selected-item';
+    item.style.background = c.color;
+    item.innerHTML = `
+      <span class="color-dot"></span>
+      <span>${c.name}</span>
+      <span class="remove" title="移除">×</span>
+    `;
+    item.querySelector('.remove').onclick = () => removeCurve(c.name);
+    list.appendChild(item);
+  });
+  zone.innerHTML = '';
+  zone.appendChild(list);
+  document.getElementById('selected-hint').textContent =
+    `${selectedCurves.length}/${MAX_CURVES} 条曲线已选`;
+}
+
+// ============================================
+// 构建图表数据：对齐所有曲线的日期
+// ============================================
+function buildSeries() {
+  if (selectedCurves.length === 0) return { dates: [], datasets: [] };
+
+  // 收集所有日期
+  const allDates = new Set();
+  selectedCurves.forEach(c => {
+    const s = allData.series[c.name];
+    if (s) s.dates.forEach(d => allDates.add(d));
+  });
+
+  // 时间范围筛选
+  const startDate = document.getElementById('date-start').value;
+  const endDate = document.getElementById('date-end').value;
+  let dates = [...allDates].filter(d =>
+    (!startDate || d >= startDate) && (!endDate || d <= endDate)
+  ).sort();
+
+  // 为每条曲线构建数据
+  const datasets = selectedCurves.map(c => {
+    const s = allData.series[c.name];
+    if (!s) return { label: c.name, data: [], borderColor: c.color };
+    const valMap = {};
+    s.dates.forEach((d, i) => valMap[d] = s.values[i]);
+    const data = dates.map(d => {
+      const v = valMap[d];
+      return v !== undefined ? v : null;
+    });
+    return {
+      label: c.name,
+      data,
+      borderColor: c.color,
+      backgroundColor: c.color + '15',
+      borderWidth: 2,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0.15,
+      fill: false,
+      spanGaps: true,  // 跨越 null 点连线
+    };
+  });
+
+  return { dates, datasets };
+}
+
+// ============================================
+// 更新图表
+// ============================================
+function updateChart() {
+  document.getElementById('kpi-curves').textContent = selectedCurves.length;
+
+  if (selectedCurves.length === 0) {
+    showNoData('请拖拽曲线到选区查看走势');
+    document.getElementById('spread-box').style.display = 'none';
+    return;
+  }
+
+  const { dates, datasets } = buildSeries();
+
+  if (dates.length === 0) {
+    showNoData('选定曲线在选定时间范围内无数据');
+    document.getElementById('spread-box').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('kpi-days').textContent = dates.length;
+  document.getElementById('kpi-range').textContent =
+    `${dates[0].slice(5)}~${dates[dates.length-1].slice(5)}`;
+
+  // 标题
+  const curveStr = selectedCurves.map(c => c.name).join('、');
+  document.getElementById('chart-title').textContent = '收益率曲线走势';
+  document.getElementById('chart-desc').textContent =
+    `曲线：${curveStr} ｜ ${dates[0]} ~ ${dates[dates.length-1]}`;
+
+  document.getElementById('no-data').style.display = 'none';
+  document.getElementById('chart-curve').style.display = 'block';
+
+  if (chartCurve) chartCurve.destroy();
+  chartCurve = new Chart(document.getElementById('chart-curve'), {
+    type: 'line',
+    data: { labels: dates, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      onHover: (evt, els) => syncHover('curve', els),
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { usePointStyle: true, pointStyleWidth: 8, padding: 12, font: { size: 11 } },
+        },
+        tooltip: {
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          titleColor: '#2c3e50', bodyColor: '#2c3e50',
+          borderColor: '#e8ecf1', borderWidth: 1, cornerRadius: 6, padding: 12,
+          callbacks: {
+            label: function(ctx) {
+              const v = ctx.parsed.y;
+              return `${ctx.dataset.label}: ${v !== null ? v.toFixed(3) + ' %' : '--'}`;
+            },
+          },
+        },
+        zoom: {
+          pan: { enabled: true, mode: 'x' },
+          zoom: {
+            wheel: { enabled: true, speed: 0.1 },
+            pinch: { enabled: true },
+            mode: 'x',
+            onDoubleClick: function(chart) { chart.resetZoom(); return false; },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 },
+          grid: { display: false },
+        },
+        y: {
+          title: { display: true, text: '收益率 (%)', font: { size: 11 } },
+          ticks: { font: { size: 10 }, callback: v => v.toFixed(2) + '%' },
+          grid: { color: '#f0f0f0' },
+        },
+      },
+    },
+  });
+
+  // ── 利差图 ──
+  renderSpreadChart(dates);
+}
+
+// 渲染利差图
+function renderSpreadChart(dates) {
+  const spreadBox = document.getElementById('spread-box');
+
+  if (!spreadA || !spreadB || spreadA === spreadB) {
+    spreadBox.style.display = 'none';
+    if (chartSpread) { chartSpread.destroy(); chartSpread = null; }
+    return;
+  }
+
+  const sA = allData.series[spreadA];
+  const sB = allData.series[spreadB];
+  if (!sA || !sB) {
+    spreadBox.style.display = 'none';
+    return;
+  }
+
+  const mapA = {};
+  sA.dates.forEach((d, i) => mapA[d] = sA.values[i]);
+  const mapB = {};
+  sB.dates.forEach((d, i) => mapB[d] = sB.values[i]);
+
+  const spreadData = dates.map(d => {
+    const a = mapA[d], b = mapB[d];
+    if (a === undefined || b === undefined) return null;
+    return +((a - b) * 100).toFixed(2);  // 转 bp
+  });
+
+  spreadBox.style.display = 'flex';
+  document.getElementById('spread-label').textContent =
+    `利差走势 (bp) · ${spreadA} − ${spreadB}`;
+
+  if (chartSpread) chartSpread.destroy();
+  chartSpread = new Chart(document.getElementById('chart-spread'), {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [{
+        label: `${spreadA} − ${spreadB} (bp)`,
+        data: spreadData,
+        borderColor: COLOR_SPREAD,
+        backgroundColor: COLOR_SPREAD + '20',
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.15,
+        fill: true,
+        spanGaps: true,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      onHover: (evt, els) => syncHover('spread', els),
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { usePointStyle: true, pointStyleWidth: 8, padding: 12, font: { size: 11 } },
+        },
+        tooltip: {
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          titleColor: '#2c3e50', bodyColor: '#2c3e50',
+          borderColor: '#e8ecf1', borderWidth: 1, cornerRadius: 6, padding: 12,
+          callbacks: {
+            label: function(ctx) {
+              const v = ctx.parsed.y;
+              return `${ctx.dataset.label}: ${v !== null ? v.toFixed(1) + ' bp' : '--'}`;
+            },
+          },
+        },
+        zoom: {
+          pan: { enabled: true, mode: 'x' },
+          zoom: {
+            wheel: { enabled: true, speed: 0.1 },
+            pinch: { enabled: true },
+            mode: 'x',
+            onDoubleClick: function(chart) { chart.resetZoom(); return false; },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 },
+          grid: { display: false },
+        },
+        y: {
+          title: { display: true, text: '利差 (bp)', font: { size: 11 } },
+          ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + ' bp' },
+          grid: { color: '#f0f0f0' },
+        },
+      },
+    },
+  });
+}
+
+// ============================================
+// 图表联动：hover 任一图，另一图同步显示 tooltip
+// ============================================
+let _syncLock = false;
+function syncHover(source, els) {
+  if (_syncLock) return;
+  if (!els || els.length === 0) return;
+  const idx = els[0].index;
+  const targetChart = source === 'curve' ? chartSpread : chartCurve;
+  if (!targetChart) return;
+  _syncLock = true;
+  const targetEls = [];
+  for (let d = 0; d < targetChart.data.datasets.length; d++) {
+    const m = targetChart.getDatasetMeta(d);
+    if (m.data[idx]) targetEls.push({ datasetIndex: d, index: idx });
+  }
+  if (targetEls.length > 0) {
+    targetChart.setActiveElements(targetEls);
+    targetChart.tooltip.setActiveElements(targetEls, { x: 0, y: 0 });
+    targetChart.update();
+  }
+  _syncLock = false;
+}
+
+function showNoData(msg) {
+  document.getElementById('no-data').style.display = 'flex';
+  document.getElementById('no-data').querySelector('span:last-child').textContent = msg;
+  document.getElementById('chart-curve').style.display = 'none';
+  document.getElementById('chart-title').textContent = '收益率曲线走势';
+  document.getElementById('chart-desc').textContent = '请拖拽曲线到选区查看走势';
+  document.getElementById('kpi-days').textContent = '--';
+  document.getElementById('kpi-range').textContent = '--';
+}
+
+function resetFilters() {
+  selectedCurves = [];
+  spreadA = '';
+  spreadB = '';
+  renderSelected();
+  renderCurvePool();
+  refreshSpreadSelectors();
+  document.getElementById('date-start').value = allData.meta.date_range[0];
+  document.getElementById('date-end').value = allData.meta.date_range[1];
+  updateChart();
+}
+
+// ============================================
+// Start
+// ============================================
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FICC 辅助分析平台</title>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --panel-bg: #ffffff;
+    --text: #2c3e50;
+    --text-secondary: #7f8c8d;
+    --border: #e8ecf1;
+    --primary: #5470c6;
+    --primary-light: #e8edff;
+    --shadow: 0 4px 12px rgba(0,0,0,0.08);
+    --radius: 12px;
+    --accent1: #5470c6;
+    --accent2: #ee6666;
+    --accent3: #91cc75;
+    --accent4: #73c0de;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 60px 32px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 56px;
+  }
+  .header h1 {
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, var(--accent1), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header p {
+    font-size: 15px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  /* Card Grid */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+  }
+
+  .card {
+    background: var(--panel-bg);
+    border-radius: var(--radius);
+    padding: 32px 28px;
+    box-shadow: var(--shadow);
+    text-decoration: none;
+    color: inherit;
+    transition: all 0.25s;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    min-height: 240px;
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 4px; height: 100%;
+    background: var(--accent);
+    transition: width 0.25s;
+  }
+  .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    border-color: var(--accent);
+  }
+  .card:hover::before { width: 6px; }
+
+  .card-1 { --accent: var(--accent1); }
+  .card-2 { --accent: var(--accent2); }
+  .card-3 { --accent: var(--accent3); }
+  .card-4 { --accent: var(--accent4); }
+
+  .card-icon {
+    font-size: 40px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+  .card-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    flex: 1;
+  }
+  .card-meta {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-secondary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card-meta .arrow {
+    color: var(--accent);
+    font-weight: 700;
+    transition: transform 0.25s;
+  }
+  .card:hover .card-meta .arrow {
+    transform: translateX(4px);
+  }
+
+  .card.disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .card.disabled:hover {
+    transform: none;
+    box-shadow: var(--shadow);
+  }
+  .card.disabled .card-meta .arrow {
+    color: var(--text-secondary);
+  }
+  .badge-soon {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #fff3cd;
+    color: #856404;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 56px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  /* Responsive */
+  @media (max-width: 1024px) {
+    .card-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 768px) {
+    .card-grid { grid-template-columns: 1fr; }
+    .header h1 { font-size: 28px; }
+    .container { padding: 40px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h1>FICC 辅助分析平台</h1>
+    <p>面向 FICC 从业者的债券投研工具集 · 机构行为 / 个券利差 / 因子分析</p>
+  </div>
+
+  <div class="card-grid">
+    <a class="card card-1" href="bond_trading_dashboard.html">
+      <div class="card-icon">🏦</div>
+      <div class="card-title">机构行为分析</div>
+      <div class="card-desc">
+        按机构类型、券种、期限维度，查看各机构债券净买入的日度走势与累计净买入，辅助判断机构配置节奏。
+      </div>
+      <div class="card-meta">
+        <span>数据：现券交易数据</span>
+        <span class="arrow">进入 →</span>
+      </div>
+    </a>
+
+    <a class="card card-2" href="bond_spread_dashboard.html">
+      <div class="card-icon">📊</div>
+      <div class="card-title">个券利差走势</div>
+      <div class="card-desc">
+        选择期限分组与两只个券，查看利差走势与个券收益率对比，双坐标展示，支持自定义时间区间。
+      </div>
+      <div class="card-meta">
+        <span>数据：FICC 现券收益率</span>
+        <span class="arrow">进入 →</span>
+      </div>
+    </a>
+
+    <a class="card card-3 disabled" href="javascript:void(0)">
+      <div class="card-icon">🔬</div>
+      <div class="card-title">因子分析 <span class="badge-soon">待开发</span></div>
+      <div class="card-desc">
+        收益率曲线因子分解（水平/斜率/曲率）、利差归因等量化分析模块。
+      </div>
+      <div class="card-meta">
+        <span>规划中</span>
+        <span class="arrow">敬请期待</span>
+      </div>
+    </a>
+
+    <a class="card card-4" href="yield_curve_dashboard.html">
+      <div class="card-icon">📈</div>
+      <div class="card-title">收益率曲线走势</div>
+      <div class="card-desc">
+        国债/国开/地方债收益率曲线、IRS、国债期货隐含利率等多维度走势对比，支持跨类别叠加分析。
+      </div>
+      <div class="card-meta">
+        <span>数据：FICC 衍生品与收益率曲线</span>
+        <span class="arrow">进入 →</span>
+      </div>
+    </a>
+  </div>
+
+  <div class="footer">
+    数据每日 9:30 自动更新 · 仅用于研究辅助，不构成投资建议
+  </div>
+</div>
+
+</body>
+</html>

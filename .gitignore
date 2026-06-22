@@ -1,0 +1,20 @@
+# 数据文件（由脚本生成，不入版本控制）
+*.json
+*.log
+
+# 缓存
+*.tmp
+__pycache__/
+*.pyc
+
+# 临时
+~$*
+*.bak
+
+# 期货回测相关（与看板无关，独立模块）
+bond_futures_*
+bond_signal_server.py
+README_bond_futures.md
+
+# 工作区元数据
+.workbuddy/
