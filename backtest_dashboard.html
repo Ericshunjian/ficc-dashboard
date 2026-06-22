@@ -1,0 +1,1446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>量化策略回测 · FICC 看板</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --panel-bg: #ffffff;
+    --text: #2c3e50;
+    --text-secondary: #7f8c8d;
+    --border: #e8ecf1;
+    --primary: #5470c6;
+    --accent: #ee6666;
+    --success: #91cc75;
+    --warning: #fac858;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Top Bar */
+  .topbar {
+    height: 56px;
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 20px;
+    flex-shrink: 0;
+  }
+  .topbar .back-link {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    transition: all 0.2s;
+  }
+  .topbar .back-link:hover {
+    background: var(--bg);
+    color: var(--primary);
+  }
+  .topbar h1 {
+    font-size: 16px;
+    font-weight: 700;
+    flex: 1;
+  }
+  .topbar .tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--bg);
+    padding: 4px;
+    border-radius: 8px;
+  }
+  .topbar .tab {
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+    border: none;
+    background: transparent;
+  }
+  .topbar .tab.active {
+    background: var(--panel-bg);
+    color: var(--primary);
+    box-shadow: var(--shadow);
+  }
+
+  /* Layout */
+  .layout {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+  .sidebar {
+    width: 300px;
+    background: var(--panel-bg);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px 20px;
+    flex-shrink: 0;
+  }
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    gap: 12px;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  .sidebar-header {
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+  .sidebar-header h2 {
+    font-size: 16px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sidebar-header .subtitle {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+  }
+  .filter-group {
+    margin-bottom: 18px;
+  }
+  .filter-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .filter-label .dot {
+    width: 6px;
+    height: 6px;
+    background: var(--primary);
+    border-radius: 50%;
+  }
+  .hint {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    line-height: 1.4;
+  }
+  select, input[type="number"], input[type="date"] {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    background: var(--panel-bg);
+    color: var(--text);
+    outline: none;
+    transition: border 0.2s;
+  }
+  select:focus, input:focus {
+    border-color: var(--primary);
+  }
+  .param-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .param-row label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    min-width: 60px;
+  }
+  .param-row input {
+    flex: 1;
+  }
+  .param-row .unit {
+    font-size: 11px;
+    color: var(--text-secondary);
+    min-width: 24px;
+  }
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text);
+    margin-bottom: 6px;
+    cursor: pointer;
+  }
+  .checkbox-row input {
+    width: auto;
+  }
+  .btn-run {
+    width: 100%;
+    padding: 10px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .btn-run:hover {
+    background: #4a63b8;
+  }
+  .btn-reset {
+    width: 100%;
+    padding: 8px;
+    background: var(--bg);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-top: 6px;
+  }
+
+  /* Main area */
+  .kpi-bar {
+    display: flex;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .kpi {
+    flex: 1;
+    background: var(--panel-bg);
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    box-shadow: var(--shadow);
+  }
+  .kpi-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 2px;
+  }
+  .kpi-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .kpi-value.pos { color: var(--success); }
+  .kpi-value.neg { color: var(--accent); }
+
+  .chart-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+  }
+  .chart-box {
+    background: var(--panel-bg);
+    border-radius: var(--radius);
+    padding: 12px 20px 8px;
+    box-shadow: var(--shadow);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .chart-box.flex-3 { flex: 3; }
+  .chart-box.flex-2 { flex: 2; }
+  .chart-box.flex-1 { flex: 1; }
+  .chart-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chart-label::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: var(--primary);
+    border-radius: 2px;
+  }
+  .chart-wrap {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+  }
+  .no-data {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    font-size: 13px;
+    gap: 8px;
+  }
+  .no-data .icon { font-size: 32px; }
+
+  /* Trade table */
+  .trade-table-box {
+    background: var(--panel-bg);
+    border-radius: var(--radius);
+    padding: 12px 20px;
+    box-shadow: var(--shadow);
+    max-height: 180px;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .trade-table-box h3 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  th, td {
+    padding: 6px 8px;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    color: var(--text-secondary);
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    background: var(--panel-bg);
+  }
+  td:first-child, th:first-child { text-align: left; }
+  tr:hover td { background: var(--bg); }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="back-link" href="index.html">← 返回首页</a>
+  <h1>量化策略回测</h1>
+  <div class="tabs">
+    <button class="tab active" id="tab-cta" onclick="switchTab('cta')">CTA 趋势追踪</button>
+    <button class="tab" id="tab-arb" onclick="switchTab('arb')">价差套利</button>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h2><span class="icon">⚡</span>回测参数</h2>
+      <p class="subtitle" id="sidebar-subtitle">CTA 趋势追踪 · 单标的</p>
+    </div>
+
+    <!-- CTA Config -->
+    <div id="cta-config">
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>选择标的</label>
+        <select id="cta-target"></select>
+        <p class="hint">从收益率曲线和个券中选择</p>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>信号类型</label>
+        <select id="cta-signal" onchange="toggleCtaParams()">
+          <option value="ma">双均线交叉</option>
+          <option value="bb">布林带突破</option>
+        </select>
+      </div>
+
+      <div class="filter-group" id="ma-params">
+        <label class="filter-label"><span class="dot"></span>均线参数</label>
+        <div class="param-row">
+          <label>快线</label>
+          <input type="number" id="ma-fast" value="5" min="2" max="60">
+          <span class="unit">日</span>
+        </div>
+        <div class="param-row">
+          <label>慢线</label>
+          <input type="number" id="ma-slow" value="20" min="5" max="120">
+          <span class="unit">日</span>
+        </div>
+      </div>
+
+      <div class="filter-group hidden" id="bb-params">
+        <label class="filter-label"><span class="dot"></span>布林带参数</label>
+        <div class="param-row">
+          <label>窗口</label>
+          <input type="number" id="bb-window" value="20" min="5" max="120">
+          <span class="unit">日</span>
+        </div>
+        <div class="param-row">
+          <label>带宽</label>
+          <input type="number" id="bb-width" value="2" min="0.5" max="4" step="0.1">
+          <span class="unit">σ</span>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>方向设置</label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="cta-allow-short" checked>
+          允许做空
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="cta-reverse">
+          反向交易（信号多→做空）
+        </label>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>回测设置</label>
+        <div class="param-row">
+          <label>起始</label>
+          <input type="date" id="cta-date-start">
+        </div>
+        <div class="param-row">
+          <label>结束</label>
+          <input type="date" id="cta-date-end">
+        </div>
+        <div class="param-row">
+          <label>成本</label>
+          <input type="number" id="cta-cost" value="0" min="0" step="0.5">
+          <span class="unit">bp/次</span>
+        </div>
+      </div>
+
+      <button class="btn-run" onclick="runCtaBacktest()">运行回测</button>
+      <button class="btn-reset" onclick="resetCta()">重置参数</button>
+    </div>
+
+    <!-- Arbitrage Config -->
+    <div id="arb-config" class="hidden">
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>标的 A</label>
+        <select id="arb-target-a"></select>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>标的 B</label>
+        <select id="arb-target-b"></select>
+        <p class="hint">价差 = A − B</p>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>信号参数（价差双均线）</label>
+        <div class="param-row">
+          <label>快线</label>
+          <input type="number" id="arb-ma-fast" value="5" min="2" max="60">
+          <span class="unit">日</span>
+        </div>
+        <div class="param-row">
+          <label>慢线</label>
+          <input type="number" id="arb-ma-slow" value="20" min="5" max="120">
+          <span class="unit">日</span>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>方向设置</label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="arb-allow-short" checked>
+          允许做空价差
+        </label>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>回测设置</label>
+        <div class="param-row">
+          <label>起始</label>
+          <input type="date" id="arb-date-start">
+        </div>
+        <div class="param-row">
+          <label>结束</label>
+          <input type="date" id="arb-date-end">
+        </div>
+        <div class="param-row">
+          <label>成本</label>
+          <input type="number" id="arb-cost" value="0" min="0" step="0.5">
+          <span class="unit">bp/次</span>
+        </div>
+      </div>
+
+      <button class="btn-run" onclick="runArbBacktest()">运行回测</button>
+      <button class="btn-reset" onclick="resetArb()">重置参数</button>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <!-- KPI Bar -->
+    <div class="kpi-bar" id="kpi-bar">
+      <div class="kpi"><div class="kpi-label">累计盈亏</div><div class="kpi-value" id="kpi-total">--</div></div>
+      <div class="kpi"><div class="kpi-label">年化收益</div><div class="kpi-value" id="kpi-annual">--</div></div>
+      <div class="kpi"><div class="kpi-label">最大回撤</div><div class="kpi-value" id="kpi-dd">--</div></div>
+      <div class="kpi"><div class="kpi-label">夏普比率</div><div class="kpi-value" id="kpi-sharpe">--</div></div>
+      <div class="kpi"><div class="kpi-label">胜率</div><div class="kpi-value" id="kpi-winrate">--</div></div>
+      <div class="kpi"><div class="kpi-label">交易次数</div><div class="kpi-value" id="kpi-trades">--</div></div>
+    </div>
+
+    <!-- Charts -->
+    <div class="chart-area">
+      <div class="chart-box flex-2">
+        <div class="chart-label" id="label-top">标的走势 + 开仓标记</div>
+        <div class="chart-wrap"><canvas id="chart-price"></canvas></div>
+        <div class="no-data" id="no-data">
+          <span class="icon">📊</span>
+          <span>选择标的和参数后点击"运行回测"</span>
+        </div>
+      </div>
+      <div class="chart-box flex-2">
+        <div class="chart-label">策略净值（累计 bp）</div>
+        <div class="chart-wrap"><canvas id="chart-equity"></canvas></div>
+      </div>
+      <div class="chart-box flex-1">
+        <div class="chart-label">回撤曲线（bp）</div>
+        <div class="chart-wrap"><canvas id="chart-dd"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Trade Table -->
+    <div class="trade-table-box">
+      <h3>交易明细</h3>
+      <table id="trade-table">
+        <thead>
+          <tr>
+            <th>方向</th>
+            <th>开仓日期</th>
+            <th>开仓价</th>
+            <th>平仓日期</th>
+            <th>平仓价</th>
+            <th>持仓天数</th>
+            <th>盈亏(bp)</th>
+          </tr>
+        </thead>
+        <tbody id="trade-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================
+// Data
+// ============================================
+let curveData = null;   // yield_curve_data.json
+let bondData = null;    // bond_yield_data.json
+let allTargets = [];    // [{name, source, dates, values}]
+
+let chartPrice = null;
+let chartEquity = null;
+let chartDd = null;
+
+// ============================================
+// Init
+// ============================================
+async function init() {
+  try {
+    const [r1, r2] = await Promise.all([
+      fetch('yield_curve_data.json?t=' + Date.now()),
+      fetch('bond_yield_data.json?t=' + Date.now()),
+    ]);
+    curveData = await r1.json();
+    bondData = await r2.json();
+
+    buildTargetPool();
+    fillTargetSelectors();
+    setDefaultDates();
+  } catch (err) {
+    console.error('Init error:', err);
+    document.getElementById('no-data').querySelector('span:last-child').textContent =
+      '数据加载失败，请确认 JSON 文件已生成';
+  }
+}
+
+function buildTargetPool() {
+  allTargets = [];
+  // 收益率曲线
+  if (curveData && curveData.series) {
+    for (const [name, s] of Object.entries(curveData.series)) {
+      allTargets.push({
+        name: name,
+        source: '曲线',
+        dates: s.dates,
+        values: s.values,
+      });
+    }
+  }
+  // 个券
+  if (bondData && bondData.series) {
+    for (const [code, s] of Object.entries(bondData.series)) {
+      allTargets.push({
+        name: code,
+        source: '个券',
+        dates: s.dates,
+        yields: s.yields,
+        values: s.yields,  // 统一字段名
+      });
+    }
+  }
+  // 按 name 排序
+  allTargets.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+}
+
+function fillTargetSelectors() {
+  const opts = allTargets.map(t => {
+    const tag = t.source === '曲线' ? '' : ' [个券]';
+    return `<option value="${t.name}">${t.name}${tag}</option>`;
+  }).join('');
+
+  document.getElementById('cta-target').innerHTML = opts;
+  document.getElementById('arb-target-a').innerHTML = opts;
+  document.getElementById('arb-target-b').innerHTML = opts;
+
+  // 默认选两个不同的
+  if (allTargets.length >= 2) {
+    document.getElementById('cta-target').value = allTargets[0].name;
+    document.getElementById('arb-target-a').value = allTargets[0].name;
+    document.getElementById('arb-target-b').value = allTargets[1].name;
+  }
+}
+
+function setDefaultDates() {
+  const allDates = allTargets.flatMap(t => t.dates);
+  const minDate = allDates.sort()[0];
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('cta-date-start').value = '2026-01-01';
+  document.getElementById('cta-date-end').value = today;
+  document.getElementById('arb-date-start').value = '2026-01-01';
+  document.getElementById('arb-date-end').value = today;
+}
+
+// ============================================
+// Tab switching
+// ============================================
+function switchTab(tab) {
+  const ctaCfg = document.getElementById('cta-config');
+  const arbCfg = document.getElementById('arb-config');
+  const tabCta = document.getElementById('tab-cta');
+  const tabArb = document.getElementById('tab-arb');
+  const subtitle = document.getElementById('sidebar-subtitle');
+
+  if (tab === 'cta') {
+    ctaCfg.classList.remove('hidden');
+    arbCfg.classList.add('hidden');
+    tabCta.classList.add('active');
+    tabArb.classList.remove('active');
+    subtitle.textContent = 'CTA 趋势追踪 · 单标的';
+    document.getElementById('label-top').textContent = '标的走势 + 开仓标记';
+  } else {
+    ctaCfg.classList.add('hidden');
+    arbCfg.classList.remove('hidden');
+    tabCta.classList.remove('active');
+    tabArb.classList.add('active');
+    subtitle.textContent = '价差套利 · 双标的';
+    document.getElementById('label-top').textContent = '价差走势 + 开仓标记';
+  }
+  // 清空图表
+  clearCharts();
+}
+
+function toggleCtaParams() {
+  const sig = document.getElementById('cta-signal').value;
+  document.getElementById('ma-params').classList.toggle('hidden', sig !== 'ma');
+  document.getElementById('bb-params').classList.toggle('hidden', sig !== 'bb');
+}
+
+// ============================================
+// Backtest Engine
+// ============================================
+
+/**
+ * 计算简单移动平均
+ */
+function sma(values, window) {
+  const result = new Array(values.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i];
+    if (i >= window) sum -= values[i - window];
+    if (i >= window - 1) result[i] = sum / window;
+  }
+  return result;
+}
+
+/**
+ * 计算滚动标准差
+ */
+function rollingStd(values, window) {
+  const result = new Array(values.length).fill(null);
+  const ma = sma(values, window);
+  for (let i = window - 1; i < values.length; i++) {
+    let sumSq = 0;
+    for (let j = i - window + 1; j <= i; j++) {
+      sumSq += Math.pow(values[j] - ma[i], 2);
+    }
+    result[i] = Math.sqrt(sumSq / window);
+  }
+  return result;
+}
+
+/**
+ * 对齐两条序列到共同日期
+ */
+function alignSeries(targetA, targetB) {
+  const mapA = {};
+  targetA.dates.forEach((d, i) => { mapA[d] = targetA.values[i]; });
+  const mapB = {};
+  targetB.dates.forEach((d, i) => { mapB[d] = targetB.values[i]; });
+  const commonDates = targetA.dates.filter(d => d in mapB && mapA[d] != null && mapB[d] != null);
+  return {
+    dates: commonDates,
+    valuesA: commonDates.map(d => mapA[d]),
+    valuesB: commonDates.map(d => mapB[d]),
+  };
+}
+
+/**
+ * 过滤日期范围
+ */
+function filterByDate(dates, arrays, startDate, endDate) {
+  const start = startDate || '1900-01-01';
+  const end = endDate || '2999-12-31';
+  const indices = [];
+  for (let i = 0; i < dates.length; i++) {
+    if (dates[i] >= start && dates[i] <= end) indices.push(i);
+  }
+  const newDates = indices.map(i => dates[i]);
+  const newArrays = arrays.map(arr => indices.map(i => arr[i]));
+  return { dates: newDates, arrays: newArrays };
+}
+
+/**
+ * CTA 回测
+ * @param {Array} values - 标的值序列（收益率%）
+ * @param {Array} dates - 日期序列
+ * @param {Object} params - {signal, maFast, maSlow, bbWindow, bbWidth, allowShort, reverse, cost}
+ * @returns {Object} {signals, positions, dailyPnl, equity, drawdown, trades, kpi}
+ */
+function ctaBacktest(values, dates, params) {
+  const n = values.length;
+  if (n < 30) return null;
+
+  // 1. 计算指标
+  let fastLine, slowLine, upperBand, lowerBand, midLine;
+  if (params.signal === 'ma') {
+    fastLine = sma(values, params.maFast);
+    slowLine = sma(values, params.maSlow);
+  } else {
+    midLine = sma(values, params.bbWindow);
+    const std = rollingStd(values, params.bbWindow);
+    upperBand = midLine.map((m, i) => m != null ? m + params.bbWidth * std[i] : null);
+    lowerBand = midLine.map((m, i) => m != null ? m - params.bbWidth * std[i] : null);
+  }
+
+  // 2. 生成信号
+  // 信号方向：+1 做多, -1 做空, 0 空仓
+  const rawSignals = new Array(n).fill(0);
+  let position = 0;  // 当前持仓方向
+
+  for (let i = 1; i < n; i++) {
+    if (params.signal === 'ma') {
+      if (fastLine[i] == null || slowLine[i] == null ||
+          fastLine[i-1] == null || slowLine[i-1] == null) {
+        rawSignals[i] = position;
+        continue;
+      }
+      // 快线上穿慢线 → 做多
+      const crossUp = fastLine[i-1] <= slowLine[i-1] && fastLine[i] > slowLine[i];
+      // 快线下穿慢线 → 做空/平仓
+      const crossDown = fastLine[i-1] >= slowLine[i-1] && fastLine[i] < slowLine[i];
+
+      if (crossUp) {
+        position = params.allowShort ? 1 : 1;
+      } else if (crossDown) {
+        position = params.allowShort ? -1 : 0;
+      }
+      rawSignals[i] = position;
+    } else {
+      // 布林带
+      if (upperBand[i] == null || lowerBand[i] == null || midLine[i] == null) {
+        rawSignals[i] = position;
+        continue;
+      }
+      // 收盘价上穿上轨 → 做多
+      const breakUp = values[i] > upperBand[i] && values[i-1] <= upperBand[i-1];
+      // 收盘价下穿下轨 → 做空
+      const breakDown = values[i] < lowerBand[i] && values[i-1] >= lowerBand[i-1];
+      // 回到中轨 → 平仓
+      const backToMid = (position === 1 && values[i] < midLine[i]) ||
+                        (position === -1 && values[i] > midLine[i]);
+
+      if (breakUp) {
+        position = 1;
+      } else if (breakDown && params.allowShort) {
+        position = -1;
+      } else if (backToMid) {
+        position = 0;
+      }
+      rawSignals[i] = position;
+    }
+  }
+
+  // 3. 反向处理
+  const signals = params.reverse ? rawSignals.map(s => -s) : rawSignals;
+
+  // 4. 计算盈亏
+  // 信号 T 日收盘生成 → T 日收盘执行
+  // 持仓：用今日信号方向，持仓过夜，明日盈亏 = (明日收盘 - 今日收盘) × 方向 × 100
+  // 但用户要求 T 日收盘执行，所以盈亏从信号当日开始算
+  // 即：position[i] 在 i 日收盘时建仓，i+1 日的盈亏 = (values[i+1] - values[i]) × position[i] × 100
+  const dailyPnl = new Array(n).fill(0);
+  const positions = new Array(n).fill(0);
+  let tradeCost = 0;
+
+  for (let i = 1; i < n; i++) {
+    // 昨日持仓方向决定今日盈亏
+    const prevPos = signals[i - 1];
+    positions[i] = signals[i];
+    const change = (values[i] - values[i - 1]) * 100;  // bp
+    dailyPnl[i] = change * prevPos;
+
+    // 交易成本：方向变化时扣除
+    if (signals[i] !== signals[i - 1]) {
+      dailyPnl[i] -= params.cost;
+      tradeCost += params.cost;
+    }
+  }
+
+  // 5. 净值（累计bp）
+  const equity = new Array(n).fill(0);
+  let cum = 0;
+  for (let i = 0; i < n; i++) {
+    cum += dailyPnl[i];
+    equity[i] = cum;
+  }
+
+  // 6. 回撤
+  const drawdown = new Array(n).fill(0);
+  let peak = 0;
+  for (let i = 0; i < n; i++) {
+    peak = Math.max(peak, equity[i]);
+    drawdown[i] = equity[i] - peak;
+  }
+
+  // 7. 交易明细
+  const trades = [];
+  let tradeOpen = null;
+  for (let i = 0; i < n; i++) {
+    if (signals[i] !== 0 && (i === 0 || signals[i - 1] !== signals[i])) {
+      // 开仓
+      tradeOpen = {
+        direction: signals[i],
+        openDate: dates[i],
+        openValue: values[i],
+        openIdx: i,
+      };
+    }
+    if (tradeOpen && (signals[i] === 0 || i === n - 1 || signals[i + 1] !== signals[i])) {
+      // 平仓（当前持仓方向即将改变或结束）
+      if (signals[i] !== 0 || i === n - 1) {
+        const closeIdx = signals[i] === 0 ? i : (i === n - 1 ? i : i);
+        // 如果下一天方向改变，今天还是旧方向，平仓价用今天的收盘
+        const closeValue = values[closeIdx];
+        const pnl = (closeValue - tradeOpen.openValue) * tradeOpen.direction * 100 - params.cost * 2;
+        trades.push({
+          direction: tradeOpen.direction,
+          openDate: tradeOpen.openDate,
+          openValue: tradeOpen.openValue,
+          closeDate: dates[closeIdx],
+          closeValue: closeValue,
+          days: closeIdx - tradeOpen.openIdx,
+          pnl: pnl,
+        });
+        tradeOpen = null;
+      }
+    }
+  }
+
+  // 8. KPI
+  const totalPnl = equity[n - 1];
+  const tradingDays = n;
+  const annualPnl = totalPnl / tradingDays * 252;
+  const maxDd = Math.min(...drawdown);
+  const dailyReturns = dailyPnl.slice(1).filter(v => v !== 0);
+  const meanRet = dailyReturns.reduce((a, b) => a + b, 0) / (dailyReturns.length || 1);
+  const stdRet = Math.sqrt(dailyReturns.reduce((a, b) => a + (b - meanRet) ** 2, 0) / (dailyReturns.length || 1));
+  const sharpe = stdRet > 0 ? (meanRet / stdRet) * Math.sqrt(252) : 0;
+  const winTrades = trades.filter(t => t.pnl > 0).length;
+  const winRate = trades.length > 0 ? (winTrades / trades.length * 100) : 0;
+
+  return {
+    signals, positions, dailyPnl, equity, drawdown, trades,
+    kpi: {
+      total: totalPnl,
+      annual: annualPnl,
+      maxDd: maxDd,
+      sharpe: sharpe,
+      winRate: winRate,
+      tradeCount: trades.length,
+      cost: tradeCost,
+    },
+    indicators: { fastLine, slowLine, upperBand, lowerBand, midLine },
+  };
+}
+
+/**
+ * 套利回测
+ */
+function arbBacktest(spreadValues, dates, params) {
+  const n = spreadValues.length;
+  if (n < 30) return null;
+
+  // 1. 价差的快慢均线
+  const fastLine = sma(spreadValues, params.maFast);
+  const slowLine = sma(spreadValues, params.maSlow);
+
+  // 2. 信号
+  const rawSignals = new Array(n).fill(0);
+  let position = 0;
+
+  for (let i = 1; i < n; i++) {
+    if (fastLine[i] == null || slowLine[i] == null ||
+        fastLine[i-1] == null || slowLine[i-1] == null) {
+      rawSignals[i] = position;
+      continue;
+    }
+    const crossUp = fastLine[i-1] <= slowLine[i-1] && fastLine[i] > slowLine[i];
+    const crossDown = fastLine[i-1] >= slowLine[i-1] && fastLine[i] < slowLine[i];
+
+    if (crossUp) {
+      position = 1;  // 做多价差（多A空B）
+    } else if (crossDown) {
+      position = params.allowShort ? -1 : 0;  // 做空价差
+    }
+    rawSignals[i] = position;
+  }
+
+  const signals = rawSignals;
+
+  // 3. 盈亏
+  // 价差变化 = (A[i] - B[i]) - (A[i-1] - B[i-1])
+  // 但我们直接用 spreadValues
+  // 做多价差：价差扩大赚钱
+  const dailyPnl = new Array(n).fill(0);
+  const positions = new Array(n).fill(0);
+  let tradeCost = 0;
+
+  for (let i = 1; i < n; i++) {
+    const prevPos = signals[i - 1];
+    positions[i] = signals[i];
+    const spreadChange = (spreadValues[i] - spreadValues[i - 1]) * 100;  // bp
+    dailyPnl[i] = spreadChange * prevPos;
+
+    if (signals[i] !== signals[i - 1]) {
+      dailyPnl[i] -= params.cost;
+      tradeCost += params.cost;
+    }
+  }
+
+  // 4-8. 同 CTA
+  const equity = new Array(n).fill(0);
+  let cum = 0;
+  for (let i = 0; i < n; i++) {
+    cum += dailyPnl[i];
+    equity[i] = cum;
+  }
+
+  const drawdown = new Array(n).fill(0);
+  let peak = 0;
+  for (let i = 0; i < n; i++) {
+    peak = Math.max(peak, equity[i]);
+    drawdown[i] = equity[i] - peak;
+  }
+
+  const trades = [];
+  let tradeOpen = null;
+  for (let i = 0; i < n; i++) {
+    if (signals[i] !== 0 && (i === 0 || signals[i - 1] !== signals[i])) {
+      tradeOpen = {
+        direction: signals[i],
+        openDate: dates[i],
+        openValue: spreadValues[i],
+        openIdx: i,
+      };
+    }
+    if (tradeOpen && (signals[i] === 0 || i === n - 1 || signals[i + 1] !== signals[i])) {
+      if (signals[i] !== 0 || i === n - 1) {
+        const closeIdx = signals[i] === 0 ? i : (i === n - 1 ? i : i);
+        const closeValue = spreadValues[closeIdx];
+        const pnl = (closeValue - tradeOpen.openValue) * tradeOpen.direction * 100 - params.cost * 2;
+        trades.push({
+          direction: tradeOpen.direction,
+          openDate: tradeOpen.openDate,
+          openValue: tradeOpen.openValue,
+          closeDate: dates[closeIdx],
+          closeValue: closeValue,
+          days: closeIdx - tradeOpen.openIdx,
+          pnl: pnl,
+        });
+        tradeOpen = null;
+      }
+    }
+  }
+
+  const totalPnl = equity[n - 1];
+  const tradingDays = n;
+  const annualPnl = totalPnl / tradingDays * 252;
+  const maxDd = Math.min(...drawdown);
+  const dailyReturns = dailyPnl.slice(1).filter(v => v !== 0);
+  const meanRet = dailyReturns.reduce((a, b) => a + b, 0) / (dailyReturns.length || 1);
+  const stdRet = Math.sqrt(dailyReturns.reduce((a, b) => a + (b - meanRet) ** 2, 0) / (dailyReturns.length || 1));
+  const sharpe = stdRet > 0 ? (meanRet / stdRet) * Math.sqrt(252) : 0;
+  const winTrades = trades.filter(t => t.pnl > 0).length;
+  const winRate = trades.length > 0 ? (winTrades / trades.length * 100) : 0;
+
+  return {
+    signals, positions, dailyPnl, equity, drawdown, trades,
+    kpi: {
+      total: totalPnl,
+      annual: annualPnl,
+      maxDd: maxDd,
+      sharpe: sharpe,
+      winRate: winRate,
+      tradeCount: trades.length,
+      cost: tradeCost,
+    },
+    indicators: { fastLine, slowLine },
+  };
+}
+
+// ============================================
+// Run Backtest
+// ============================================
+function runCtaBacktest() {
+  const targetName = document.getElementById('cta-target').value;
+  const target = allTargets.find(t => t.name === targetName);
+  if (!target) return alert('找不到标的');
+
+  const params = {
+    signal: document.getElementById('cta-signal').value,
+    maFast: parseInt(document.getElementById('ma-fast').value),
+    maSlow: parseInt(document.getElementById('ma-slow').value),
+    bbWindow: parseInt(document.getElementById('bb-window').value),
+    bbWidth: parseFloat(document.getElementById('bb-width').value),
+    allowShort: document.getElementById('cta-allow-short').checked,
+    reverse: document.getElementById('cta-reverse').checked,
+    cost: parseFloat(document.getElementById('cta-cost').value) || 0,
+  };
+
+  if (params.maFast >= params.maSlow) {
+    return alert('快线窗口应小于慢线窗口');
+  }
+
+  const startDate = document.getElementById('cta-date-start').value;
+  const endDate = document.getElementById('cta-date-end').value;
+
+  // 过滤日期
+  const { dates, arrays } = filterByDate(target.dates, [target.values], startDate, endDate);
+  if (dates.length < 30) return alert('数据不足 30 天，无法回测');
+
+  const values = arrays[0];
+  const result = ctaBacktest(values, dates, params);
+  if (!result) return alert('回测失败');
+
+  renderResults(result, dates, values, params, 'cta', target, null);
+}
+
+function runArbBacktest() {
+  const nameA = document.getElementById('arb-target-a').value;
+  const nameB = document.getElementById('arb-target-b').value;
+  if (nameA === nameB) return alert('请选择两个不同的标的');
+
+  const targetA = allTargets.find(t => t.name === nameA);
+  const targetB = allTargets.find(t => t.name === nameB);
+  if (!targetA || !targetB) return alert('找不到标的');
+
+  const params = {
+    maFast: parseInt(document.getElementById('arb-ma-fast').value),
+    maSlow: parseInt(document.getElementById('arb-ma-slow').value),
+    allowShort: document.getElementById('arb-allow-short').checked,
+    cost: parseFloat(document.getElementById('arb-cost').value) || 0,
+  };
+
+  if (params.maFast >= params.maSlow) {
+    return alert('快线窗口应小于慢线窗口');
+  }
+
+  const startDate = document.getElementById('arb-date-start').value;
+  const endDate = document.getElementById('arb-date-end').value;
+
+  // 对齐序列
+  const aligned = alignSeries(targetA, targetB);
+  const { dates, arrays } = filterByDate(aligned.dates, [aligned.valuesA, aligned.valuesB], startDate, endDate);
+  if (dates.length < 30) return alert('共同日期不足 30 天，无法回测');
+
+  const spreadValues = arrays[0].map((a, i) => a - arrays[1][i]);
+  const result = arbBacktest(spreadValues, dates, params);
+  if (!result) return alert('回测失败');
+
+  renderResults(result, dates, spreadValues, params, 'arb', targetA, targetB);
+}
+
+// ============================================
+// Render Results
+// ============================================
+function renderResults(result, dates, values, params, mode, targetA, targetB) {
+  // 隐藏 no-data
+  document.getElementById('no-data').style.display = 'none';
+
+  // KPI
+  const kpi = result.kpi;
+  const fmt = (v, suffix = '') => v != null && !isNaN(v) ? v.toFixed(1) + suffix : '--';
+  const setKpi = (id, val, cls) => {
+    const el = document.getElementById(id);
+    el.textContent = val;
+    el.className = 'kpi-value' + (cls ? ' ' + cls : '');
+  };
+  setKpi('kpi-total', fmt(kpi.total, ' bp'), kpi.total >= 0 ? 'pos' : 'neg');
+  setKpi('kpi-annual', fmt(kpi.annual, ' bp'), kpi.annual >= 0 ? 'pos' : 'neg');
+  setKpi('kpi-dd', fmt(kpi.maxDd, ' bp'), 'neg');
+  setKpi('kpi-sharpe', fmt(kpi.sharpe));
+  setKpi('kpi-winrate', fmt(kpi.winRate, '%'));
+  setKpi('kpi-trades', kpi.tradeCount);
+
+  // Chart 1: 标的/价差走势 + 开仓标记
+  renderPriceChart(dates, values, result, params, mode);
+
+  // Chart 2: 净值曲线
+  renderEquityChart(dates, result.equity);
+
+  // Chart 3: 回撤
+  renderDdChart(dates, result.drawdown);
+
+  // 交易明细
+  renderTradeTable(result.trades);
+}
+
+function renderPriceChart(dates, values, result, params, mode) {
+  if (chartPrice) chartPrice.destroy();
+  const ctx = document.getElementById('chart-price');
+
+  const datasets = [{
+    label: mode === 'cta' ? '标的收益率 (%)' : '价差 (%)',
+    data: values,
+    borderColor: '#5470c6',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    pointRadius: 0,
+    tension: 0.15,
+  }];
+
+  // 均线
+  if (result.indicators.fastLine) {
+    datasets.push({
+      label: '快线',
+      data: result.indicators.fastLine,
+      borderColor: '#ee6666',
+      borderWidth: 1,
+      borderDash: [3, 3],
+      pointRadius: 0,
+      tension: 0.15,
+    });
+    datasets.push({
+      label: '慢线',
+      data: result.indicators.slowLine,
+      borderColor: '#91cc75',
+      borderWidth: 1,
+      borderDash: [3, 3],
+      pointRadius: 0,
+      tension: 0.15,
+    });
+  }
+  if (result.indicators.upperBand) {
+    datasets.push({
+      label: '上轨',
+      data: result.indicators.upperBand,
+      borderColor: '#ee666680',
+      borderWidth: 1,
+      pointRadius: 0,
+      tension: 0.15,
+    });
+    datasets.push({
+      label: '中轨',
+      data: result.indicators.midLine,
+      borderColor: '#fac858',
+      borderWidth: 1,
+      pointRadius: 0,
+      tension: 0.15,
+    });
+    datasets.push({
+      label: '下轨',
+      data: result.indicators.lowerBand,
+      borderColor: '#91cc7580',
+      borderWidth: 1,
+      pointRadius: 0,
+      tension: 0.15,
+    });
+  }
+
+  // 开仓标记
+  const longOpens = [], shortOpens = [], closes = [];
+  const sigs = result.signals;
+  for (let i = 0; i < sigs.length; i++) {
+    if (i === 0) continue;
+    if (sigs[i] === 1 && sigs[i-1] !== 1) {
+      longOpens.push({ x: dates[i], y: values[i] });
+    }
+    if (sigs[i] === -1 && sigs[i-1] !== -1) {
+      shortOpens.push({ x: dates[i], y: values[i] });
+    }
+    if (sigs[i] === 0 && sigs[i-1] !== 0) {
+      closes.push({ x: dates[i], y: values[i] });
+    }
+  }
+
+  datasets.push({
+    label: '做多开仓',
+    data: longOpens.map(p => p.y),
+    borderColor: 'transparent',
+    backgroundColor: '#ee6666',
+    pointStyle: 'triangle',
+    pointRadius: 6,
+    showLine: false,
+  });
+  datasets.push({
+    label: '做空开仓',
+    data: shortOpens.map(p => p.y),
+    borderColor: 'transparent',
+    backgroundColor: '#91cc75',
+    pointStyle: 'crossRot',
+    pointRadius: 6,
+    showLine: false,
+  });
+
+  // 为开仓标记点对齐日期，需要用 scatter 类型
+  // 改用另一种方式：在 labels 中用 index，然后标记点按 index 对齐
+  // 这里简化处理：用解析的 index
+
+  chartPrice = new Chart(ctx, {
+    type: 'line',
+    data: { labels: dates, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { usePointStyle: true, pointStyleWidth: 8, padding: 10, font: { size: 10 } },
+        },
+        tooltip: {
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          titleColor: '#2c3e50', bodyColor: '#2c3e50',
+          borderColor: '#e8ecf1', borderWidth: 1, cornerRadius: 6, padding: 10,
+        },
+        zoom: {
+          zoom: {
+            wheel: { enabled: true, speed: 0.1 },
+            pinch: { enabled: true },
+            mode: 'x',
+          },
+          pan: { enabled: true, mode: 'x' },
+          limits: { x: { minRange: 10 } },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 12 }, grid: { display: false } },
+        y: { ticks: { font: { size: 10 }, callback: v => v.toFixed(2) + '%' }, grid: { color: '#f0f0f0' } },
+      },
+      onClick: (e) => {
+        // 双击还原
+        if (e.detail === 2) chartPrice.resetZoom();
+      },
+    },
+  });
+}
+
+function renderEquityChart(dates, equity) {
+  if (chartEquity) chartEquity.destroy();
+  const ctx = document.getElementById('chart-equity');
+
+  chartEquity = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [{
+        label: '累计盈亏 (bp)',
+        data: equity,
+        borderColor: '#5470c6',
+        backgroundColor: 'rgba(84,112,198,0.1)',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: true,
+        tension: 0.15,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          titleColor: '#2c3e50', bodyColor: '#2c3e50',
+          borderColor: '#e8ecf1', borderWidth: 1, cornerRadius: 6, padding: 10,
+          callbacks: { label: ctx => `累计: ${ctx.parsed.y.toFixed(1)} bp` },
+        },
+        zoom: {
+          zoom: { wheel: { enabled: true, speed: 0.1 }, pinch: { enabled: true }, mode: 'x' },
+          pan: { enabled: true, mode: 'x' },
+          limits: { x: { minRange: 10 } },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 12 }, grid: { display: false } },
+        y: { ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + ' bp' }, grid: { color: '#f0f0f0' } },
+      },
+      onClick: (e) => { if (e.detail === 2) chartEquity.resetZoom(); },
+    },
+  });
+}
+
+function renderDdChart(dates, drawdown) {
+  if (chartDd) chartDd.destroy();
+  const ctx = document.getElementById('chart-dd');
+
+  chartDd = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [{
+        label: '回撤 (bp)',
+        data: drawdown,
+        borderColor: '#ee6666',
+        backgroundColor: 'rgba(238,102,102,0.15)',
+        borderWidth: 1,
+        pointRadius: 0,
+        fill: true,
+        tension: 0.15,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          callbacks: { label: ctx => `回撤: ${ctx.parsed.y.toFixed(1)} bp` },
+        },
+        zoom: {
+          zoom: { wheel: { enabled: true, speed: 0.1 }, pinch: { enabled: true }, mode: 'x' },
+          pan: { enabled: true, mode: 'x' },
+          limits: { x: { minRange: 10 } },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 12 }, grid: { display: false } },
+        y: { ticks: { font: { size: 10 }, callback: v => v.toFixed(0) }, grid: { color: '#f0f0f0' } },
+      },
+      onClick: (e) => { if (e.detail === 2) chartDd.resetZoom(); },
+    },
+  });
+}
+
+function renderTradeTable(trades) {
+  const tbody = document.getElementById('trade-tbody');
+  tbody.innerHTML = '';
+  if (trades.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:12px">无交易记录</td></tr>';
+    return;
+  }
+  // 倒序显示（最新在上）
+  trades.slice().reverse().forEach(t => {
+    const dirText = t.direction === 1 ? '多' : '空';
+    const dirColor = t.direction === 1 ? '#ee6666' : '#91cc75';
+    const pnlColor = t.pnl >= 0 ? '#91cc75' : '#ee6666';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="color:${dirColor};font-weight:600">${dirText}</td>
+      <td>${t.openDate}</td>
+      <td>${t.openValue.toFixed(3)}%</td>
+      <td>${t.closeDate}</td>
+      <td>${t.closeValue.toFixed(3)}%</td>
+      <td>${t.days}</td>
+      <td style="color:${pnlColor};font-weight:600">${t.pnl.toFixed(1)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function clearCharts() {
+  if (chartPrice) { chartPrice.destroy(); chartPrice = null; }
+  if (chartEquity) { chartEquity.destroy(); chartEquity = null; }
+  if (chartDd) { chartDd.destroy(); chartDd = null; }
+  ['kpi-total','kpi-annual','kpi-dd','kpi-sharpe','kpi-winrate','kpi-trades'].forEach(id => {
+    const el = document.getElementById(id);
+    el.textContent = '--';
+    el.className = 'kpi-value';
+  });
+  document.getElementById('no-data').style.display = 'flex';
+  document.getElementById('trade-tbody').innerHTML = '';
+}
+
+// ============================================
+// Reset
+// ============================================
+function resetCta() {
+  document.getElementById('cta-signal').value = 'ma';
+  document.getElementById('ma-fast').value = 5;
+  document.getElementById('ma-slow').value = 20;
+  document.getElementById('bb-window').value = 20;
+  document.getElementById('bb-width').value = 2;
+  document.getElementById('cta-allow-short').checked = true;
+  document.getElementById('cta-reverse').checked = false;
+  document.getElementById('cta-cost').value = 0;
+  toggleCtaParams();
+}
+
+function resetArb() {
+  document.getElementById('arb-ma-fast').value = 5;
+  document.getElementById('arb-ma-slow').value = 20;
+  document.getElementById('arb-allow-short').checked = true;
+  document.getElementById('arb-cost').value = 0;
+}
+
+// ============================================
+// Start
+// ============================================
+init();
+</script>
+</body>
+</html>

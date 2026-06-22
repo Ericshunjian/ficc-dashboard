@@ -19,6 +19,7 @@
     --accent2: #ee6666;
     --accent3: #91cc75;
     --accent4: #73c0de;
+    --accent5: #fac858;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -54,11 +55,28 @@
     color: var(--text-secondary);
     line-height: 1.6;
   }
+  .header .stats {
+    margin-top: 16px;
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .header .stats span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .header .stats .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent1);
+  }
 
   /* Card Grid */
   .card-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 20px;
   }
 
@@ -97,6 +115,7 @@
   .card-2 { --accent: var(--accent2); }
   .card-3 { --accent: var(--accent3); }
   .card-4 { --accent: var(--accent4); }
+  .card-5 { --accent: var(--accent5); }
 
   .card-icon {
     font-size: 40px;
@@ -170,7 +189,7 @@
   @media (max-width: 1024px) {
     .card-grid { grid-template-columns: repeat(2, 1fr); }
   }
-  @media (max-width: 768px) {
+  @media (max-width: 640px) {
     .card-grid { grid-template-columns: 1fr; }
     .header h1 { font-size: 28px; }
     .container { padding: 40px 20px; }
@@ -182,7 +201,7 @@
 <div class="container">
   <div class="header">
     <h1>FICC 辅助分析平台</h1>
-    <p>面向 FICC 从业者的债券投研工具集 · 机构行为 / 个券利差 / 因子分析</p>
+    <p>面向 FICC 从业者的债券投研工具集 · 机构行为 / 个券利差 / 因子分析 / 量化回测</p>
   </div>
 
   <div class="card-grid">
@@ -230,6 +249,18 @@
       </div>
       <div class="card-meta">
         <span>数据：FICC 衍生品与收益率曲线</span>
+        <span class="arrow">进入 →</span>
+      </div>
+    </a>
+
+    <a class="card card-5" href="backtest_dashboard.html">
+      <div class="card-icon">⚡</div>
+      <div class="card-title">量化策略回测</div>
+      <div class="card-desc">
+        CTA 趋势追踪（双均线/布林带）与价差套利（双均线趋势），支持自定义参数回测，输出净值、回撤、夏普等指标。
+      </div>
+      <div class="card-meta">
+        <span>数据：收益率曲线 + 个券</span>
         <span class="arrow">进入 →</span>
       </div>
     </a>
