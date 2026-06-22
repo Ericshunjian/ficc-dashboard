@@ -22,6 +22,7 @@ import re
 import subprocess
 import logging
 from datetime import datetime, date
+from pathlib import Path
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BOND_DATA_EXCEL = r"C:\Users\lihaoran\Documents\工作\现券交易\bond_data.xlsx"
@@ -692,7 +693,69 @@ def main():
              f"曲线={'成功' if ok3 else '失败'}, "
              f"合并={'成功' if ok4 else '失败'}, "
              f"因子={'成功' if ok5 else '失败'}")
+
+    # 数据有更新则 commit + push
+    if ok1 or ok2 or ok3 or ok5:
+        try:
+            log.info("推送数据到 Gitee...")
+            git_push_data()
+        except Exception as e:
+            log.warning(f"Git push 失败（不影响本地数据）: {e}")
+
     return ok0 and ok1 and ok2 and ok3 and ok4 and ok5
+
+
+def git_push_data():
+    """commit 并 push 更新的 JSON 数据到 Gitee"""
+    repo_dir = Path(SCRIPT_DIR)
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    # 设置环境变量避免 git 卡在凭据输入
+    env = os.environ.copy()
+    env['GIT_TERMINAL_PROMPT'] = '0'
+
+    def run_git(*args):
+        result = subprocess.run(
+            ['git'] + list(args),
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            log.warning(f"  git {args[0]} 返回码 {result.returncode}: {result.stderr[:200]}")
+        return result.returncode == 0
+
+    # add JSON 数据文件
+    json_files = [
+        'bond_trading_data.json',
+        'bond_yield_data.json',
+        'yield_curve_data.json',
+        'factor_data.json',
+    ]
+    for f in json_files:
+        run_git('add', f)
+
+    # 检查是否有变化
+    result = subprocess.run(
+        ['git', 'diff', '--cached', '--quiet'],
+        cwd=repo_dir, capture_output=True, text=True, env=env,
+    )
+    if result.returncode == 0:
+        log.info("  无数据变化，跳过 push")
+        return
+
+    # commit
+    if not run_git('commit', '-m', f'data: {today_str} 每日数据更新'):
+        log.warning("  commit 失败")
+        return
+
+    # push
+    if run_git('push', 'origin', 'main'):
+        log.info("  推送成功")
+    else:
+        log.warning("  push 失败，请检查凭据配置")
 
 
 if __name__ == "__main__":
