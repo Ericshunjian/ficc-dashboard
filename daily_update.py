@@ -1,15 +1,25 @@
 """
-每日定时更新债券交易数据 + FICC 现券收益率数据 + 收益率曲线数据
+每日定时更新债券交易数据 + FICC 现券收益率数据 + 收益率曲线数据 + 因子数据
 - bond_data.xlsx → bond_trading_data.json（机构行为）
 - FICC原始数据（现券）.xlsx → bond_yield_data.json（个券收益率）
 - FICC原始数据（衍生品、收益率曲线）.xlsx → yield_curve_data.json（收益率曲线走势）
-- 仅当对应 xlsx 修改时间是今天时才处理该数据源
+- 增量更新合并数据 → bond_trading_data_merged.json
+- 因子计算 → factor_data.json
+
+执行顺序：
+  [0] 先运行用户的 现券数据处理_2026.py，从原始日报生成 bond_data.xlsx
+  [1] 机构行为数据
+  [2] FICC 现券收益率
+  [3] 收益率曲线
+  [4] 增量更新合并数据
+  [5] 因子计算
 """
 import pandas as pd
 import json
 import os
 import sys
 import re
+import subprocess
 import logging
 from datetime import datetime, date
 
@@ -21,7 +31,13 @@ FICC_OUTPUT = os.path.join(SCRIPT_DIR, "bond_yield_data.json")
 CURVE_EXCEL = r"D:\工作1\研究课题\收益率曲线\FICC原始数据（衍生品、收益率曲线）.xlsx"
 CURVE_OUTPUT = os.path.join(SCRIPT_DIR, "yield_curve_data.json")
 FACTOR_OUTPUT = os.path.join(SCRIPT_DIR, "factor_data.json")
+FACTOR_MERGED_DATA = os.path.join(SCRIPT_DIR, "bond_trading_data_merged.json")
 LOG_PATH = os.path.join(SCRIPT_DIR, "daily_update.log")
+
+# 用户预处理脚本：从原始日报生成 bond_data.xlsx
+USER_PREPROCESS_SCRIPT = r"C:\Users\lihaoran\Documents\工作\现券交易\2026年交易\现券数据处理_2026.py"
+USER_PREPROCESS_CWD = r"C:\Users\lihaoran\Documents\工作\现券交易\2026年交易"
+PYTHON_EXE = r"C:\Users\lihaoran\AppData\Local\Programs\Python\Python313\python.exe"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -575,13 +591,63 @@ def update_factor_data():
     return True
 
 
+def run_user_preprocess():
+    """运行用户的预处理脚本，从原始日报生成 bond_data.xlsx"""
+    if not os.path.exists(USER_PREPROCESS_SCRIPT):
+        log.warning(f"用户预处理脚本不存在: {USER_PREPROCESS_SCRIPT}")
+        return False
+    if not os.path.exists(PYTHON_EXE):
+        log.warning(f"Python 解释器不存在: {PYTHON_EXE}")
+        return False
+
+    log.info(f"  运行用户预处理脚本: {os.path.basename(USER_PREPROCESS_SCRIPT)}")
+    log.info(f"  工作目录: {USER_PREPROCESS_CWD}")
+    try:
+        result = subprocess.run(
+            [PYTHON_EXE, USER_PREPROCESS_SCRIPT],
+            cwd=USER_PREPROCESS_CWD,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 分钟超时
+            encoding='utf-8',
+            errors='replace',
+        )
+        if result.returncode == 0:
+            log.info("  用户预处理脚本执行成功")
+            # 打印最后几行输出
+            if result.stdout:
+                lines = result.stdout.strip().split('\n')
+                for line in lines[-5:]:
+                    log.info(f"    [用户脚本] {line}")
+            return True
+        else:
+            log.error(f"  用户预处理脚本失败 (返回码 {result.returncode})")
+            if result.stderr:
+                log.error(f"  错误输出: {result.stderr[-500:]}")
+            return False
+    except subprocess.TimeoutExpired:
+        log.error("  用户预处理脚本超时（5分钟）")
+        return False
+    except Exception as e:
+        log.exception(f"  运行用户预处理脚本异常: {e}")
+        return False
+
+
 def main():
     log.info("=" * 50)
     log.info("每日数据更新任务启动")
 
+    ok0 = True
+    try:
+        log.info("[0/5] 运行用户预处理脚本 (现券数据处理_2026.py)")
+        ok0 = run_user_preprocess()
+    except Exception as e:
+        log.exception(f"用户预处理脚本异常: {e}")
+        ok0 = False
+
     ok1 = True
     try:
-        log.info("[1/4] 机构行为数据 (bond_data.xlsx)")
+        log.info("[1/5] 机构行为数据 (bond_data.xlsx)")
         ok1 = update_bond_trading_data()
     except Exception as e:
         log.exception(f"机构行为数据处理失败: {e}")
@@ -589,7 +655,7 @@ def main():
 
     ok2 = True
     try:
-        log.info("[2/4] FICC 现券收益率 (FICC原始数据（现券）.xlsx)")
+        log.info("[2/5] FICC 现券收益率 (FICC原始数据（现券）.xlsx)")
         ok2 = update_ficc_yield_data()
     except Exception as e:
         log.exception(f"FICC 数据处理失败: {e}")
@@ -597,7 +663,7 @@ def main():
 
     ok3 = True
     try:
-        log.info("[3/4] 收益率曲线 (FICC原始数据（衍生品、收益率曲线）.xlsx)")
+        log.info("[3/5] 收益率曲线 (FICC原始数据（衍生品、收益率曲线）.xlsx)")
         ok3 = update_yield_curve_data()
     except Exception as e:
         log.exception(f"收益率曲线数据处理失败: {e}")
@@ -620,12 +686,13 @@ def main():
         ok5 = False
 
     log.info("=" * 50)
-    log.info(f"完成: 机构行为={'成功' if ok1 else '失败'}, "
+    log.info(f"完成: 预处理={'成功' if ok0 else '失败'}, "
+             f"机构行为={'成功' if ok1 else '失败'}, "
              f"FICC={'成功' if ok2 else '失败'}, "
              f"曲线={'成功' if ok3 else '失败'}, "
              f"合并={'成功' if ok4 else '失败'}, "
              f"因子={'成功' if ok5 else '失败'}")
-    return ok1 and ok2 and ok3 and ok4 and ok5
+    return ok0 and ok1 and ok2 and ok3 and ok4 and ok5
 
 
 if __name__ == "__main__":
