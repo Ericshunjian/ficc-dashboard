@@ -302,6 +302,8 @@
     color: var(--text-secondary);
     font-size: 13px;
     gap: 8px;
+    pointer-events: none;
+    z-index: 5;
   }
   .no-data .icon { font-size: 32px; }
 
@@ -515,8 +517,8 @@
         <div class="chart-label" id="label-top">标的走势 + 开仓标记</div>
         <div class="chart-wrap"><canvas id="chart-price"></canvas></div>
         <div class="no-data" id="no-data">
-          <span class="icon">📊</span>
-          <span>选择标的和参数后点击"运行回测"</span>
+          <span class="icon">⏳</span>
+          <span id="no-data-text">正在加载数据...</span>
         </div>
       </div>
       <div class="chart-box flex-2">
@@ -567,6 +569,7 @@ let chartDd = null;
 // ============================================
 async function init() {
   try {
+    document.getElementById('no-data-text').textContent = '正在加载数据...';
     const [r1, r2] = await Promise.all([
       fetch('yield_curve_data.json?t=' + Date.now()),
       fetch('bond_yield_data.json?t=' + Date.now()),
@@ -577,9 +580,13 @@ async function init() {
     buildTargetPool();
     fillTargetSelectors();
     setDefaultDates();
+
+    document.getElementById('no-data-text').textContent = '选择标的和参数后点击"运行回测"';
+    document.getElementById('no-data').querySelector('.icon').textContent = '📊';
   } catch (err) {
     console.error('Init error:', err);
-    document.getElementById('no-data').querySelector('span:last-child').textContent =
+    document.getElementById('no-data').querySelector('.icon').textContent = '⚠️';
+    document.getElementById('no-data-text').textContent =
       '数据加载失败，请确认 JSON 文件已生成';
   }
 }
