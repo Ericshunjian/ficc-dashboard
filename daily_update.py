@@ -694,10 +694,10 @@ def main():
              f"合并={'成功' if ok4 else '失败'}, "
              f"因子={'成功' if ok5 else '失败'}")
 
-    # 数据有更新则 commit + push
+    # push 数据到 Gitee + GitCode
     if ok1 or ok2 or ok3 or ok5:
         try:
-            log.info("推送数据到 Gitee...")
+            log.info("推送数据到远程仓库...")
             git_push_data()
         except Exception as e:
             log.warning(f"Git push 失败（不影响本地数据）: {e}")
@@ -706,26 +706,31 @@ def main():
 
 
 def git_push_data():
-    """commit 并 push 更新的 JSON 数据到 Gitee"""
+    """commit 并 push 更新的 JSON 数据到 Gitee + GitCode"""
     repo_dir = Path(SCRIPT_DIR)
     today_str = datetime.now().strftime("%Y-%m-%d")
 
-    # 设置环境变量避免 git 卡在凭据输入
     env = os.environ.copy()
     env['GIT_TERMINAL_PROMPT'] = '0'
+    # 确保 SSH 使用正确的密钥
+    env['GIT_SSH_COMMAND'] = 'ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519'
 
     def run_git(*args):
-        result = subprocess.run(
-            ['git'] + list(args),
-            cwd=repo_dir,
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=60,
-        )
-        if result.returncode != 0:
-            log.warning(f"  git {args[0]} 返回码 {result.returncode}: {result.stderr[:200]}")
-        return result.returncode == 0
+        try:
+            result = subprocess.run(
+                ['git'] + list(args),
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=120,
+            )
+            if result.returncode != 0:
+                log.warning(f"  git {args[0]} 返回码 {result.returncode}: {result.stderr[:200]}")
+            return result.returncode == 0
+        except subprocess.TimeoutExpired:
+            log.warning(f"  git {args[0]} 超时")
+            return False
 
     # add JSON 数据文件
     json_files = [
@@ -751,11 +756,19 @@ def git_push_data():
         log.warning("  commit 失败")
         return
 
-    # push
+    # push 到 Gitee (origin)
+    log.info("  推送到 Gitee...")
     if run_git('push', 'origin', 'main'):
-        log.info("  推送成功")
+        log.info("  Gitee 推送成功")
     else:
-        log.warning("  push 失败，请检查凭据配置")
+        log.warning("  Gitee 推送失败")
+
+    # push 到 GitCode
+    log.info("  推送到 GitCode...")
+    if run_git('push', 'gitcode', 'main'):
+        log.info("  GitCode 推送成功")
+    else:
+        log.warning("  GitCode 推送失败")
 
 
 if __name__ == "__main__":
