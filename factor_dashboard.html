@@ -998,6 +998,7 @@ let sigDirection = 'down';
 let sigWindow = 1;
 let sigChartFactor = null;
 let sigChartEvent = null;
+let sigChartNav = null;
 
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1255,6 +1256,13 @@ function runSignalTest() {
       </div>
     </div>
     <div>
+      <div class="section-title"><span class="dot"></span>累计净值走势（按触发顺序累加收益）</div>
+      <div class="sig-chart-box">
+        <div class="sig-chart-label">每次触发视为一次交易，累计收益净值（初始=0）</div>
+        <div class="sig-chart-wrap"><canvas id="sig-chart-nav"></canvas></div>
+      </div>
+    </div>
+    <div>
       <div class="section-title"><span class="dot"></span>触发事件明细</div>
       <div class="sig-chart-box" style="overflow-x:auto">
         <table class="event-table">
@@ -1269,6 +1277,7 @@ function runSignalTest() {
 
   drawSigFactorChart(ff, events);
   drawSigEventChart(events, unit);
+  drawSigNavChart(events, unit);
 }
 
 function drawSigFactorChart(ff, events) {
@@ -1308,6 +1317,90 @@ function drawSigEventChart(events, unit) {
       scales: {
         x: { ticks: { font: { size: 9 }, maxRotation: 90, minRotation: 45 }, grid: { display: false } },
         y: { title: { display: true, text: `收益(${unit})` }, ticks: { font: { size: 10 } }, grid: { color: '#f0f0f0' } },
+      },
+    },
+  });
+}
+
+function drawSigNavChart(events, unit) {
+  if (sigChartNav) sigChartNav.destroy();
+  const ctx = document.getElementById('sig-chart-nav');
+  // 累计净值：初始 0，每次触发后累加 change（按有利方向归一化）
+  // 有利方向的收益 = isPrice ? (dir=up?change:change) : (dir=down? -change : change)
+  // 简化：直接用 favorable = isWin 对应的方向收益
+  // 但净值应反映实际盈亏，用 favorable 值（正=赚，负=亏）
+  let cum = 0;
+  const navData = [];
+  events.forEach(e => {
+    // favorable 已在 computeReturns 中定义：正=有利，负=不利
+    // 这里用 mfe 方向太乐观，改用 change 按方向归一化
+    const favorable = e.change * (e.isWin ? 1 : -1) >= 0
+      ? Math.abs(e.change) * (e.isWin ? 1 : -1)
+      : e.change;
+    // 更简单：直接用方向归一化的收益
+    // 对收益率类 dir=down：收益下行（change<0）= 赚 → favorable = -change
+    // 对收益率类 dir=up：收益上行（change>0）= 赚 → favorable = change
+    // 对价格类 dir=up：价格上行（change>0）= 赚 → favorable = change
+    // 对价格类 dir=down：价格下行（change<0）= 赚 → favorable = -change
+    let fav;
+    if (e.isWin) {
+      fav = Math.abs(e.change);
+    } else {
+      fav = -Math.abs(e.change);
+    }
+    cum += fav;
+    navData.push(+cum.toFixed(4));
+  });
+
+  sigChartNav = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: events.map(e => e.date),
+      datasets: [{
+        label: `累计净值 (${unit})`,
+        data: navData,
+        borderColor: '#5470c6',
+        backgroundColor: '#5470c620',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointBackgroundColor: events.map(e => e.isWin ? '#ef4444' : '#22c55e'),
+        pointBorderColor: events.map(e => e.isWin ? '#ef4444' : '#22c55e'),
+        tension: 0.1,
+        fill: true,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { usePointStyle: true, font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          callbacks: {
+            label: function(ctx) {
+              const idx = ctx.dataIndex;
+              const e = events[idx];
+              return [
+                `累计净值: ${(ctx.parsed.y>=0?'+':'')}${ctx.parsed.y.toFixed(2)} ${unit}`,
+                `本次收益: ${(e.change>=0?'+':'')}${e.change.toFixed(2)} ${unit} (${e.isWin?'胜':'负'})`,
+              ];
+            },
+          },
+        },
+        zoom: {
+          pan: { enabled: true, mode: 'x' },
+          zoom: { wheel: { enabled: true, speed: 0.1 }, mode: 'x',
+            onDoubleClick: function(c){ c.resetZoom(); return false; } },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 9 }, maxRotation: 90, minRotation: 45 }, grid: { display: false } },
+        y: {
+          title: { display: true, text: `累计净值 (${unit})` },
+          ticks: { font: { size: 10 }, callback: v => (v>=0?'+':'') + v.toFixed(2) },
+          grid: { color: '#f0f0f0' },
+        },
       },
     },
   });
