@@ -288,6 +288,63 @@
     padding: 8px 28px; font-size: 11px; color: var(--text-secondary);
     border-top: 1px solid var(--border); background: var(--panel-bg);
   }
+
+  /* Tab 切换 */
+  .tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--panel-bg); padding: 0 28px; }
+  .tab-btn { padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: none; color: var(--text-secondary); border-bottom: 2px solid transparent; transition: all .15s; font-family: inherit; }
+  .tab-btn:hover { color: var(--primary); }
+  .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .tab-content { display: none; }
+  .tab-content.active { display: flex; }
+
+  /* 信号检验配置区 */
+  .signal-config { background: var(--panel-bg); border-bottom: 1px solid var(--border); padding: 12px 28px; display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+  .signal-config .cfg-group { display: flex; flex-direction: column; gap: 4px; }
+  .signal-config .cfg-label { font-size: 11px; color: var(--text-secondary); font-weight: 600; }
+  .signal-config select, .signal-config input[type="number"] { padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--bg); outline: none; min-width: 90px; }
+  .signal-config select:focus, .signal-config input:focus { border-color: var(--primary); }
+  .sig-btn { padding: 6px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; background: var(--primary); color: #fff; transition: all .15s; font-family: inherit; }
+  .sig-btn:hover { background: #4458b0; }
+  .sig-btn-outline { background: var(--bg); color: var(--text-secondary); border: 1px solid var(--border); }
+  .sig-btn-outline:hover { color: var(--primary); border-color: var(--primary); background: var(--primary-light); }
+
+  .dir-toggle { display: flex; gap: 0; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+  .dir-toggle button { padding: 5px 10px; font-size: 11px; border: none; background: var(--bg); color: var(--text-secondary); cursor: pointer; transition: all .15s; white-space: nowrap; }
+  .dir-toggle button.active { background: var(--primary); color: #fff; }
+
+  .win-btn { padding: 4px 10px; border-radius: 12px; font-size: 11px; cursor: pointer; border: 1px solid var(--border); background: var(--bg); color: var(--text-secondary); transition: all .15s; }
+  .win-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .win-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+  /* 信号检验结果区 */
+  .signal-result { flex: 1; overflow-y: auto; padding: 16px 28px; display: flex; flex-direction: column; gap: 16px; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+  .kpi-grid .kpi-card { padding: 10px 14px; background: var(--bg); border-radius: 6px; text-align: center; }
+  .kpi-grid .kpi-card .kpi-label { font-size: 10px; color: var(--text-secondary); margin-bottom: 4px; }
+  .kpi-grid .kpi-card .kpi-value { font-size: 18px; font-weight: 700; }
+  .kpi-grid .kpi-card .kpi-sub { font-size: 10px; color: var(--text-secondary); margin-top: 2px; }
+  .kpi-grid .kpi-card.win .kpi-value { color: var(--danger); }
+  .kpi-grid .kpi-card.lose .kpi-value { color: var(--success); }
+
+  .section-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .section-title .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+
+  .sig-chart-box { background: var(--panel-bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; box-shadow: var(--shadow); }
+  .sig-chart-label { font-size: 11px; font-weight: 600; margin-bottom: 8px; color: var(--text-secondary); }
+  .sig-chart-wrap { height: 240px; position: relative; }
+
+  .event-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .event-table th { padding: 6px 8px; text-align: left; font-weight: 600; color: var(--text-secondary); border-bottom: 2px solid var(--border); white-space: nowrap; }
+  .event-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  .event-table tr:hover { background: var(--hover); }
+  .event-table .pos { color: var(--danger); }
+  .event-table .neg { color: var(--success); }
+  .win-badge { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; }
+  .win-badge.w { background: #fee2e2; color: #dc2626; }
+  .win-badge.l { background: #dcfce7; color: #16a34a; }
+
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--text-secondary); }
+  .empty-state .icon { font-size: 36px; margin-bottom: 8px; }
 </style>
 </head>
 <body>
@@ -352,19 +409,88 @@
     </div>
   </div>
 
-  <div class="chart-area">
-    <div class="chart-box factor-chart">
-      <div class="chart-label">因子走势（百分位 0-100）</div>
-      <div class="chart-wrap"><canvas id="chart-factor"></canvas></div>
-      <div class="no-data" id="no-data">
-        <span class="icon">🔬</span>
-        <span>请拖拽因子到选区查看走势</span>
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('trend')">因子走势对比</button>
+    <button class="tab-btn" onclick="switchTab('signal')">因子信号检验</button>
+  </div>
+
+  <!-- Tab 1: 因子走势对比 -->
+  <div class="tab-content active" id="tab-trend" style="flex:1;flex-direction:column;overflow:hidden">
+    <div class="chart-area">
+      <div class="chart-box factor-chart">
+        <div class="chart-label">因子走势（百分位 0-100）</div>
+        <div class="chart-wrap"><canvas id="chart-factor"></canvas></div>
+        <div class="no-data" id="no-data">
+          <span class="icon">🔬</span>
+          <span>请拖拽因子到选区查看走势</span>
+        </div>
+      </div>
+
+      <div class="chart-box compare-chart" id="compare-box" style="display:none">
+        <div class="chart-label" id="compare-label">因子 vs 基准收益率</div>
+        <div class="chart-wrap"><canvas id="chart-compare"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 2: 因子信号检验 -->
+  <div class="tab-content" id="tab-signal" style="flex:1;flex-direction:column;overflow:hidden">
+    <!-- 配置区 -->
+    <div class="signal-config" id="signal-config">
+      <div class="cfg-group">
+        <span class="cfg-label">检验因子</span>
+        <select id="sig-factor" onchange="onSigFactorChange()"></select>
+      </div>
+      <div class="cfg-group">
+        <span class="cfg-label">触发条件</span>
+        <select id="sig-trigger" onchange="onTriggerChange()">
+          <option value="above">因子值 &gt; 阈值</option>
+          <option value="below">因子值 &lt; 阈值</option>
+          <option value="cross_up">从下上穿阈值</option>
+          <option value="consecutive_up">连续 N 日上升</option>
+          <option value="new_high">创 N 日新高</option>
+        </select>
+      </div>
+      <div class="cfg-group" id="cfg-threshold">
+        <span class="cfg-label">阈值</span>
+        <input type="number" id="sig-threshold" value="80" min="0" max="100" step="5" style="width:60px">
+      </div>
+      <div class="cfg-group" id="cfg-ndays" style="display:none">
+        <span class="cfg-label">日数 N</span>
+        <input type="number" id="sig-ndays" value="3" min="2" max="60" step="1" style="width:60px">
+      </div>
+      <div class="cfg-group">
+        <span class="cfg-label">预测对象</span>
+        <select id="sig-target"></select>
+      </div>
+      <div class="cfg-group">
+        <span class="cfg-label">方向（怎样算赢）</span>
+        <div class="dir-toggle">
+          <button id="sig-dir-down" class="active" onclick="setSigDirection('down')">收益率↓/价格↑</button>
+          <button id="sig-dir-up" onclick="setSigDirection('up')">收益率↑/价格↓</button>
+        </div>
+      </div>
+      <div class="cfg-group">
+        <span class="cfg-label">观察窗口</span>
+        <div style="display:flex;gap:4px">
+          <div class="win-btn active" data-w="1" onclick="setSigWindow(1)">1日</div>
+          <div class="win-btn" data-w="5" onclick="setSigWindow(5)">5日</div>
+          <div class="win-btn" data-w="10" onclick="setSigWindow(10)">10日</div>
+          <div class="win-btn" data-w="20" onclick="setSigWindow(20)">20日</div>
+        </div>
+      </div>
+      <div class="cfg-group">
+        <button class="sig-btn" onclick="runSignalTest()">运行检验</button>
       </div>
     </div>
 
-    <div class="chart-box compare-chart" id="compare-box" style="display:none">
-      <div class="chart-label" id="compare-label">因子 vs 基准收益率</div>
-      <div class="chart-wrap"><canvas id="chart-compare"></canvas></div>
+    <!-- 结果区 -->
+    <div class="signal-result" id="signal-result">
+      <div class="empty-state">
+        <div class="icon">🎯</div>
+        <div>配置上方参数后点击"运行检验"</div>
+        <div style="font-size:11px;margin-top:4px">因子来自左侧选区，预测对象来自收益率曲线数据</div>
+      </div>
     </div>
   </div>
 
@@ -862,6 +988,329 @@ function resetFilters() {
   document.getElementById('date-start').value = factorData.meta.date_range[0] || '';
   document.getElementById('date-end').value = factorData.meta.date_range[1] || '';
   updateChart();
+}
+
+// ============================================
+// 信号检验相关
+// ============================================
+const PRICE_TARGETS = ['T主力','TF主力','TS主力','TL主力'];
+let sigDirection = 'down';
+let sigWindow = 1;
+let sigChartFactor = null;
+let sigChartEvent = null;
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  if (tab === 'trend') {
+    document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+    document.getElementById('tab-trend').classList.add('active');
+  } else {
+    document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+    document.getElementById('tab-signal').classList.add('active');
+    refreshSigFactorOptions();
+  }
+}
+
+function refreshSigFactorOptions() {
+  const sel = document.getElementById('sig-factor');
+  sel.innerHTML = '';
+  // 优先用已选因子，没有则列出全部
+  const factors = selectedFactors.length > 0
+    ? selectedFactors.map(f => f.name)
+    : Object.values(factorData.meta.categories).flat();
+  factors.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    sel.appendChild(opt);
+  });
+
+  // 预测对象：全部曲线
+  const targetSel = document.getElementById('sig-target');
+  targetSel.innerHTML = '';
+  const groups = {
+    '国债收益率': ['10年国债','30年国债','5年国债','1年国债'],
+    '国开收益率': ['10年国开','5年国开','1年国开'],
+    'IRS': ['IRS-1Y','IRS-2Y','IRS-5Y'],
+    '期货隐含利率': ['10年期货隐含利率','30年期货隐含利率','5年期货隐含利率','2年期货隐含利率'],
+    '期货价格': ['T主力','TF主力','TS主力','TL主力'],
+    '基准利率': ['FR007','DR001'],
+  };
+  for (const [g, names] of Object.entries(groups)) {
+    const og = document.createElement('optgroup');
+    og.label = g;
+    names.forEach(n => {
+      if (curveData.series[n]) {
+        const opt = document.createElement('option');
+        opt.value = n; opt.textContent = n;
+        og.appendChild(opt);
+      }
+    });
+    if (og.children.length > 0) targetSel.appendChild(og);
+  }
+  // 默认 10年国债
+  targetSel.value = '10年国债';
+}
+
+function onSigFactorChange() {}
+
+function onTriggerChange() {
+  const t = document.getElementById('sig-trigger').value;
+  const showThreshold = ['above','below','cross_up'].includes(t);
+  const showDays = ['consecutive_up','new_high'].includes(t);
+  document.getElementById('cfg-threshold').style.display = showThreshold ? '' : 'none';
+  document.getElementById('cfg-ndays').style.display = showDays ? '' : 'none';
+}
+
+function setSigDirection(d) {
+  sigDirection = d;
+  document.getElementById('sig-dir-down').classList.toggle('active', d === 'down');
+  document.getElementById('sig-dir-up').classList.toggle('active', d === 'up');
+}
+
+function setSigWindow(n) {
+  sigWindow = n;
+  document.querySelectorAll('[data-w]').forEach(el => {
+    el.classList.toggle('active', parseInt(el.dataset.w) === n);
+  });
+}
+
+function getTargetSeries(name) {
+  const s = curveData.series[name];
+  if (!s) return null;
+  return { label: name, dates: s.dates, values: s.values, isPrice: PRICE_TARGETS.includes(name) };
+}
+
+function detectTriggers(factorSeries, type, threshold, ndays) {
+  const { dates, values } = factorSeries;
+  const triggers = [];
+  for (let i = 0; i < dates.length; i++) {
+    let hit = false;
+    switch (type) {
+      case 'above': hit = values[i] > threshold; break;
+      case 'below': hit = values[i] < threshold; break;
+      case 'cross_up':
+        if (i > 0 && values[i-1] <= threshold && values[i] > threshold) hit = true;
+        break;
+      case 'consecutive_up':
+        if (i >= ndays) {
+          hit = true;
+          for (let j = i - ndays + 1; j <= i; j++) {
+            if (j > 0 && values[j] <= values[j-1]) { hit = false; break; }
+            if (j === 0) hit = false;
+          }
+        }
+        break;
+      case 'new_high':
+        if (i >= ndays) {
+          let maxPrev = -Infinity;
+          for (let j = i - ndays; j < i; j++) maxPrev = Math.max(maxPrev, values[j]);
+          hit = values[i] > maxPrev;
+        }
+        break;
+    }
+    if (hit) triggers.push({ date: dates[i], idx: i, factorVal: values[i] });
+  }
+  return triggers;
+}
+
+function computeReturns(trigger, targetSeries, winN) {
+  const { dates: tDates, values: tValues } = targetSeries;
+  let tIdx = tDates.indexOf(trigger.date);
+  if (tIdx < 0) {
+    for (let i = tDates.length - 1; i >= 0; i--) {
+      if (tDates[i] <= trigger.date) { tIdx = i; break; }
+    }
+  }
+  if (tIdx < 0) return null;
+  const endIdx = Math.min(tIdx + winN, tValues.length - 1);
+  if (endIdx <= tIdx) return null;
+
+  const startVal = tValues[tIdx];
+  const endVal = tValues[endIdx];
+  const change = targetSeries.isPrice ? (endVal - startVal) : (endVal - startVal) * 100;
+  const isWin = targetSeries.isPrice
+    ? (sigDirection === 'up' ? change > 0 : change < 0)
+    : (sigDirection === 'down' ? change < 0 : change > 0);
+
+  let mfe = -Infinity, mae = Infinity;
+  for (let i = tIdx; i <= endIdx; i++) {
+    const pathChange = targetSeries.isPrice ? (tValues[i] - startVal) : (tValues[i] - startVal) * 100;
+    const favorable = targetSeries.isPrice
+      ? (sigDirection === 'up' ? pathChange : -pathChange)
+      : (sigDirection === 'down' ? -pathChange : pathChange);
+    if (favorable > mfe) mfe = favorable;
+    if (favorable < mae) mae = favorable;
+  }
+  return { change, isWin, mfe, mae, startDate: tDates[tIdx], endDate: tDates[endIdx] };
+}
+
+function runSignalTest() {
+  const factorName = document.getElementById('sig-factor').value;
+  const targetName = document.getElementById('sig-target').value;
+  if (!factorName || !targetName) { alert('请选择因子和预测对象'); return; }
+
+  const factorSeries = factorData.series[factorName];
+  const targetSeries = getTargetSeries(targetName);
+  if (!factorSeries || !targetSeries) { alert('数据不存在'); return; }
+
+  const triggerType = document.getElementById('sig-trigger').value;
+  const threshold = parseFloat(document.getElementById('sig-threshold').value) || 80;
+  const ndays = parseInt(document.getElementById('sig-ndays').value) || 3;
+  const startDate = document.getElementById('date-start').value;
+  const endDate = document.getElementById('date-end').value;
+
+  // 过滤因子
+  const ff = { dates: [], values: [] };
+  factorSeries.dates.forEach((d, i) => {
+    if ((!startDate || d >= startDate) && (!endDate || d <= endDate)) {
+      ff.dates.push(d); ff.values.push(factorSeries.values[i]);
+    }
+  });
+
+  const triggers = detectTriggers(ff, triggerType, threshold, ndays);
+  const events = [];
+  triggers.forEach(t => {
+    const ret = computeReturns(t, targetSeries, sigWindow);
+    if (ret) events.push({ ...t, ...ret });
+  });
+
+  if (events.length === 0) {
+    document.getElementById('signal-result').innerHTML =
+      '<div class="empty-state"><div class="icon">📭</div><div>在选定时间范围内无触发事件，请调整触发条件或时间范围</div></div>';
+    return;
+  }
+
+  const wins = events.filter(e => e.isWin);
+  const losses = events.filter(e => !e.isWin);
+  const winRate = events.length > 0 ? wins.length / events.length : 0;
+  const avgReturn = events.reduce((s,e) => s + e.change, 0) / events.length;
+  const sorted = events.map(e=>e.change).sort((a,b)=>a-b);
+  const median = sorted.length > 0
+    ? (sorted.length % 2 === 1 ? sorted[Math.floor(sorted.length/2)] : (sorted[sorted.length/2-1]+sorted[sorted.length/2])/2) : 0;
+  const avgWin = wins.length > 0 ? wins.reduce((s,e)=>s+e.change,0)/wins.length : 0;
+  const avgLoss = losses.length > 0 ? losses.reduce((s,e)=>s+e.change,0)/losses.length : 0;
+  const plRatio = avgLoss !== 0 ? Math.abs(avgWin / avgLoss) : Infinity;
+  const avgMFE = events.reduce((s,e)=>s+e.mfe,0)/events.length;
+  const avgMAE = events.reduce((s,e)=>s+e.mae,0)/events.length;
+  const lastTrigger = events[events.length-1];
+  const lastFV = ff.values[ff.values.length-1];
+
+  let nowTriggered = false;
+  switch (triggerType) {
+    case 'above': nowTriggered = lastFV > threshold; break;
+    case 'below': nowTriggered = lastFV < threshold; break;
+    case 'cross_up':
+      if (ff.values.length >= 2) nowTriggered = ff.values[ff.values.length-2] <= threshold && lastFV > threshold;
+      break;
+    case 'consecutive_up':
+      if (ff.values.length >= ndays) {
+        nowTriggered = true;
+        for (let j = ff.values.length - ndays; j < ff.values.length; j++) {
+          if (j > 0 && ff.values[j] <= ff.values[j-1]) { nowTriggered = false; break; }
+        }
+      }
+      break;
+    case 'new_high':
+      if (ff.values.length >= ndays) {
+        let mx = -Infinity;
+        for (let j = ff.values.length - ndays; j < ff.values.length - 1; j++) mx = Math.max(mx, ff.values[j]);
+        nowTriggered = lastFV > mx;
+      }
+      break;
+  }
+
+  const unit = targetSeries.isPrice ? '元' : 'bp';
+  const retFmt = v => (v >= 0 ? '+' : '') + v.toFixed(2) + ' ' + unit;
+  const triggerDesc = {above:`因子>${threshold}`,below:`因子<${threshold}`,cross_up:`上穿${threshold}`,consecutive_up:`连续${ndays}日上升`,new_high:`创${ndays}日新高`}[triggerType];
+  const dirDesc = sigDirection === 'down' ? (targetSeries.isPrice?'价格上行=赢':'收益率下行=赢') : (targetSeries.isPrice?'价格下行=赢':'收益率上行=赢');
+
+  document.getElementById('signal-result').innerHTML = `
+    <div>
+      <div style="font-size:14px;font-weight:700;margin-bottom:4px">${factorName} → ${targetName}</div>
+      <div style="font-size:11px;color:var(--text-secondary)">触发: ${triggerDesc} ｜ 方向: ${dirDesc} ｜ 窗口: 未来${sigWindow}日 ｜ 样本: ${events[0].date} ~ ${lastTrigger.date}</div>
+    </div>
+    <div class="kpi-grid">
+      <div class="kpi-card ${winRate>=0.5?'win':'lose'}"><div class="kpi-label">触发次数</div><div class="kpi-value">${events.length}</div></div>
+      <div class="kpi-card ${winRate>=0.5?'win':'lose'}"><div class="kpi-label">胜率</div><div class="kpi-value">${(winRate*100).toFixed(1)}%</div><div class="kpi-sub">${wins.length}胜 ${losses.length}负</div></div>
+      <div class="kpi-card"><div class="kpi-label">平均收益</div><div class="kpi-value">${retFmt(avgReturn)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">中位数收益</div><div class="kpi-value">${retFmt(median)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">平均最大有利波动</div><div class="kpi-value" style="color:var(--danger)">${retFmt(avgMFE)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">平均最大不利波动</div><div class="kpi-value" style="color:var(--success)">${retFmt(avgMAE)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">盈亏比</div><div class="kpi-value">${plRatio===Infinity?'∞':plRatio.toFixed(2)}</div><div class="kpi-sub">均胜${retFmt(avgWin)}/均亏${retFmt(avgLoss)}</div></div>
+      <div class="kpi-card ${nowTriggered?'win':''}"><div class="kpi-label">最近触发</div><div class="kpi-value" style="font-size:13px">${lastTrigger.date}</div><div class="kpi-sub">当前因子值:${lastFV.toFixed(1)} ${nowTriggered?'⚠️已触发':'未触发'}</div></div>
+    </div>
+    <div>
+      <div class="section-title"><span class="dot"></span>因子走势 + 触发点</div>
+      <div class="sig-chart-box">
+        <div class="sig-chart-label">${factorName}（蓝线）与触发时点（红点）</div>
+        <div class="sig-chart-wrap"><canvas id="sig-chart-factor"></canvas></div>
+      </div>
+    </div>
+    <div>
+      <div class="section-title"><span class="dot"></span>触发事件收益分布</div>
+      <div class="sig-chart-box">
+        <div class="sig-chart-label">每次触发后 ${sigWindow} 日 ${targetName} 收益（${unit}）</div>
+        <div class="sig-chart-wrap"><canvas id="sig-chart-event"></canvas></div>
+      </div>
+    </div>
+    <div>
+      <div class="section-title"><span class="dot"></span>触发事件明细</div>
+      <div class="sig-chart-box" style="overflow-x:auto">
+        <table class="event-table">
+          <thead><tr><th>#</th><th>触发日期</th><th>因子值</th><th>起始日</th><th>结束日</th><th>收益(${unit})</th><th>最大有利</th><th>最大不利</th><th>结果</th></tr></thead>
+          <tbody>
+            ${events.map((e,i)=>`<tr><td>${i+1}</td><td>${e.date}</td><td>${e.factorVal.toFixed(1)}</td><td>${e.startDate}</td><td>${e.endDate}</td><td class="${e.change>=0?'pos':'neg'}">${retFmt(e.change)}</td><td class="pos">${retFmt(e.mfe)}</td><td class="neg">${retFmt(e.mae)}</td><td><span class="win-badge ${e.isWin?'w':'l'}">${e.isWin?'胜':'负'}</span></td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  drawSigFactorChart(ff, events);
+  drawSigEventChart(events, unit);
+}
+
+function drawSigFactorChart(ff, events) {
+  if (sigChartFactor) sigChartFactor.destroy();
+  const ctx = document.getElementById('sig-chart-factor');
+  const tDates = new Set(events.map(e => e.date));
+  const tPoints = ff.dates.map((d, i) => tDates.has(d) ? ff.values[i] : null);
+  sigChartFactor = new Chart(ctx, {
+    type: 'line',
+    data: { labels: ff.dates, datasets: [
+      { label: '因子值', data: ff.values, borderColor: '#5470c6', borderWidth: 1.5, pointRadius: 0, tension: 0.1, fill: false },
+      { label: '触发点', data: tPoints, borderColor: '#ef4444', backgroundColor: '#ef4444', pointRadius: 4, showLine: false },
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { usePointStyle: true, font: { size: 11 } } },
+        zoom: { pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true, speed: 0.1 }, mode: 'x', onDoubleClick: function(c){c.resetZoom();return false;} } } },
+      scales: {
+        x: { ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 }, grid: { display: false } },
+        y: { title: { display: true, text: '因子分位值', font: { size: 11 } }, ticks: { font: { size: 10 } }, grid: { color: '#f0f0f0' } },
+      },
+    },
+  });
+}
+
+function drawSigEventChart(events, unit) {
+  if (sigChartEvent) sigChartEvent.destroy();
+  const ctx = document.getElementById('sig-chart-event');
+  sigChartEvent = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: events.map(e=>e.date), datasets: [{ label: `收益(${unit})`, data: events.map(e=>e.change),
+      backgroundColor: events.map(e => e.isWin ? '#ef4444' : '#22c55e') }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => (ctx.parsed.y>=0?'+':'')+ctx.parsed.y.toFixed(2)+' '+unit } } },
+      scales: {
+        x: { ticks: { font: { size: 9 }, maxRotation: 90, minRotation: 45 }, grid: { display: false } },
+        y: { title: { display: true, text: `收益(${unit})` }, ticks: { font: { size: 10 } }, grid: { color: '#f0f0f0' } },
+      },
+    },
+  });
 }
 
 // Start
