@@ -313,7 +313,7 @@
 <aside class="sidebar">
   <div class="sidebar-header">
     <h2><span class="icon">📊</span>利差分析</h2>
-    <p class="subtitle">选期限 → 从券池拖拽到 A/B 框</p>
+    <p class="subtitle">选期限 → 从券池/曲线池拖拽到 A/B 框</p>
     <a href="index.html" class="back-home">← 返回首页</a>
   </div>
 
@@ -332,9 +332,16 @@
       <p class="hint">拖拽下方个券到 A、B 框中比较利差</p>
     </div>
 
+    <!-- 步骤 2b：IRS / 期货隐含利率 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot" style="background:var(--accent)"></span>IRS & 期货隐含利率</label>
+      <div class="bond-pool" id="curve-pool"></div>
+      <p class="hint">IRS 与期货隐含利率，可与个券做利差</p>
+    </div>
+
     <!-- A 框 -->
     <div class="filter-group">
-      <label class="filter-label"><span class="dot"></span>债券 A（基准券）</label>
+      <label class="filter-label"><span class="dot"></span>标的 A（基准）</label>
       <div class="drop-zone drop-zone-a" id="drop-a" data-slot="a">
         <span class="badge badge-a">A</span>
         <div class="zone-content">
@@ -345,7 +352,7 @@
 
     <!-- B 框 -->
     <div class="filter-group">
-      <label class="filter-label"><span class="dot"></span>债券 B（对比券）</label>
+      <label class="filter-label"><span class="dot"></span>标的 B（对比）</label>
       <div class="drop-zone drop-zone-b" id="drop-b" data-slot="b">
         <span class="badge badge-b">B</span>
         <div class="zone-content">
@@ -374,8 +381,8 @@
 <main class="main">
   <div class="main-header">
     <div class="title-area">
-      <h3 id="chart-title">个券利差走势</h3>
-      <p class="desc" id="chart-desc">请拖拽两只债券到 A、B 框</p>
+      <h3 id="chart-title">利差走势</h3>
+      <p class="desc" id="chart-desc">请拖拽两只标的到 A、B 框</p>
     </div>
     <div class="kpi-row">
       <div class="kpi-card" id="kpi-spread"><div class="kpi-value">--</div><div class="kpi-label">最新利差 (bp)</div></div>
@@ -390,7 +397,7 @@
       <div class="chart-wrap"><canvas id="chart-yield"></canvas></div>
       <div class="no-data" id="no-data">
         <span class="icon">📈</span>
-        <span>请拖拽两只债券到 A、B 框查看利差</span>
+        <span>请拖拽两只标的到 A、B 框查看利差</span>
       </div>
     </div>
 
@@ -401,7 +408,7 @@
   </div>
 
   <div class="source-note">
-    数据来源：FICC原始数据（现券）.xlsx ｜ 自动过滤未来日期与0值 ｜ 剩余期限单位：年
+    数据来源：FICC原始数据（现券/衍生品、收益率曲线）.xlsx ｜ A、B 可选个券或 IRS/期货隐含利率 ｜ 自动过滤未来日期与0值
   </div>
 </main>
 
@@ -410,28 +417,40 @@
 // State
 // ============================================
 let allData = { meta: { terms: {} }, series: {} };
+let curveData = { meta: { categories: {} }, series: {} };  // 收益率曲线数据
 let chartYield = null;
 let chartSpread = null;
 let selectedTerm = '全部';
-let codeA = '';
-let codeB = '';
-let draggedCode = '';
+let slotA = '';  // 格式: 'bond:CODE' 或 'curve:NAME'
+let slotB = '';
+let draggedItem = '';  // 拖拽中的标识
 
 const COLOR_A = '#5470c6';
 const COLOR_B = '#ee6666';
 const COLOR_SPREAD = '#fac858';
+
+// ── 可拖入的曲线标的（IRS + 期货隐含利率）──
+const CURVE_PICK_NAMES = [
+  'IRS-1Y', 'IRS-2Y', 'IRS-5Y',
+  '2年期货隐含利率', '5年期货隐含利率', '10年期货隐含利率', '30年期货隐含利率',
+];
 
 // ============================================
 // Init
 // ============================================
 async function init() {
   try {
-    const resp = await fetch('bond_yield_data.json?t=' + Date.now());
-    allData = await resp.json();
+    const [resp1, resp2] = await Promise.all([
+      fetch('bond_yield_data.json?t=' + Date.now()),
+      fetch('yield_curve_data.json?t=' + Date.now()),
+    ]);
+    allData = await resp1.json();
+    curveData = await resp2.json();
 
     const terms = Object.keys(allData.meta.terms);
     renderTermTags(terms);
     renderBondPool();
+    renderCurvePool();
     setupDropZones();
 
     document.getElementById('date-start').value = allData.meta.date_range[0];
@@ -442,7 +461,7 @@ async function init() {
     console.error('Data load error:', err);
     document.getElementById('no-data').style.display = 'flex';
     document.getElementById('no-data').querySelector('span:last-child').textContent =
-      '数据加载失败，请确认 bond_yield_data.json 已生成';
+      '数据加载失败，请确认 JSON 数据文件已生成';
   }
 }
 
@@ -498,26 +517,64 @@ function renderBondPool() {
     const item = document.createElement('div');
     item.className = 'bond-pool-item';
     item.draggable = true;
-    item.dataset.code = code;
+    item.dataset.item = 'bond:' + code;
     item.innerHTML = `
       <span class="code">${code}</span>
       <span class="dur">${formatDur(s.duration)}</span>
     `;
     item.addEventListener('dragstart', (e) => {
-      draggedCode = code;
+      draggedItem = 'bond:' + code;
       item.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'copy';
-      e.dataTransfer.setData('text/plain', code);
+      e.dataTransfer.setData('text/plain', draggedItem);
     });
     item.addEventListener('dragend', () => {
       item.classList.remove('dragging');
-      draggedCode = '';
+      draggedItem = '';
     });
     // 双击快捷放入空闲框
     item.addEventListener('dblclick', () => {
-      if (!codeA) setSlot('a', code);
-      else if (!codeB) setSlot('b', code);
-      else setSlot('b', code); // 都满了替换 B
+      const id = 'bond:' + code;
+      if (!slotA) setSlot('a', id);
+      else if (!slotB) setSlot('b', id);
+      else setSlot('b', id);
+    });
+    pool.appendChild(item);
+  });
+}
+
+// ============================================
+// 曲线标的池（IRS + 期货隐含利率）
+// ============================================
+function renderCurvePool() {
+  const pool = document.getElementById('curve-pool');
+  pool.innerHTML = '';
+  CURVE_PICK_NAMES.forEach(name => {
+    const s = curveData.series[name];
+    if (!s) return;
+    const item = document.createElement('div');
+    item.className = 'bond-pool-item';
+    item.draggable = true;
+    item.dataset.item = 'curve:' + name;
+    item.innerHTML = `
+      <span class="code">${name}</span>
+      <span class="dur">曲线</span>
+    `;
+    item.addEventListener('dragstart', (e) => {
+      draggedItem = 'curve:' + name;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', draggedItem);
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      draggedItem = '';
+    });
+    item.addEventListener('dblclick', () => {
+      const id = 'curve:' + name;
+      if (!slotA) setSlot('a', id);
+      else if (!slotB) setSlot('b', id);
+      else setSlot('b', id);
     });
     pool.appendChild(item);
   });
@@ -542,40 +599,68 @@ function setupDropZones() {
     zone.addEventListener('drop', (e) => {
       e.preventDefault();
       zone.classList.remove('drag-over');
-      const code = draggedCode || e.dataTransfer.getData('text/plain');
-      if (code) setSlot(slot, code);
+      const item = draggedItem || e.dataTransfer.getData('text/plain');
+      if (item) setSlot(slot, item);
     });
   });
 }
 
-function setSlot(slot, code) {
-  if (slot === 'a') codeA = code;
-  else codeB = code;
+function setSlot(slot, item) {
+  if (slot === 'a') slotA = item;
+  else slotB = item;
   renderSlots();
   updateChart();
 }
 
 function clearSlot(slot) {
-  if (slot === 'a') codeA = '';
-  else codeB = '';
+  if (slot === 'a') slotA = '';
+  else slotB = '';
   renderSlots();
   updateChart();
+}
+
+// ── 统一获取标的序列 ──
+// item 格式: 'bond:CODE' 或 'curve:NAME'
+// 返回 { label, dates[], values[], meta } 或 null
+function getItemSeries(item) {
+  if (!item) return null;
+  const [type, ...rest] = item.split(':');
+  const key = rest.join(':');
+  if (type === 'bond') {
+    const s = allData.series[key];
+    if (!s) return null;
+    return {
+      label: key,
+      sub: `${s.category} ｜ 剩余期限 ${formatDur(s.duration)}`,
+      dates: s.dates,
+      values: s.yields,
+    };
+  } else if (type === 'curve') {
+    const s = curveData.series[key];
+    if (!s) return null;
+    return {
+      label: key,
+      sub: `曲线标的 ｜ ${key}`,
+      dates: s.dates,
+      values: s.values,
+    };
+  }
+  return null;
 }
 
 function renderSlots() {
   ['a', 'b'].forEach(slot => {
     const zone = document.getElementById('drop-' + slot);
-    const code = slot === 'a' ? codeA : codeB;
-    const s = code ? allData.series[code] : null;
+    const item = slot === 'a' ? slotA : slotB;
+    const s = getItemSeries(item);
 
     if (s) {
       zone.classList.add('filled');
       const content = zone.querySelector('.zone-content');
       content.innerHTML = `
-        <span class="zone-code">${code}</span>
-        <span class="zone-meta">${s.category} ｜ 剩余期限 ${formatDur(s.duration)}</span>
+        <span class="zone-code">${s.label}</span>
+        <span class="zone-meta">${s.sub}</span>
       `;
-      // 清除按钮
       let btn = zone.querySelector('.clear-btn');
       if (!btn) {
         btn = document.createElement('button');
@@ -601,14 +686,14 @@ function renderSlots() {
 // 数据序列构建
 // ============================================
 function buildSeries() {
-  const sA = allData.series[codeA];
-  const sB = allData.series[codeB];
+  const sA = getItemSeries(slotA);
+  const sB = getItemSeries(slotB);
   if (!sA || !sB) return { dates: [], spreads: [], yieldsA: [], yieldsB: [] };
 
   const mapA = {};
-  sA.dates.forEach((d, i) => mapA[d] = sA.yields[i]);
+  sA.dates.forEach((d, i) => mapA[d] = sA.values[i]);
   const mapB = {};
-  sB.dates.forEach((d, i) => mapB[d] = sB.yields[i]);
+  sB.dates.forEach((d, i) => mapB[d] = sB.values[i]);
 
   const commonDates = sA.dates.filter(d => mapB[d] !== undefined && mapA[d] !== undefined);
 
@@ -620,26 +705,26 @@ function buildSeries() {
   const yieldsA = filtered.map(d => mapA[d]);
   const yieldsB = filtered.map(d => mapB[d]);
 
-  return { dates: filtered, spreads, yieldsA, yieldsB };
+  return { dates: filtered, spreads, yieldsA, yieldsB, labelA: sA.label, labelB: sB.label };
 }
 
 // ============================================
 // 更新图表
 // ============================================
 function updateChart() {
-  if (!codeA || !codeB) {
-    showNoData('请拖拽两只债券到 A、B 框');
+  if (!slotA || !slotB) {
+    showNoData('请拖拽两只标的到 A、B 框');
     return;
   }
-  if (codeA === codeB) {
-    showNoData('请选择两只不同的债券');
+  if (slotA === slotB) {
+    showNoData('请选择两只不同的标的');
     return;
   }
 
-  const { dates, spreads, yieldsA, yieldsB } = buildSeries();
+  const { dates, spreads, yieldsA, yieldsB, labelA, labelB } = buildSeries();
 
   if (dates.length === 0) {
-    showNoData('选定券在选定时间范围内无共同交易日数据');
+    showNoData('选定标的在选定时间范围内无共同交易日数据');
     return;
   }
 
@@ -657,12 +742,9 @@ function updateChart() {
     else if (val < 0) card.classList.add('negative');
   });
 
-  const sA = allData.series[codeA];
-  const sB = allData.series[codeB];
-  const durStr = `A: ${formatDur(sA.duration)}  B: ${formatDur(sB.duration)}`;
-  document.getElementById('chart-title').textContent = `${codeA} vs ${codeB} · 利差走势`;
+  document.getElementById('chart-title').textContent = `${labelA} vs ${labelB} · 利差走势`;
   document.getElementById('chart-desc').textContent =
-    `A: ${codeA} (${sA.category})  B: ${codeB} (${sB.category}) ｜ ${durStr} ｜ ${dates[0]} ~ ${dates[dates.length-1]}`;
+    `A: ${labelA}  B: ${labelB} ｜ ${dates[0]} ~ ${dates[dates.length-1]}`;
 
   document.getElementById('no-data').style.display = 'none';
   document.getElementById('chart-yield').style.display = 'block';
@@ -675,7 +757,7 @@ function updateChart() {
       labels: dates,
       datasets: [
         {
-          label: `${codeA} 收益率 (%)`,
+          label: `${labelA} (%)`,
           data: yieldsA,
           borderColor: COLOR_A,
           backgroundColor: COLOR_A + '15',
@@ -686,7 +768,7 @@ function updateChart() {
           fill: false,
         },
         {
-          label: `${codeB} 收益率 (%)`,
+          label: `${labelB} (%)`,
           data: yieldsB,
           borderColor: COLOR_B,
           backgroundColor: COLOR_B + '15',
@@ -746,7 +828,7 @@ function updateChart() {
   const spreadBox = document.getElementById('spread-box');
   spreadBox.style.display = 'flex';
   document.getElementById('spread-label').textContent =
-    `利差走势 (bp) · ${codeA} − ${codeB}`;
+    `利差走势 (bp) · ${labelA} − ${labelB}`;
 
   if (chartSpread) chartSpread.destroy();
   chartSpread = new Chart(document.getElementById('chart-spread'), {
@@ -755,7 +837,7 @@ function updateChart() {
       labels: dates,
       datasets: [
         {
-          label: `利差 ${codeA}-${codeB} (bp)`,
+          label: `利差 ${labelA}-${labelB} (bp)`,
           data: spreads,
           borderColor: COLOR_SPREAD,
           backgroundColor: COLOR_SPREAD + '20',
@@ -857,8 +939,8 @@ function showNoData(msg) {
   document.getElementById('no-data').querySelector('span:last-child').textContent = msg;
   document.getElementById('chart-yield').style.display = 'none';
   document.getElementById('spread-box').style.display = 'none';
-  document.getElementById('chart-title').textContent = '个券利差走势';
-  document.getElementById('chart-desc').textContent = '请拖拽两只债券到 A、B 框';
+  document.getElementById('chart-title').textContent = '利差走势';
+  document.getElementById('chart-desc').textContent = '请拖拽两只标的到 A、B 框';
   ['kpi-spread', 'kpi-avg', 'kpi-days'].forEach(id => {
     document.getElementById(id).querySelector('.kpi-value').textContent = '--';
   });
@@ -867,8 +949,8 @@ function showNoData(msg) {
 function resetFilters() {
   const terms = Object.keys(allData.meta.terms);
   selectedTerm = '全部';
-  codeA = '';
-  codeB = '';
+  slotA = '';
+  slotB = '';
   renderTermTags(terms);
   renderBondPool();
   renderSlots();

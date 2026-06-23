@@ -437,6 +437,11 @@ def _simplify_name(raw):
     if m: return f'DR001-MA{m.group(1)}'
     m = re.match(r'^(\d+)YREPO$', s)
     if m: return f'IRS-{m.group(1)}Y'
+    # 期货主力合约价格（后复权）
+    if s == 'T.CFE': return 'T主力'
+    if s == 'TF.CFE': return 'TF主力'
+    if s == 'TS.CFE': return 'TS主力'
+    if s == 'TL.CFE': return 'TL主力'
     return s
 
 
@@ -471,6 +476,11 @@ def _parse_curve_sheet(df):
         col_name = f'c{c}'
         sub = data[['date', col_name]].copy()
         sub = sub[sub[col_name].notna() & (sub[col_name] != 0)]
+        # 过滤说明行（值非数值，如"当前日期"等）
+        try:
+            sub[col_name] = sub[col_name].astype(float)
+        except (ValueError, TypeError):
+            continue
         if len(sub) == 0:
             continue
         dates = sub['date'].dt.strftime('%Y-%m-%d').tolist()
@@ -499,6 +509,10 @@ def update_yield_curve_data():
     date_max = None
 
     for i, sn in enumerate(xl.sheet_names):
+        # 跳过"价格数据"sheet（说明性内容，非时间序列）
+        if '价格' in sn:
+            log.info(f"    Sheet [{sn}]: 跳过（非时间序列）")
+            continue
         df = pd.read_excel(CURVE_EXCEL, sheet_name=i, header=None)
         series, dmin, dmax = _parse_curve_sheet(df)
         categories[sn] = list(series.keys())

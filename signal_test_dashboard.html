@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>因子信号检验</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6fa; --panel-bg: #ffffff; --text: #2c3e50; --text-secondary: #7f8c8d;
+    --border: #e8ecf1; --primary: #5470c6; --primary-light: #e8edff; --hover: #f0f3ff;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --radius: 8px; --success: #22c55e; --danger: #ef4444; --warning: #f59e0b; --accent: #ee6666;
+    --sidebar-w: 380px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif; background:var(--bg); color:var(--text); height:100vh; display:flex; overflow:hidden; }
+
+  /* Sidebar */
+  .sidebar { width:var(--sidebar-w); background:var(--panel-bg); border-right:1px solid var(--border); display:flex; flex-direction:column; box-shadow:var(--shadow); z-index:10; flex-shrink:0; }
+  .sidebar-header { padding:20px 24px 16px; border-bottom:1px solid var(--border); position:relative; }
+  .sidebar-header h2 { font-size:18px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .sidebar-header .subtitle { font-size:12px; color:var(--text-secondary); margin-top:4px; }
+  .back-home { position:absolute; top:20px; right:24px; font-size:12px; color:var(--text-secondary); text-decoration:none; padding:4px 10px; border:1px solid var(--border); border-radius:4px; transition:all .15s; }
+  .back-home:hover { color:var(--primary); border-color:var(--primary); }
+  .filter-body { flex:1; overflow-y:auto; padding:16px 24px; display:flex; flex-direction:column; gap:16px; }
+  .filter-body::-webkit-scrollbar { width:6px; }
+  .filter-body::-webkit-scrollbar-thumb { background:#d0d5dd; border-radius:4px; }
+  .filter-group { display:flex; flex-direction:column; gap:8px; }
+  .filter-label { font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px; }
+  .filter-label .dot { width:6px; height:6px; border-radius:50%; background:var(--primary); }
+  .hint { font-size:11px; color:var(--text-secondary); margin-top:2px; line-height:1.5; }
+
+  /* 标签池 */
+  .item-pool { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px; max-height:160px; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
+  .item-pool::-webkit-scrollbar { width:4px; }
+  .item-pool::-webkit-scrollbar-thumb { background:#d0d5dd; border-radius:4px; }
+  .pool-item { padding:6px 10px; background:var(--panel-bg); border:1px solid var(--border); border-radius:4px; font-size:12px; cursor:grab; transition:all .15s; display:flex; justify-content:space-between; align-items:center; user-select:none; }
+  .pool-item:hover { border-color:var(--primary); background:var(--primary-light); }
+  .pool-item:active { cursor:grabbing; }
+  .pool-item.dragging { opacity:.4; }
+  .pool-item .code { font-weight:600; }
+  .pool-item .tag { font-size:10px; color:var(--text-secondary); padding:1px 6px; background:var(--bg); border-radius:8px; }
+  .pool-item.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+  .pool-item.active .tag { color:rgba(255,255,255,.8); background:rgba(255,255,255,.15); }
+
+  /* 选择控件 */
+  .control-row { display:flex; gap:6px; flex-wrap:wrap; }
+  .ctrl-btn { padding:5px 12px; border-radius:16px; font-size:12px; cursor:pointer; border:1px solid var(--border); background:var(--bg); color:var(--text-secondary); transition:all .15s; user-select:none; white-space:nowrap; }
+  .ctrl-btn:hover { border-color:var(--primary); color:var(--primary); background:var(--primary-light); }
+  .ctrl-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+
+  select, input[type="number"], input[type="date"] {
+    padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:12px; background:var(--panel-bg); color:var(--text); outline:none; transition:border .15s;
+  }
+  select:focus, input:focus { border-color:var(--primary); }
+  .num-input { width:70px; }
+  .date-row { display:flex; align-items:center; gap:8px; }
+  .date-row input[type="date"] { flex:1; }
+
+  .direction-toggle { display:flex; gap:0; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+  .direction-toggle button { padding:6px 16px; font-size:12px; border:none; background:var(--bg); color:var(--text-secondary); cursor:pointer; transition:all .15s; }
+  .direction-toggle button.active { background:var(--primary); color:#fff; }
+
+  .sidebar-footer { padding:14px 24px; border-top:1px solid var(--border); display:flex; gap:10px; }
+  .btn { padding:8px 16px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; border:none; transition:all .15s; }
+  .btn-primary { background:var(--primary); color:#fff; flex:1; }
+  .btn-primary:hover { background:#4458b0; }
+  .btn-outline { background:var(--panel-bg); color:var(--text-secondary); border:1px solid var(--border); }
+  .btn-outline:hover { color:var(--primary); border-color:var(--primary); }
+
+  /* Main */
+  .main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .main-header { padding:20px 28px 16px; border-bottom:1px solid var(--border); background:var(--panel-bg); }
+  .main-header h3 { font-size:18px; font-weight:700; margin-bottom:4px; }
+  .main-header .desc { font-size:12px; color:var(--text-secondary); }
+
+  .content { flex:1; overflow-y:auto; padding:20px 28px; display:flex; flex-direction:column; gap:20px; }
+
+  /* KPI 网格 */
+  .kpi-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:12px; }
+  .kpi-card { background:var(--panel-bg); border:1px solid var(--border); border-radius:8px; padding:14px 16px; box-shadow:var(--shadow); }
+  .kpi-card .kpi-label { font-size:11px; color:var(--text-secondary); margin-bottom:6px; }
+  .kpi-card .kpi-value { font-size:20px; font-weight:700; }
+  .kpi-card.win .kpi-value { color:var(--success); }
+  .kpi-card.lose .kpi-value { color:var(--danger); }
+  .kpi-card .kpi-sub { font-size:10px; color:var(--text-secondary); margin-top:2px; }
+
+  .section-title { font-size:14px; font-weight:700; margin-bottom:10px; display:flex; align-items:center; gap:8px; }
+  .section-title .dot { width:8px; height:8px; border-radius:50%; background:var(--primary); }
+
+  .chart-box { background:var(--panel-bg); border:1px solid var(--border); border-radius:8px; padding:16px; box-shadow:var(--shadow); }
+  .chart-label { font-size:12px; font-weight:600; margin-bottom:10px; color:var(--text-secondary); }
+  .chart-wrap { height:280px; position:relative; }
+
+  .event-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .event-table th { padding:8px 10px; text-align:left; font-weight:600; color:var(--text-secondary); border-bottom:2px solid var(--border); white-space:nowrap; }
+  .event-table td { padding:6px 10px; border-bottom:1px solid var(--border); }
+  .event-table tr:hover { background:var(--hover); }
+  .event-table .pos { color:var(--danger); }  /* 收益率下行=利好，用红 */
+  .event-table .neg { color:var(--success); } /* 收益率上行=利空，用绿 */
+  .event-table .win-badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:10px; font-weight:600; }
+  .event-table .win-badge.w { background:#fee2e2; color:#dc2626; }
+  .event-table .win-badge.l { background:#dcfce7; color:#16a34a; }
+
+  .empty-state { text-align:center; padding:60px 20px; color:var(--text-secondary); }
+  .empty-state .icon { font-size:48px; margin-bottom:12px; }
+
+  .source-note { padding:8px 28px; font-size:11px; color:var(--text-secondary); border-top:1px solid var(--border); background:var(--panel-bg); }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <h2><span style="font-size:22px">🎯</span>因子信号检验</h2>
+    <p class="subtitle">选因子 → 设触发 → 统计预测表现</p>
+    <a href="index.html" class="back-home">← 返回首页</a>
+  </div>
+
+  <div class="filter-body">
+    <!-- 1. 因子选择 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>步骤 1：选择因子</label>
+      <div class="item-pool" id="factor-pool"></div>
+      <p class="hint">点击选择一个因子（0-100 分位值）</p>
+    </div>
+
+    <!-- 2. 触发条件 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>步骤 2：触发条件</label>
+      <select id="trigger-type" onchange="onTriggerChange()">
+        <option value="above">因子值 &gt; 阈值</option>
+        <option value="below">因子值 &lt; 阈值</option>
+        <option value="cross_up">从下上穿阈值</option>
+        <option value="consecutive_up">连续 N 日上升</option>
+        <option value="new_high">创 N 日新高</option>
+      </select>
+      <div id="threshold-input" class="control-row" style="align-items:center;gap:8px">
+        <span style="font-size:12px;color:var(--text-secondary)">阈值：</span>
+        <input type="number" id="threshold" class="num-input" value="80" min="0" max="100" step="5">
+      </div>
+      <div id="days-input" class="control-row" style="align-items:center;gap:8px;display:none">
+        <span style="font-size:12px;color:var(--text-secondary)">日数 N：</span>
+        <input type="number" id="ndays" class="num-input" value="3" min="2" max="60" step="1">
+      </div>
+      <p class="hint">因子为百分位值（0-100），&gt;80 表示进入高位区</p>
+    </div>
+
+    <!-- 3. 预测对象 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>步骤 3：预测对象</label>
+      <div class="item-pool" id="target-pool" style="max-height:220px"></div>
+      <p class="hint">点击选择一个标的（收益率/价格/利差）</p>
+    </div>
+
+    <!-- 利差构造（可选） -->
+    <div class="filter-group" id="spread-builder" style="display:none">
+      <label class="filter-label"><span class="dot" style="background:var(--accent)"></span>利差 = 标的A − 标的B</label>
+      <div class="item-pool" id="spread-target-pool" style="max-height:140px"></div>
+      <p class="hint">若预测对象选"自定义利差"，在此选第二个标的</p>
+    </div>
+
+    <!-- 4. 方向 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>步骤 4：预测方向（触发后怎样算"赢"）</label>
+      <div class="direction-toggle">
+        <button id="dir-down" class="active" onclick="setDirection('down')">收益率下行 / 价格上行 = 赢</button>
+        <button id="dir-up" onclick="setDirection('up')">收益率上行 / 价格下行 = 赢</button>
+      </div>
+      <p class="hint">对国债收益率：下行=赢（看多债券）；对期货价格：上行=赢（看多期货）</p>
+    </div>
+
+    <!-- 5. 观察窗口 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>步骤 5：观察窗口（未来 N 个交易日）</label>
+      <div class="control-row">
+        <div class="ctrl-btn active" data-window="1" onclick="setWindow(1)">1日</div>
+        <div class="ctrl-btn" data-window="5" onclick="setWindow(5)">5日</div>
+        <div class="ctrl-btn" data-window="10" onclick="setWindow(10)">10日</div>
+        <div class="ctrl-btn" data-window="20" onclick="setWindow(20)">20日</div>
+      </div>
+    </div>
+
+    <!-- 时间范围 -->
+    <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>回测时间范围</label>
+      <div class="date-row">
+        <input type="date" id="date-start">
+        <span style="font-size:12px;color:var(--text-secondary)">至</span>
+        <input type="date" id="date-end">
+      </div>
+      <p class="hint">限定因子触发的样本区间</p>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <button class="btn btn-primary" onclick="runAnalysis()">运行检验</button>
+    <button class="btn btn-outline" onclick="resetAll()">重置</button>
+  </div>
+</aside>
+
+<!-- Main -->
+<main class="main">
+  <div class="main-header">
+    <h3 id="main-title">因子信号检验</h3>
+    <p class="desc" id="main-desc">选择因子和预测对象，设置触发条件后点击"运行检验"</p>
+  </div>
+
+  <div class="content" id="content">
+    <div class="empty-state">
+      <div class="icon">🔬</div>
+      <div>配置左侧参数后点击"运行检验"查看结果</div>
+    </div>
+  </div>
+
+  <div class="source-note">
+    数据来源：factor_data.json + yield_curve_data.json ｜ 纯前端计算，所有统计在浏览器内完成
+  </div>
+</main>
+
+<script>
+// ============================================
+// State
+// ============================================
+let factorData = { meta:{categories:{}}, series:{} };
+let curveData = { meta:{categories:{}}, series:{} };
+let selectedFactor = '';
+let selectedTarget = '';       // 'curve:NAME' 或 'spread:A-B'
+let selectedSpreadB = '';      // 利差第二个标的
+let direction = 'down';        // 'down'=收益率下行赢, 'up'=收益率上行赢
+let windowN = 1;
+let chartFactor = null;
+let chartEvent = null;
+
+// 期货价格类（方向与收益率相反）
+const PRICE_TARGETS = ['T主力','TF主力','TS主力','TL主力'];
+
+// ============================================
+// Init
+// ============================================
+async function init() {
+  try {
+    const [r1, r2] = await Promise.all([
+      fetch('factor_data.json?t=' + Date.now()),
+      fetch('yield_curve_data.json?t=' + Date.now()),
+    ]);
+    factorData = await r1.json();
+    curveData = await r2.json();
+
+    renderFactorPool();
+    renderTargetPool();
+    renderSpreadTargetPool();
+
+    // 默认时间范围：取因子和曲线的交集
+    const fDates = getAllFactorDates();
+    const cDates = getAllCurveDates();
+    const allDates = [...new Set([...fDates, ...cDates])].sort();
+    if (allDates.length > 0) {
+      document.getElementById('date-start').value = allDates[0];
+      document.getElementById('date-end').value = allDates[allDates.length-1];
+    }
+  } catch (err) {
+    console.error('Load error:', err);
+    document.getElementById('content').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><div>数据加载失败，请确认 factor_data.json 和 yield_curve_data.json 已生成</div></div>';
+  }
+}
+
+function getAllFactorDates() {
+  const s = new Set();
+  Object.values(factorData.series).forEach(f => f.dates.forEach(d => s.add(d)));
+  return [...s].sort();
+}
+function getAllCurveDates() {
+  const s = new Set();
+  Object.values(curveData.series).forEach(c => c.dates.forEach(d => s.add(d)));
+  return [...s].sort();
+}
+
+// ============================================
+// 因子池
+// ============================================
+function renderFactorPool() {
+  const pool = document.getElementById('factor-pool');
+  pool.innerHTML = '';
+  const allFactors = [];
+  Object.values(factorData.meta.categories).forEach(cat => {
+    factorData.meta.categories[cat].forEach ? null : null;
+  });
+  // categories 是 {cat: [name,...]}
+  for (const [cat, names] of Object.entries(factorData.meta.categories)) {
+    names.forEach(name => allFactors.push({name, cat}));
+  }
+  allFactors.forEach(({name, cat}) => {
+    const item = document.createElement('div');
+    item.className = 'pool-item' + (name === selectedFactor ? ' active' : '');
+    item.innerHTML = `<span class="code">${name}</span><span class="tag">${cat}</span>`;
+    item.onclick = () => {
+      selectedFactor = name;
+      renderFactorPool();
+    };
+    pool.appendChild(item);
+  });
+}
+
+// ============================================
+// 预测对象池（曲线标的）
+// ============================================
+function renderTargetPool() {
+  const pool = document.getElementById('target-pool');
+  pool.innerHTML = '';
+  // 分组显示
+  const groups = {
+    '国债收益率': ['10年国债','30年国债','5年国债','1年国债'],
+    '国开收益率': ['10年国开','5年国开','1年国开'],
+    'IRS': ['IRS-1Y','IRS-2Y','IRS-5Y'],
+    '期货隐含利率': ['10年期货隐含利率','30年期货隐含利率','5年期货隐含利率','2年期货隐含利率'],
+    '期货价格': ['T主力','TF主力','TS主力','TL主力'],
+    '基准利率': ['FR007','DR001'],
+    '自定义利差': ['__spread__'],
+  };
+  for (const [group, names] of Object.entries(groups)) {
+    names.forEach(name => {
+      if (name === '__spread__' || curveData.series[name]) {
+        const label = name === '__spread__' ? '自定义利差（选两个标的相减）' : name;
+        const tag = name === '__spread__' ? '利差' : group;
+        const val = name === '__spread__' ? 'spread' : 'curve:' + name;
+        const item = document.createElement('div');
+        item.className = 'pool-item' + (val === selectedTarget ? ' active' : '');
+        item.innerHTML = `<span class="code">${label}</span><span class="tag">${tag}</span>`;
+        item.onclick = () => {
+          selectedTarget = val;
+          if (val === 'spread') {
+            document.getElementById('spread-builder').style.display = '';
+            selectedTarget = 'spread:' + (selectedSpreadB ? selectedSpreadB : '__pending__');
+          } else {
+            document.getElementById('spread-builder').style.display = 'none';
+          }
+          renderTargetPool();
+        };
+        pool.appendChild(item);
+      }
+    });
+  }
+}
+
+function renderSpreadTargetPool() {
+  const pool = document.getElementById('spread-target-pool');
+  pool.innerHTML = '';
+  const names = Object.keys(curveData.series).sort();
+  names.forEach(name => {
+    const item = document.createElement('div');
+    item.className = 'pool-item' + (('curve:' + name) === selectedSpreadB ? ' active' : '');
+    item.innerHTML = `<span class="code">${name}</span><span class="tag">利差B</span>`;
+    item.onclick = () => {
+      selectedSpreadB = 'curve:' + name;
+      selectedTarget = 'spread:__pending__';  // A 是上一个选的，这里简化：A=10年国债默认
+      // 简化处理：利差 A 默认 10年国债，B 是用户选的
+      selectedTarget = 'spread:10年国债|' + name;
+      renderSpreadTargetPool();
+    };
+    pool.appendChild(item);
+  });
+}
+
+// ============================================
+// 控件
+// ============================================
+function onTriggerChange() {
+  const t = document.getElementById('trigger-type').value;
+  const showThreshold = ['above','below','cross_up'].includes(t);
+  const showDays = ['consecutive_up','new_high'].includes(t);
+  document.getElementById('threshold-input').style.display = showThreshold ? '' : 'none';
+  document.getElementById('days-input').style.display = showDays ? '' : 'none';
+}
+
+function setDirection(d) {
+  direction = d;
+  document.getElementById('dir-down').classList.toggle('active', d === 'down');
+  document.getElementById('dir-up').classList.toggle('active', d === 'up');
+}
+
+function setWindow(n) {
+  windowN = n;
+  document.querySelectorAll('[data-window]').forEach(el => {
+    el.classList.toggle('active', parseInt(el.dataset.window) === n);
+  });
+}
+
+// ============================================
+// 获取标的序列
+// ============================================
+function getTargetSeries(target) {
+  if (target.startsWith('curve:')) {
+    const name = target.slice(6);
+    const s = curveData.series[name];
+    if (!s) return null;
+    return { label: name, dates: s.dates, values: s.values, isPrice: PRICE_TARGETS.includes(name) };
+  } else if (target.startsWith('spread:')) {
+    const parts = target.slice(7).split('|');
+    if (parts.length !== 2) return null;
+    const sA = curveData.series[parts[0]];
+    const sB = curveData.series[parts[1]];
+    if (!sA || !sB) return null;
+    const mapB = {};
+    sB.dates.forEach((d,i) => mapB[d] = sB.values[i]);
+    const dates = [], values = [];
+    sA.dates.forEach(d => {
+      if (mapB[d] !== undefined) {
+        dates.push(d);
+        values.push(+(sA.values[sA.dates.indexOf(d)] - mapB[d]).toFixed(4));
+      }
+    });
+    return { label: `${parts[0]} - ${parts[1]}`, dates, values, isPrice: false, isSpread: true };
+  }
+  return null;
+}
+
+// ============================================
+// 触发检测
+// ============================================
+function detectTriggers(factorSeries, type, threshold, ndays) {
+  const { dates, values } = factorSeries;
+  const triggers = [];
+  for (let i = 0; i < dates.length; i++) {
+    let hit = false;
+    switch (type) {
+      case 'above':
+        hit = values[i] > threshold;
+        break;
+      case 'below':
+        hit = values[i] < threshold;
+        break;
+      case 'cross_up':
+        if (i > 0 && values[i-1] <= threshold && values[i] > threshold) hit = true;
+        break;
+      case 'consecutive_up':
+        if (i >= ndays - 1) {
+          hit = true;
+          for (let j = i - ndays + 1; j <= i; j++) {
+            if (j > 0 && values[j] <= values[j-1]) { hit = false; break; }
+            if (j === 0) hit = false;
+          }
+        }
+        break;
+      case 'new_high':
+        if (i >= ndays - 1) {
+          let maxPrev = -Infinity;
+          for (let j = i - ndays + 1; j < i; j++) maxPrev = Math.max(maxPrev, values[j]);
+          hit = values[i] > maxPrev;
+        }
+        break;
+    }
+    if (hit) triggers.push({ date: dates[i], idx: i, factorVal: values[i] });
+  }
+  return triggers;
+}
+
+// ============================================
+// 计算每次触发后的收益
+// ============================================
+function computeReturns(trigger, targetSeries, winN) {
+  const { dates: tDates, values: tValues } = targetSeries;
+  // 找触发日在目标序列中的位置
+  const tIdx = tDates.indexOf(trigger.date);
+  if (tIdx < 0) {
+    // 找最近的前一个交易日
+    let found = -1;
+    for (let i = tDates.length - 1; i >= 0; i--) {
+      if (tDates[i] <= trigger.date) { found = i; break; }
+    }
+    if (found < 0) return null;
+    trigger._tIdx = found;
+  } else {
+    trigger._tIdx = tIdx;
+  }
+  const startIdx = trigger._tIdx;
+  const endIdx = Math.min(startIdx + winN, tValues.length - 1);
+  if (endIdx <= startIdx) return null;
+
+  const startVal = tValues[startIdx];
+  const endVal = tValues[endIdx];
+  // 收益率类：变化 = 末值 - 初值（bp），下行=赢 → return 为负=赢
+  // 价格类：变化 = 末值 - 初值（元），上行=赢 → return 为正=赢
+  let change;
+  if (targetSeries.isPrice) {
+    change = (endVal - startVal);  // 价格变化
+  } else {
+    change = (endVal - startVal) * 100;  // bp
+  }
+  // 归一化为"是否赢"
+  const isWin = targetSeries.isPrice
+    ? (direction === 'up' ? change > 0 : change < 0)
+    : (direction === 'down' ? change < 0 : change > 0);
+
+  // 路径上的最大有利/不利波动
+  let mfe = -Infinity, mae = Infinity;  // favorable / adverse
+  for (let i = startIdx; i <= endIdx; i++) {
+    const pathChange = targetSeries.isPrice
+      ? (tValues[i] - startVal)
+      : (tValues[i] - startVal) * 100;
+    // 有利方向
+    const favorable = targetSeries.isPrice
+      ? (direction === 'up' ? pathChange : -pathChange)
+      : (direction === 'down' ? -pathChange : pathChange);
+    if (favorable > mfe) mfe = favorable;
+    if (favorable < mae) mae = favorable;
+  }
+
+  return {
+    change,
+    isWin,
+    mfe,
+    mae,
+    startDate: tDates[startIdx],
+    endDate: tDates[endIdx],
+  };
+}
+
+// ============================================
+// 运行检验
+// ============================================
+function runAnalysis() {
+  if (!selectedFactor) { alert('请先选择因子'); return; }
+  if (!selectedTarget || selectedTarget.includes('pending')) { alert('请先选择预测对象'); return; }
+
+  const factorSeries = factorData.series[selectedFactor];
+  if (!factorSeries) { alert('因子数据不存在'); return; }
+
+  const targetSeries = getTargetSeries(selectedTarget);
+  if (!targetSeries) { alert('预测对象数据不存在'); return; }
+
+  const triggerType = document.getElementById('trigger-type').value;
+  const threshold = parseFloat(document.getElementById('threshold').value) || 80;
+  const ndays = parseInt(document.getElementById('ndays').value) || 3;
+  const startDate = document.getElementById('date-start').value;
+  const endDate = document.getElementById('date-end').value;
+
+  // 按时间范围过滤因子序列
+  const filteredFactor = {
+    dates: [],
+    values: [],
+  };
+  factorSeries.dates.forEach((d, i) => {
+    if ((!startDate || d >= startDate) && (!endDate || d <= endDate)) {
+      filteredFactor.dates.push(d);
+      filteredFactor.values.push(factorSeries.values[i]);
+    }
+  });
+
+  // 检测触发
+  const triggers = detectTriggers(filteredFactor, triggerType, threshold, ndays);
+
+  // 计算每次触发的收益
+  const events = [];
+  triggers.forEach(t => {
+    const ret = computeReturns(t, targetSeries, windowN);
+    if (ret) events.push({ ...t, ...ret });
+  });
+
+  if (events.length === 0) {
+    renderEmptyResult();
+    return;
+  }
+
+  // 统计
+  const wins = events.filter(e => e.isWin);
+  const losses = events.filter(e => !e.isWin);
+  const winRate = events.length > 0 ? wins.length / events.length : 0;
+  const avgReturn = events.reduce((s,e) => s + e.change, 0) / events.length;
+  const sortedChanges = events.map(e=>e.change).sort((a,b)=>a-b);
+  const medianReturn = sortedChanges.length > 0
+    ? (sortedChanges.length % 2 === 1
+      ? sortedChanges[Math.floor(sortedChanges.length/2)]
+      : (sortedChanges[sortedChanges.length/2-1] + sortedChanges[sortedChanges.length/2]) / 2)
+    : 0;
+
+  const avgWin = wins.length > 0 ? wins.reduce((s,e)=>s+e.change,0)/wins.length : 0;
+  const avgLoss = losses.length > 0 ? losses.reduce((s,e)=>s+e.change,0)/losses.length : 0;
+  // 盈亏比：用 MFE/MAE 绝对值
+  const profitLossRatio = (avgLoss !== 0) ? Math.abs(avgWin / avgLoss) : Infinity;
+
+  const avgMFE = events.reduce((s,e)=>s+e.mfe,0)/events.length;
+  const avgMAE = events.reduce((s,e)=>s+e.mae,0)/events.length;
+
+  const lastTrigger = events[events.length-1];
+  // 当前是否触发：检查因子最后一个值
+  const lastFactorVal = filteredFactor.values[filteredFactor.values.length-1];
+  let currentlyTriggered = false;
+  switch (triggerType) {
+    case 'above': currentlyTriggered = lastFactorVal > threshold; break;
+    case 'below': currentlyTriggered = lastFactorVal < threshold; break;
+    case 'cross_up':
+      if (filteredFactor.values.length >= 2) {
+        currentlyTriggered = filteredFactor.values[filteredFactor.values.length-2] <= threshold && lastFactorVal > threshold;
+      }
+      break;
+    case 'consecutive_up':
+      if (filteredFactor.values.length >= ndays) {
+        currentlyTriggered = true;
+        for (let j = filteredFactor.values.length - ndays; j < filteredFactor.values.length; j++) {
+          if (j > 0 && filteredFactor.values[j] <= filteredFactor.values[j-1]) { currentlyTriggered = false; break; }
+        }
+      }
+      break;
+    case 'new_high':
+      if (filteredFactor.values.length >= ndays) {
+        let maxPrev = -Infinity;
+        for (let j = filteredFactor.values.length - ndays; j < filteredFactor.values.length - 1; j++) maxPrev = Math.max(maxPrev, filteredFactor.values[j]);
+        currentlyTriggered = lastFactorVal > maxPrev;
+      }
+      break;
+  }
+
+  renderResult({
+    factorName: selectedFactor,
+    targetLabel: targetSeries.label,
+    isPrice: targetSeries.isPrice,
+    isSpread: targetSeries.isSpread,
+    triggerType, threshold, ndays, windowN,
+    direction,
+    events,
+    stats: {
+      triggerCount: events.length,
+      winRate,
+      avgReturn,
+      medianReturn,
+      avgWin,
+      avgLoss,
+      profitLossRatio,
+      avgMFE,
+      avgMAE,
+      lastTriggerDate: lastTrigger.date,
+      currentlyTriggered,
+      lastFactorVal,
+    },
+    factorSeries: filteredFactor,
+    targetSeries,
+  });
+}
+
+// ============================================
+// 渲染结果
+// ============================================
+function renderResult(data) {
+  const {
+    factorName, targetLabel, isPrice, isSpread,
+    triggerType, threshold, ndays, windowN, direction,
+    events, stats, factorSeries, targetSeries,
+  } = data;
+
+  const triggerDesc = {
+    above: `因子 &gt; ${threshold}`,
+    below: `因子 &lt; ${threshold}`,
+    cross_up: `上穿 ${threshold}`,
+    consecutive_up: `连续 ${ndays} 日上升`,
+    new_high: `创 ${ndays} 日新高`,
+  }[triggerType];
+
+  const dirDesc = direction === 'down'
+    ? (isPrice ? '价格上行=赢' : '收益率下行=赢')
+    : (isPrice ? '价格下行=赢' : '收益率上行=赢');
+
+  const unit = isPrice ? '元' : 'bp';
+  const retFmt = v => (v >= 0 ? '+' : '') + v.toFixed(2) + ' ' + unit;
+
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="main-header" style="padding:0 0 8px">
+      <h3 style="font-size:16px">${factorName} → ${targetLabel}</h3>
+      <p class="desc" style="font-size:12px">触发: ${triggerDesc} ｜ 方向: ${dirDesc} ｜ 窗口: 未来 ${windowN} 日 ｜ 样本: ${stats.lastTriggerDate ? events[0].date + ' ~ ' + stats.lastTriggerDate : '--'}</p>
+    </div>
+
+    <div>
+      <div class="section-title"><span class="dot"></span>统计指标</div>
+      <div class="kpi-grid">
+        <div class="kpi-card ${stats.winRate>=0.5?'win':'lose'}">
+          <div class="kpi-label">触发次数</div>
+          <div class="kpi-value">${stats.triggerCount}</div>
+        </div>
+        <div class="kpi-card ${stats.winRate>=0.5?'win':'lose'}">
+          <div class="kpi-label">胜率</div>
+          <div class="kpi-value">${(stats.winRate*100).toFixed(1)}%</div>
+          <div class="kpi-sub">${events.filter(e=>e.isWin).length}胜 ${events.filter(e=>!e.isWin).length}负</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">平均收益</div>
+          <div class="kpi-value">${retFmt(stats.avgReturn)}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">中位数收益</div>
+          <div class="kpi-value">${retFmt(stats.medianReturn)}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">平均最大有利波动</div>
+          <div class="kpi-value" style="color:var(--danger)">${retFmt(stats.avgMFE)}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">平均最大不利波动</div>
+          <div class="kpi-value" style="color:var(--success)">${retFmt(stats.avgMAE)}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">盈亏比</div>
+          <div class="kpi-value">${stats.profitLossRatio === Infinity ? '∞' : stats.profitLossRatio.toFixed(2)}</div>
+          <div class="kpi-sub">均胜${retFmt(stats.avgWin)} / 均亏${retFmt(stats.avgLoss)}</div>
+        </div>
+        <div class="kpi-card ${stats.currentlyTriggered?'win':''}">
+          <div class="kpi-label">最近触发</div>
+          <div class="kpi-value" style="font-size:14px">${stats.lastTriggerDate || '--'}</div>
+          <div class="kpi-sub">当前因子值: ${stats.lastFactorVal.toFixed(1)} ${stats.currentlyTriggered?'⚠️ 已触发':'未触发'}</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title"><span class="dot"></span>因子走势 + 触发点</div>
+      <div class="chart-box">
+        <div class="chart-label">${factorName}（蓝线）与触发时点（红点）</div>
+        <div class="chart-wrap"><canvas id="chart-factor"></canvas></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title"><span class="dot"></span>触发事件收益分布</div>
+      <div class="chart-box">
+        <div class="chart-label">每次触发后 ${windowN} 日 ${targetLabel} 收益（${unit}）</div>
+        <div class="chart-wrap"><canvas id="chart-event"></canvas></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title"><span class="dot"></span>触发事件明细</div>
+      <div class="chart-box" style="overflow-x:auto">
+        <table class="event-table">
+          <thead>
+            <tr>
+              <th>#</th><th>触发日期</th><th>因子值</th>
+              <th>起始日</th><th>结束日</th>
+              <th>收益(${unit})</th><th>最大有利</th><th>最大不利</th><th>结果</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${events.map((e,i) => `
+              <tr>
+                <td>${i+1}</td>
+                <td>${e.date}</td>
+                <td>${e.factorVal.toFixed(1)}</td>
+                <td>${e.startDate}</td>
+                <td>${e.endDate}</td>
+                <td class="${e.change>=0?'pos':'neg'}">${retFmt(e.change)}</td>
+                <td class="pos">${retFmt(e.mfe)}</td>
+                <td class="neg">${retFmt(e.mae)}</td>
+                <td><span class="win-badge ${e.isWin?'w':'l'}">${e.isWin?'胜':'负'}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  // 绘制因子+触发点图
+  drawFactorChart(factorSeries, events);
+  // 绘制事件收益柱状图
+  drawEventChart(events, unit);
+}
+
+function drawFactorChart(factorSeries, events) {
+  if (chartFactor) chartFactor.destroy();
+  const ctx = document.getElementById('chart-factor');
+  const triggerDates = new Set(events.map(e => e.date));
+  const triggerPoints = factorSeries.dates.map((d, i) => triggerDates.has(d) ? factorSeries.values[i] : null);
+
+  chartFactor = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: factorSeries.dates,
+      datasets: [
+        {
+          label: '因子值',
+          data: factorSeries.values,
+          borderColor: '#5470c6',
+          backgroundColor: '#5470c615',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          tension: 0.1,
+          fill: false,
+        },
+        {
+          label: '触发点',
+          data: triggerPoints,
+          borderColor: '#ef4444',
+          backgroundColor: '#ef4444',
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          showLine: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { usePointStyle: true, font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          titleColor: '#2c3e50', bodyColor: '#2c3e50',
+          borderColor: '#e8ecf1', borderWidth: 1, cornerRadius: 6,
+        },
+        zoom: {
+          pan: { enabled: true, mode: 'x' },
+          zoom: { wheel: { enabled: true, speed: 0.1 }, mode: 'x',
+            onDoubleClick: function(c){ c.resetZoom(); return false; } },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 }, grid: { display: false } },
+        y: { title: { display: true, text: '因子分位值', font: { size: 11 } }, ticks: { font: { size: 10 } }, grid: { color: '#f0f0f0' } },
+      },
+    },
+  });
+}
+
+function drawEventChart(events, unit) {
+  if (chartEvent) chartEvent.destroy();
+  const ctx = document.getElementById('chart-event');
+  chartEvent = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: events.map(e => e.date),
+      datasets: [{
+        label: `收益 (${unit})`,
+        data: events.map(e => e.change),
+        backgroundColor: events.map(e => {
+          // 胜的颜色：收益率下行赢→负为红(胜)；价格上行赢→正为红(胜)
+          return e.isWin ? '#ef4444' : '#22c55e';
+        }),
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          callbacks: {
+            label: ctx => (ctx.parsed.y >= 0 ? '+' : '') + ctx.parsed.y.toFixed(2) + ' ' + unit,
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 9 }, maxRotation: 90, minRotation: 45 }, grid: { display: false } },
+        y: { title: { display: true, text: `收益 (${unit})` }, ticks: { font: { size: 10 } }, grid: { color: '#f0f0f0' } },
+      },
+    },
+  });
+}
+
+function renderEmptyResult() {
+  document.getElementById('content').innerHTML = `
+    <div class="empty-state">
+      <div class="icon">📭</div>
+      <div>在选定时间范围内无触发事件，请调整触发条件或时间范围</div>
+    </div>
+  `;
+}
+
+function resetAll() {
+  selectedFactor = '';
+  selectedTarget = '';
+  selectedSpreadB = '';
+  direction = 'down';
+  windowN = 1;
+  document.getElementById('trigger-type').value = 'above';
+  document.getElementById('threshold').value = 80;
+  document.getElementById('ndays').value = 3;
+  onTriggerChange();
+  setDirection('down');
+  setWindow(1);
+  document.getElementById('spread-builder').style.display = 'none';
+  renderFactorPool();
+  renderTargetPool();
+  document.getElementById('content').innerHTML = `
+    <div class="empty-state">
+      <div class="icon">🔬</div>
+      <div>配置左侧参数后点击"运行检验"查看结果</div>
+    </div>
+  `;
+}
+
+// Start
+init();
+</script>
+</body>
+</html>
