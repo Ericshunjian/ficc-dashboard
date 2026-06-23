@@ -924,20 +924,6 @@ def git_push_data():
         log.warning("  commit 失败")
         return
 
-    # push 到 Gitee (origin)
-    log.info("  推送到 Gitee...")
-    if run_git('push', 'origin', 'main'):
-        log.info("  Gitee 推送成功")
-    else:
-        log.warning("  Gitee 推送失败")
-
-    # push 到 GitCode
-    log.info("  推送到 GitCode...")
-    if run_git('push', 'gitcode', 'main'):
-        log.info("  GitCode 推送成功")
-    else:
-        log.warning("  GitCode 推送失败")
-
     # push 到 GitHub
     log.info("  推送到 GitHub...")
     if run_git('push', 'github', 'main'):
