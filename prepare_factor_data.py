@@ -71,6 +71,24 @@ FACTOR_DEFS = [
         "maturity": "20-30年",
         "description": "保险公司对20-30年国债净买入的MA10在过去100天的百分位（再MA10）",
     },
+    {
+        "name": "中小型银行·7-10年国债净买入因子",
+        "short_name": "中小银行·7-10年国债因子",
+        "category": "机构行为",
+        "institution": "中小型银行",
+        "bond_type": "国债",
+        "maturity": "7-10年",
+        "description": "中小型银行对7-10年国债净买入的MA10在过去100天的百分位（再MA10）",
+    },
+    {
+        "name": "基金公司及产品·7-10年国债+国开债净买入合力因子",
+        "short_name": "基金·买入力量因子",
+        "category": "机构行为",
+        "institution": "基金公司及产品",
+        "bond_types": ["国债", "政金债"],  # 多券种求和
+        "maturity": "7-10年",
+        "description": "基金公司及产品对7-10年国债+政金债净买入合计的MA10在过去100天的百分位（再MA10）",
+    },
 ]
 
 
@@ -84,13 +102,22 @@ def percentile_rank(series):
 
 def compute_factor(df_detail, factor_def):
     inst = factor_def["institution"]
-    bt = factor_def["bond_type"]
     mat = factor_def["maturity"]
-    mask = (
-        (df_detail["institution"] == inst) &
-        (df_detail["bond_type"] == bt) &
-        (df_detail["maturity"] == mat)
-    )
+    # 支持单券种（bond_type）和多券种求和（bond_types）
+    bond_types = factor_def.get("bond_types")
+    if bond_types:
+        mask = (
+            (df_detail["institution"] == inst) &
+            (df_detail["bond_type"].isin(bond_types)) &
+            (df_detail["maturity"] == mat)
+        )
+    else:
+        bt = factor_def["bond_type"]
+        mask = (
+            (df_detail["institution"] == inst) &
+            (df_detail["bond_type"] == bt) &
+            (df_detail["maturity"] == mat)
+        )
     sub = df_detail[mask].copy()
     if len(sub) == 0:
         log.warning(f"  {factor_def['short_name']}: 无数据")
@@ -134,7 +161,8 @@ def main():
     factors = {}
     categories = {}
     for fd in FACTOR_DEFS:
-        log.info(f"计算因子: {fd['short_name']} ({fd['institution']}/{fd['bond_type']}/{fd['maturity']})")
+        bt_desc = fd.get("bond_types", [fd.get("bond_type", "?")])
+        log.info(f"计算因子: {fd['short_name']} ({fd['institution']}/{'+'.join(bt_desc)}/{fd['maturity']})")
         result = compute_factor(df, fd)
         factors[fd["short_name"]] = result
         categories.setdefault(fd["category"], []).append(fd["short_name"])
