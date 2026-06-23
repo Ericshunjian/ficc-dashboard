@@ -480,6 +480,14 @@
         </div>
       </div>
       <div class="cfg-group">
+        <span class="cfg-label">回测区间</span>
+        <div style="display:flex;align-items:center;gap:4px">
+          <input type="date" id="sig-date-start" onchange="syncSigDate()" style="padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:var(--bg);outline:none">
+          <span style="font-size:10px;color:var(--text-secondary)">~</span>
+          <input type="date" id="sig-date-end" onchange="syncSigDate()" style="padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:var(--bg);outline:none">
+        </div>
+      </div>
+      <div class="cfg-group">
         <button class="sig-btn" onclick="runSignalTest()">运行检验</button>
       </div>
     </div>
@@ -1010,7 +1018,22 @@ function switchTab(tab) {
     document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
     document.getElementById('tab-signal').classList.add('active');
     refreshSigFactorOptions();
+    syncSigDate();
   }
+}
+
+// 同步左侧时间范围到信号检验配置区
+function syncSigDate() {
+  const ds = document.getElementById('sig-date-start');
+  const de = document.getElementById('sig-date-end');
+  const mainDs = document.getElementById('date-start');
+  const mainDe = document.getElementById('date-end');
+  // 信号检验框改了 → 同步到主框
+  if (ds.value && ds.value !== mainDs.value) mainDs.value = ds.value;
+  if (de.value && de.value !== mainDe.value) mainDe.value = de.value;
+  // 主框的值同步回信号检验框显示
+  ds.value = mainDs.value;
+  de.value = mainDe.value;
 }
 
 function refreshSigFactorOptions() {
