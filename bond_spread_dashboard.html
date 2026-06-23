@@ -318,23 +318,18 @@
   </div>
 
   <div class="filter-body">
-    <!-- 步骤 1：选标的分类 -->
+    <!-- 步骤 1：选标的分类（标签式，同收益率曲线页面） -->
     <div class="filter-group">
       <label class="filter-label"><span class="dot"></span>步骤 1：选标的分类</label>
-      <select id="category-select" onchange="onCategoryChange()" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);outline:none">
-        <option value="bond">个券（现券）</option>
-        <option value="irs">IRS</option>
-        <option value="futures_rate">期货隐含利率</option>
-        <option value="futures_price">期货价格</option>
-      </select>
-      <!-- 期限筛选（仅个券时显示） -->
-      <div id="term-filter" class="tag-grid" id="term-tags" style="margin-top:8px"></div>
-      <p class="hint" id="category-hint">选"个券"可按期限筛选；IRS/期货直接列出标的</p>
+      <div class="tag-grid" id="category-tags"></div>
+      <p class="hint" id="category-hint">个券 / IRS / 期货隐含利率 / 期货价格</p>
     </div>
 
     <!-- 步骤 2：券池（统一） -->
     <div class="filter-group">
       <label class="filter-label"><span class="dot"></span>步骤 2：从券池拖拽标的</label>
+      <!-- 期限筛选（仅个券时显示） -->
+      <div id="term-filter" class="tag-grid" style="margin-bottom:6px"></div>
       <div class="bond-pool" id="bond-pool"></div>
       <p class="hint">拖拽下方标的到 A、B 框中比较利差</p>
     </div>
@@ -430,6 +425,14 @@ const COLOR_A = '#5470c6';
 const COLOR_B = '#ee6666';
 const COLOR_SPREAD = '#fac858';
 
+// ── 分类定义（标签显示名 → value）──
+const CATEGORIES = [
+  { value: 'bond', label: '个券' },
+  { value: 'irs', label: 'IRS' },
+  { value: 'futures_rate', label: '期货隐含利率' },
+  { value: 'futures_price', label: '期货价格' },
+];
+
 // ── 各分类对应的曲线标的 ──
 const CATEGORY_CURVES = {
   irs: ['IRS-1Y', 'IRS-2Y', 'IRS-5Y'],
@@ -450,6 +453,7 @@ async function init() {
     curveData = await resp2.json();
 
     const terms = Object.keys(allData.meta.terms);
+    renderCategoryTags();
     renderTermTags(terms);
     renderBondPool();
     setupDropZones();
@@ -466,15 +470,35 @@ async function init() {
   }
 }
 
-// ── 分类切换 ──
+// ── 分类切换（标签式） ──
+function renderCategoryTags() {
+  const container = document.getElementById('category-tags');
+  container.innerHTML = '';
+  CATEGORIES.forEach(c => {
+    const tag = document.createElement('div');
+    tag.className = 'tag' + (c.value === selectedCategory ? ' active' : '');
+    tag.textContent = c.label;
+    tag.onclick = () => {
+      selectedCategory = c.value;
+      selectedTerm = '全部';
+      renderCategoryTags();
+      renderTermTags(Object.keys(allData.meta.terms));
+      renderBondPool();
+      // 更新提示
+      const hints = {
+        bond: '选期限可进一步筛选个券',
+        irs: 'IRS 利率互换标的',
+        futures_rate: '国债期货隐含利率',
+        futures_price: '国债期货价格（后复权）',
+      };
+      document.getElementById('category-hint').textContent = hints[c.value];
+    };
+    container.appendChild(tag);
+  });
+}
+
 function onCategoryChange() {
-  selectedCategory = document.getElementById('category-select').value;
-  const isBond = selectedCategory === 'bond';
-  document.getElementById('term-filter').style.display = isBond ? '' : 'none';
-  document.getElementById('category-hint').textContent = isBond
-    ? '选"个券"可按期限筛选；IRS/期货直接列出标的'
-    : `${selectedCategory === 'irs' ? 'IRS' : selectedCategory === 'futures_rate' ? '期货隐含利率' : '期货价格'}标的，直接拖拽`;
-  renderBondPool();
+  // 兼容旧调用，现在由 renderCategoryTags 处理
 }
 
 function getAllCodes() {
@@ -494,8 +518,10 @@ function formatDur(d) {
 // 期限标签
 // ============================================
 function renderTermTags(terms) {
-  const container = document.getElementById('term-tags');
+  const container = document.getElementById('term-filter');
   container.innerHTML = '';
+  // 仅个券分类时显示期限筛选
+  container.style.display = (selectedCategory === 'bond') ? '' : 'none';
   ['全部', ...terms].forEach(t => {
     const tag = document.createElement('div');
     tag.className = 'tag' + (t === selectedTerm ? ' active' : '');
@@ -940,10 +966,9 @@ function resetFilters() {
   const terms = Object.keys(allData.meta.terms);
   selectedCategory = 'bond';
   selectedTerm = '全部';
-  document.getElementById('category-select').value = 'bond';
-  document.getElementById('term-filter').style.display = '';
   slotA = '';
   slotB = '';
+  renderCategoryTags();
   renderTermTags(terms);
   renderBondPool();
   renderSlots();
