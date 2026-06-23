@@ -300,23 +300,51 @@ def update_bond_trading_data():
     if len(df_detail) > 0:
         log.info(f"  日期范围: {df_detail['date'].min()} ~ {df_detail['date'].max()}")
 
+    # 索引化压缩输出（54MB → ~6MB）
+    dates_list = sorted(df_detail['date'].unique().tolist()) if len(df_detail) > 0 else []
+    bond_types_list = sorted(df_detail['bond_type'].unique().tolist()) if len(df_detail) > 0 else []
+    institutions_list = INSTITUTIONS
+    maturities_list = MATURITIES + ["合计"]
+    date_idx = {d: i for i, d in enumerate(dates_list)}
+    bt_idx = {b: i for i, b in enumerate(bond_types_list)}
+    inst_idx = {i: idx for idx, i in enumerate(institutions_list)}
+    mat_idx = {m: i for i, m in enumerate(maturities_list)}
+
+    compact_detail = []
+    for _, r in df_detail.iterrows():
+        compact_detail.append([date_idx[r['date']], bt_idx[r['bond_type']],
+                               inst_idx[r['institution']], mat_idx[r['maturity']],
+                               round(float(r['value']), 2)])
+    compact_summary = []
+    for _, r in df_summary.iterrows():
+        compact_summary.append([date_idx.get(r['date'], -1), bt_idx.get(r['bond_type'], -1),
+                                inst_idx.get(r['institution'], -1), mat_idx.get(r['maturity'], -1),
+                                round(float(r['value']), 2)])
+
     output = {
         "meta": {
             "data_source": "bond_data.xlsx + bond_data_备份截至2025年.xlsx (merged)",
             "date_range": [df_detail['date'].min(), df_detail['date'].max()] if len(df_detail) > 0 else ["", ""],
-            "bond_types": sorted(df_detail['bond_type'].unique().tolist()) if len(df_detail) > 0 else [],
-            "institutions": INSTITUTIONS,
-            "maturities": MATURITIES + ["合计"],
+            "bond_types": bond_types_list,
+            "institutions": institutions_list,
+            "maturities": maturities_list,
             "total_records": len(df_detail),
             "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "note": "合并数据：旧文件(2021-2025)机构映射13→8，新文件(2026-)原样保留",
+            "format": "compact_v1",  # 标记压缩格式版本
         },
-        "detail": df_detail.to_dict(orient="records"),
-        "summary": df_summary.to_dict(orient="records"),
+        "idx": {
+            "dates": dates_list,
+            "bond_types": bond_types_list,
+            "institutions": institutions_list,
+            "maturities": maturities_list,
+        },
+        "detail": compact_detail,
+        "summary": compact_summary,
     }
     tmp = BOND_DATA_OUTPUT + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
+        json.dump(output, f, ensure_ascii=False, separators=(',', ':'))
     os.replace(tmp, BOND_DATA_OUTPUT)
     log.info(f"  输出: {BOND_DATA_OUTPUT} ({os.path.getsize(BOND_DATA_OUTPUT)/1024/1024:.1f} MB)")
     return True

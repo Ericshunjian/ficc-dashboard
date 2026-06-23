@@ -438,7 +438,33 @@ let selectedMaturities = new Set();
 async function init() {
   try {
     const resp = await fetch('bond_trading_data.json?t=' + Date.now());
-    allData = await resp.json();
+    const raw = await resp.json();
+
+    // 兼容压缩格式（compact_v1）和旧格式
+    if (raw.meta && raw.meta.format === 'compact_v1' && raw.idx) {
+      // 解压：把索引数组转回对象数组
+      const idx = raw.idx;
+      allData = {
+        meta: raw.meta,
+        detail: raw.detail.map(r => ({
+          date: idx.dates[r[0]],
+          bond_type: idx.bond_types[r[1]],
+          institution: idx.institutions[r[2]],
+          maturity: idx.maturities[r[3]],
+          value: r[4],
+        })),
+        summary: raw.summary.map(r => ({
+          date: idx.dates[r[0]],
+          bond_type: idx.bond_types[r[1]],
+          institution: idx.institutions[r[2]],
+          maturity: idx.maturities[r[3]],
+          value: r[4],
+        })),
+      };
+    } else {
+      // 旧格式直接用
+      allData = raw;
+    }
 
     const meta = allData.meta;
     // 默认起始日期：若数据早于 2026 年，则默认从 2026-01-01 开始展示
