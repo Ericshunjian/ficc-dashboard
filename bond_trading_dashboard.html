@@ -438,7 +438,9 @@ async function init() {
     allData = await resp.json();
 
     const meta = allData.meta;
-    document.getElementById('date-start').value = meta.date_range[0];
+    // 默认起始日期：若数据早于 2026 年，则默认从 2026-01-01 开始展示
+    const defaultStart = (meta.date_range[0] < '2026-01-01') ? '2026-01-01' : meta.date_range[0];
+    document.getElementById('date-start').value = defaultStart;
     document.getElementById('date-end').value = meta.date_range[1];
 
     renderTagGroup('institution-tags', meta.institutions, selectedInstitutions, true);
@@ -780,7 +782,7 @@ function resetFilters() {
   selectedBondTypes.add(meta.bond_types[2]); // 国债
   selectedMaturities.clear();
 
-  document.getElementById('date-start').value = meta.date_range[0];
+  document.getElementById('date-start').value = (meta.date_range[0] < '2026-01-01') ? '2026-01-01' : meta.date_range[0];
   document.getElementById('date-end').value = meta.date_range[1];
 
   refreshAllTags();

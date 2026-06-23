@@ -26,6 +26,7 @@ from pathlib import Path
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BOND_DATA_EXCEL = r"C:\Users\lihaoran\Documents\工作\现券交易\bond_data.xlsx"
+OLD_BOND_DATA_EXCEL = r"C:\Users\lihaoran\Documents\工作\现券交易\bond_data_备份截至2025年.xlsx"
 BOND_DATA_OUTPUT = os.path.join(SCRIPT_DIR, "bond_trading_data.json")
 FICC_EXCEL = r"D:\工作1\研究课题\收益率曲线\FICC原始数据（现券）.xlsx"
 FICC_OUTPUT = os.path.join(SCRIPT_DIR, "bond_yield_data.json")
@@ -63,6 +64,55 @@ MATURITIES = ["≤1年", "1-3年", "3-5年", "5-7年", "7-10年",
               "10-15年", "15-20年", "20-30年", ">30年"]
 BOND_TYPES_DETAIL = ["国债", "政金债", "地方债", "同业存单", "信用债"]
 BOND_TYPES_SUMMARY = ["国债", "政金债", "地方债", "同业存单", "信用债", "利率债"]
+
+# ── 旧文件（备份截至2025年）机构映射 ──
+# 旧文件明细sheet(11)有13个机构，汇总sheet(0-5)有12个机构（无境外机构）
+# 映射到新口径8个机构，其他产品类/境外机构忽略
+OLD_INSTITUTIONS_DETAIL = [
+    "大型商业银行/政策性银行",  # → 大型银行
+    "股份制商业银行",            # → 中小型银行
+    "城市商业银行",              # → 中小型银行
+    "外资银行",                  # → 中小型银行
+    "农村金融机构",              # → 中小型银行
+    "证券公司",                  # → 证券公司
+    "保险公司",                  # → 保险公司
+    "基金公司及产品",            # → 基金公司及产品
+    "理财子公司及理财类产品",    # → 理财子公司及理财类产品
+    "其他产品类",                # → 忽略
+    "境外机构",                  # → 忽略
+    "货币市场基金",              # → 货币市场基金
+    "其他",                      # → 其他
+]
+OLD_TO_NEW_MAP = {
+    "大型商业银行/政策性银行": "大型银行",
+    "股份制商业银行": "中小型银行",
+    "城市商业银行": "中小型银行",
+    "外资银行": "中小型银行",
+    "农村金融机构": "中小型银行",
+    "证券公司": "证券公司",
+    "保险公司": "保险公司",
+    "基金公司及产品": "基金公司及产品",
+    "理财子公司及理财类产品": "理财子公司及理财类产品",
+    "货币市场基金": "货币市场基金",
+    "其他": "其他",
+    "其他产品类": None,  # 忽略
+    "境外机构": None,    # 忽略
+}
+# 旧文件汇总sheet(0-5)机构列顺序（12个，无境外机构）
+OLD_INSTITUTIONS_SUMMARY = [
+    "大型商业银行/政策性银行",  # col 1 → 大型银行
+    "股份制商业银行",            # col 2 → 中小型银行
+    "城市商业银行",              # col 3 → 中小型银行
+    "外资银行",                  # col 4 → 中小型银行
+    "农村金融机构",              # col 5 → 中小型银行
+    "证券公司",                  # col 6 → 证券公司
+    "保险公司",                  # col 7 → 保险公司
+    "基金公司及产品",            # col 8 → 基金公司及产品
+    "理财子公司及理财类产品",    # col 9 → 理财子公司及理财类产品
+    "其他产品类",                # col 10 → 忽略
+    "货币市场基金",              # col 11 → 货币市场基金
+    "其他",                      # col 12 → 其他
+]
 
 
 def is_file_today(file_path):
@@ -131,8 +181,80 @@ def build_summary():
     return pd.DataFrame(records)
 
 
+def build_detail_old():
+    """解析旧文件 sheet 11（13 机构 × 10 列，映射到新口径 8 机构）"""
+    df = pd.read_excel(OLD_BOND_DATA_EXCEL, sheet_name=11)
+    date_counts = df.iloc[:, 0].value_counts().sort_index()
+    records = []
+    for day_offset, date_val in enumerate(date_counts.index):
+        start_idx = day_offset * 5
+        for bond_offset in range(5):
+            row_idx = start_idx + bond_offset
+            if row_idx >= len(df):
+                break
+            row = df.iloc[row_idx]
+            date_str = format_date(date_val)
+            bond_type = BOND_TYPES_DETAIL[bond_offset]
+            # 按新口径机构聚合（加总）
+            new_inst_values = {inst: [0.0] * 10 for inst in INSTITUTIONS}
+            for old_idx, old_inst in enumerate(OLD_INSTITUTIONS_DETAIL):
+                new_inst = OLD_TO_NEW_MAP.get(old_inst)
+                if new_inst is None:
+                    continue
+                col_start = old_idx * 10 + 1
+                for mat_idx in range(10):  # 9 期限 + 合计
+                    val = row.iloc[col_start + mat_idx]
+                    if pd.notna(val):
+                        new_inst_values[new_inst][mat_idx] += float(val)
+            for inst_name in INSTITUTIONS:
+                vals = new_inst_values[inst_name]
+                for mat_idx, mat_name in enumerate(MATURITIES):
+                    v = vals[mat_idx]
+                    if v != 0:
+                        records.append({
+                            "date": date_str, "bond_type": bond_type,
+                            "institution": inst_name, "maturity": mat_name,
+                            "value": round(v, 4),
+                        })
+                total_v = vals[9]
+                if total_v != 0:
+                    records.append({
+                        "date": date_str, "bond_type": bond_type,
+                        "institution": inst_name, "maturity": "合计",
+                        "value": round(total_v, 4),
+                    })
+    return pd.DataFrame(records)
+
+
+def build_summary_old():
+    """解析旧文件 sheets 0-5（12 机构，映射到新口径 8 机构）"""
+    records = []
+    for sheet_idx, bond_type in enumerate(BOND_TYPES_SUMMARY):
+        df = pd.read_excel(OLD_BOND_DATA_EXCEL, sheet_name=sheet_idx, header=None)
+        for _, row in df.iloc[1:].iterrows():
+            date_str = format_date(row.iloc[0])
+            # 按新口径机构聚合（加总）
+            new_inst_values = {inst: 0.0 for inst in INSTITUTIONS_SUMMARY}
+            for col_offset, old_inst in enumerate(OLD_INSTITUTIONS_SUMMARY):
+                new_inst = OLD_TO_NEW_MAP.get(old_inst)
+                if new_inst is None:
+                    continue
+                val = row.iloc[col_offset + 1]
+                if pd.notna(val):
+                    new_inst_values[new_inst] += float(val)
+            for inst_name in INSTITUTIONS_SUMMARY:
+                v = new_inst_values[inst_name]
+                if v != 0:
+                    records.append({
+                        "date": date_str, "bond_type": bond_type,
+                        "institution": inst_name, "maturity": "合计",
+                        "value": round(v, 4),
+                    })
+    return pd.DataFrame(records)
+
+
 def update_bond_trading_data():
-    """更新机构行为数据"""
+    """更新机构行为数据（合并旧文件历史数据 + 新文件当日数据）"""
     if not os.path.exists(BOND_DATA_EXCEL):
         log.warning(f"机构行为数据文件不存在: {BOND_DATA_EXCEL}")
         return False
@@ -141,20 +263,53 @@ def update_bond_trading_data():
         return True
 
     log.info("  开始处理机构行为数据...")
-    df_detail = build_detail()
-    df_summary = build_summary()
-    log.info(f"  明细记录: {len(df_detail)} 条, 汇总记录: {len(df_summary)} 条")
-    log.info(f"  日期范围: {df_detail['date'].min()} ~ {df_detail['date'].max()}")
+    # 新文件（当日数据）
+    df_detail_new = build_detail()
+    df_summary_new = build_summary()
+    log.info(f"  新文件明细: {len(df_detail_new)} 条, 汇总: {len(df_summary_new)} 条")
+
+    # 旧文件（历史数据 2021-06-03 ~ 2025-12-30，机构映射 13→8）
+    df_detail_old = pd.DataFrame()
+    df_summary_old = pd.DataFrame()
+    if os.path.exists(OLD_BOND_DATA_EXCEL):
+        log.info(f"  合并旧文件历史数据: {os.path.basename(OLD_BOND_DATA_EXCEL)}")
+        df_detail_old = build_detail_old()
+        df_summary_old = build_summary_old()
+        log.info(f"  旧文件明细: {len(df_detail_old)} 条, 汇总: {len(df_summary_old)} 条")
+        if len(df_detail_old) > 0:
+            log.info(f"  旧文件日期范围: {df_detail_old['date'].min()} ~ {df_detail_old['date'].max()}")
+    else:
+        log.warning(f"  旧文件不存在: {OLD_BOND_DATA_EXCEL}")
+
+    # 合并（旧 + 新），去重（如有重叠保留新文件数据）
+    df_detail = pd.concat([df_detail_old, df_detail_new], ignore_index=True)
+    if len(df_detail) > 0:
+        df_detail = df_detail.drop_duplicates(
+            subset=['date', 'bond_type', 'institution', 'maturity'], keep='last')
+        df_detail = df_detail.sort_values(
+            ['date', 'bond_type', 'institution', 'maturity']).reset_index(drop=True)
+
+    df_summary = pd.concat([df_summary_old, df_summary_new], ignore_index=True)
+    if len(df_summary) > 0:
+        df_summary = df_summary.drop_duplicates(
+            subset=['date', 'bond_type', 'institution', 'maturity'], keep='last')
+        df_summary = df_summary.sort_values(
+            ['date', 'bond_type', 'institution', 'maturity']).reset_index(drop=True)
+
+    log.info(f"  合并后明细: {len(df_detail)} 条, 汇总: {len(df_summary)} 条")
+    if len(df_detail) > 0:
+        log.info(f"  日期范围: {df_detail['date'].min()} ~ {df_detail['date'].max()}")
 
     output = {
         "meta": {
-            "data_source": "bond_data.xlsx",
-            "date_range": [df_detail['date'].min(), df_detail['date'].max()],
-            "bond_types": sorted(df_detail['bond_type'].unique().tolist()),
+            "data_source": "bond_data.xlsx + bond_data_备份截至2025年.xlsx (merged)",
+            "date_range": [df_detail['date'].min(), df_detail['date'].max()] if len(df_detail) > 0 else ["", ""],
+            "bond_types": sorted(df_detail['bond_type'].unique().tolist()) if len(df_detail) > 0 else [],
             "institutions": INSTITUTIONS,
             "maturities": MATURITIES + ["合计"],
             "total_records": len(df_detail),
             "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "note": "合并数据：旧文件(2021-2025)机构映射13→8，新文件(2026-)原样保留",
         },
         "detail": df_detail.to_dict(orient="records"),
         "summary": df_summary.to_dict(orient="records"),
@@ -706,7 +861,7 @@ def main():
 
 
 def git_push_data():
-    """commit 并 push 更新的 JSON 数据到 Gitee + GitCode"""
+    """commit 并 push 更新的 JSON 数据 + HTML 网页到 Gitee + GitCode + GitHub"""
     repo_dir = Path(SCRIPT_DIR)
     today_str = datetime.now().strftime("%Y-%m-%d")
 
@@ -741,6 +896,19 @@ def git_push_data():
     ]
     for f in json_files:
         run_git('add', f)
+
+    # add HTML 网页文件（网页代码改动时同步推送）
+    html_files = [
+        'index.html',
+        'bond_trading_dashboard.html',
+        'bond_spread_dashboard.html',
+        'yield_curve_dashboard.html',
+        'factor_dashboard.html',
+        'backtest_dashboard.html',
+    ]
+    for f in html_files:
+        if (repo_dir / f).exists():
+            run_git('add', f)
 
     # 检查是否有变化
     result = subprocess.run(
