@@ -431,67 +431,147 @@ let chartCumulative = null;
 let selectedInstitutions = new Set();
 let selectedBondTypes = new Set();
 let selectedMaturities = new Set();
+let dataRendered = false;  // 首次渲染后才 true，防止后台更新时重置用户选择
+
+// ============================================
+// IndexedDB 缓存工具（解决 5.8MB 数据反复下载问题）
+// ============================================
+const IDB_NAME = 'ficc_cache';
+const IDB_STORE = 'kv';
+const CACHE_KEY_BTD = 'bond_trading_data';
+const DATA_URL_BTD = 'bond_trading_data.json';
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+async function idbGet(key) {
+  try {
+    const db = await idbOpen();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) { return null; }
+}
+async function idbSet(key, val) {
+  try {
+    const db = await idbOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(val, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) { console.warn('IndexedDB 写入失败', e); }
+}
+
+// 解压 compact_v1 格式
+function decompressData(raw) {
+  if (raw.meta && raw.meta.format === 'compact_v1' && raw.idx) {
+    const idx = raw.idx;
+    const mapRow = r => ({
+      date: idx.dates[r[0]],
+      bond_type: idx.bond_types[r[1]],
+      institution: idx.institutions[r[2]],
+      maturity: idx.maturities[r[3]],
+      value: r[4],
+    });
+    return {
+      meta: raw.meta,
+      detail: raw.detail.map(mapRow),
+      summary: raw.summary.map(mapRow),
+    };
+  }
+  return raw;
+}
+
+// 从 allData 渲染 UI（首次设默认选择，后续更新保留用户选择）
+function renderFromData() {
+  const meta = allData.meta;
+  const defaultStart = (meta.date_range[0] < '2026-01-01') ? '2026-01-01' : meta.date_range[0];
+  document.getElementById('date-start').value = defaultStart;
+  document.getElementById('date-end').value = meta.date_range[1];
+  renderTagGroup('institution-tags', meta.institutions, selectedInstitutions, true);
+  renderTagGroup('bond-type-tags', meta.bond_types, selectedBondTypes, false, true);
+  renderTagGroup('maturity-tags', meta.maturities, selectedMaturities, false);
+  if (!dataRendered) {
+    const largeIdx = meta.institutions.indexOf('大型银行');
+    if (largeIdx >= 0) selectedInstitutions.add('大型银行');
+    const gzIdx = meta.bond_types.indexOf('国债');
+    if (gzIdx >= 0) selectedBondTypes.add('国债');
+    dataRendered = true;
+  }
+  refreshAllTags();
+  updateChart();
+}
 
 // ============================================
 // Initialize
 // ============================================
 async function init() {
+  const noteEl = document.getElementById('source-note');
+  const origNote = noteEl ? noteEl.textContent : '';
+
+  // 1. 先从 IndexedDB 读缓存 → 命中则立即渲染（秒开）
+  const cachedRaw = await idbGet(CACHE_KEY_BTD);
+  if (cachedRaw) {
+    allData = decompressData(cachedRaw);
+    renderFromData();
+    if (noteEl) noteEl.textContent = '✓ 已加载缓存数据，后台检查更新中...';
+  } else {
+    if (noteEl) noteEl.textContent = '⏳ 首次加载，正在下载数据（约 5.8MB）...';
+  }
+
+  // 2. 后台校验最新数据（不带时间戳，走 HTTP 缓存，304 极快）
   try {
-    const resp = await fetch('bond_trading_data.json?t=' + Date.now());
+    const resp = await fetch(DATA_URL_BTD);
     const raw = await resp.json();
+    const newUpdated = raw.meta && raw.meta.last_updated;
+    const cachedUpdated = cachedRaw && cachedRaw.meta && cachedRaw.meta.last_updated;
 
-    // 兼容压缩格式（compact_v1）和旧格式
-    if (raw.meta && raw.meta.format === 'compact_v1' && raw.idx) {
-      // 解压：把索引数组转回对象数组
-      const idx = raw.idx;
-      allData = {
-        meta: raw.meta,
-        detail: raw.detail.map(r => ({
-          date: idx.dates[r[0]],
-          bond_type: idx.bond_types[r[1]],
-          institution: idx.institutions[r[2]],
-          maturity: idx.maturities[r[3]],
-          value: r[4],
-        })),
-        summary: raw.summary.map(r => ({
-          date: idx.dates[r[0]],
-          bond_type: idx.bond_types[r[1]],
-          institution: idx.institutions[r[2]],
-          maturity: idx.maturities[r[3]],
-          value: r[4],
-        })),
-      };
+    if (newUpdated !== cachedUpdated) {
+      // 数据有更新（或首次加载）
+      allData = decompressData(raw);
+      renderFromData();
+      await idbSet(CACHE_KEY_BTD, raw);
+      if (noteEl) {
+        noteEl.textContent = '✓ 数据已更新至最新（' + (newUpdated || '未知') + '）';
+        setTimeout(() => { if (noteEl.textContent.startsWith('✓ 数据已更新')) noteEl.textContent = origNote; }, 4000);
+      }
     } else {
-      // 旧格式直接用
-      allData = raw;
+      if (noteEl) {
+        noteEl.textContent = '✓ 数据已是最新';
+        setTimeout(() => { if (noteEl.textContent.startsWith('✓ 数据已是最新')) noteEl.textContent = origNote; }, 3000);
+      }
     }
-
-    const meta = allData.meta;
-    // 默认起始日期：若数据早于 2026 年，则默认从 2026-01-01 开始展示
-    const defaultStart = (meta.date_range[0] < '2026-01-01') ? '2026-01-01' : meta.date_range[0];
-    document.getElementById('date-start').value = defaultStart;
-    document.getElementById('date-end').value = meta.date_range[1];
-
-    renderTagGroup('institution-tags', meta.institutions, selectedInstitutions, true);
-    renderTagGroup('bond-type-tags', meta.bond_types, selectedBondTypes, false, true);
-    renderTagGroup('maturity-tags', meta.maturities, selectedMaturities, false);
-
-    // Default: select 大型银行 & 国债
-    const largeIdx = meta.institutions.indexOf('大型银行');
-    if (largeIdx >= 0) selectedInstitutions.add('大型银行');
-    const gzIdx = meta.bond_types.indexOf('国债');
-    if (gzIdx >= 0) selectedBondTypes.add('国债');
-
-    refreshAllTags();
-    updateChart();
   } catch (err) {
     console.error('Data load error:', err);
-    document.getElementById('no-data-top').style.display = 'flex';
-    document.getElementById('no-data-top').querySelector('span:last-child').textContent =
-      '数据加载失败，请确认 bond_trading_data.json 已生成';
-    document.getElementById('no-data-bottom').style.display = 'flex';
-    document.getElementById('no-data-bottom').querySelector('span:last-child').textContent =
-      '数据加载失败';
+    if (!cachedRaw) {
+      // 无缓存且网络失败 → 显示错误
+      document.getElementById('no-data-top').style.display = 'flex';
+      document.getElementById('no-data-top').querySelector('span:last-child').textContent =
+        '数据加载失败，请确认 bond_trading_data.json 已生成';
+      document.getElementById('no-data-bottom').style.display = 'flex';
+      document.getElementById('no-data-bottom').querySelector('span:last-child').textContent =
+        '数据加载失败';
+      if (noteEl) noteEl.textContent = '✗ 数据加载失败';
+    } else {
+      // 有缓存，网络失败 → 继续用缓存
+      if (noteEl) {
+        noteEl.textContent = '⚠ 网络不可用，使用缓存数据（可能非最新）';
+        setTimeout(() => { noteEl.textContent = origNote; }, 4000);
+      }
+    }
   }
 }
 
