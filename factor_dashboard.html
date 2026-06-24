@@ -488,7 +488,10 @@
         </div>
       </div>
       <div class="cfg-group">
-        <button class="sig-btn" onclick="runSignalTest()">运行检验</button>
+        <div style="display:flex;gap:6px">
+          <button class="sig-btn" onclick="runSignalTest()">运行检验</button>
+          <button class="sig-btn sig-btn-outline" onclick="saveAsConclusion()" title="把最近一次检验结果保存到研究结论库">💾 保存为研究结论</button>
+        </div>
       </div>
     </div>
 
