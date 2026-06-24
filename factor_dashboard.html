@@ -1007,6 +1007,7 @@ let sigWindow = 1;
 let sigChartFactor = null;
 let sigChartEvent = null;
 let sigChartNav = null;
+let lastSignalResult = null;  // 最近一次信号检验结果，供「保存为研究结论」使用
 
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1250,9 +1251,12 @@ function runSignalTest() {
   const dirDesc = sigDirection === 'down' ? (targetSeries.isPrice?'价格上行=赢':'收益率下行=赢') : (targetSeries.isPrice?'价格下行=赢':'收益率上行=赢');
 
   document.getElementById('signal-result').innerHTML = `
-    <div>
-      <div style="font-size:14px;font-weight:700;margin-bottom:4px">${factorName} → ${targetName}</div>
-      <div style="font-size:11px;color:var(--text-secondary)">触发: ${triggerDesc} ｜ 方向: ${dirDesc} ｜ 窗口: 未来${sigWindow}日 ｜ 样本: ${events[0].date} ~ ${lastTrigger.date}</div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+      <div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:4px">${factorName} → ${targetName}</div>
+        <div style="font-size:11px;color:var(--text-secondary)">触发: ${triggerDesc} ｜ 方向: ${dirDesc} ｜ 窗口: 未来${sigWindow}日 ｜ 样本: ${events[0].date} ~ ${lastTrigger.date}</div>
+      </div>
+      <button class="sig-btn sig-btn-outline" onclick="saveAsConclusion()" title="把本次检验结果保存到研究结论库">💾 保存为研究结论</button>
     </div>
     <div class="kpi-grid">
       <div class="kpi-card ${winRate>=0.5?'win':'lose'}"><div class="kpi-label">触发次数</div><div class="kpi-value">${events.length}</div></div>
@@ -1301,6 +1305,101 @@ function runSignalTest() {
   drawSigFactorChart(ff, events);
   drawSigEventChart(events, unit);
   drawSigNavChart(events, unit);
+
+  // 缓存本次检验结果，供「保存为研究结论」使用
+  lastSignalResult = {
+    factorName, targetName, triggerType, threshold, ndays, triggerDesc,
+    sigDirection, dirDesc, sigWindow, startDate, endDate,
+    unit, isPrice: targetSeries.isPrice,
+    events: events.map(e => ({ date: e.date, factorVal: e.factorVal, change: e.change, mfe: e.mfe, mae: e.mae, isWin: e.isWin, startDate: e.startDate, endDate: e.endDate })),
+    stats: { count: events.length, winRate, avgReturn, median, avgWin, avgLoss, plRatio, avgMFE, avgMAE },
+    lastTriggerDate: lastTrigger.date, lastFactorVal: lastFV, nowTriggered,
+    sampleStart: events[0].date, sampleEnd: lastTrigger.date,
+  };
+}
+
+// 保存当前信号检验结果到研究结论库（跳转 research_conclusions.html 并预填）
+function saveAsConclusion() {
+  if (!lastSignalResult) { alert('请先运行信号检验'); return; }
+  const r = lastSignalResult;
+  const unit = r.unit;
+  const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(2) + ' ' + unit;
+  const pct = v => (v * 100).toFixed(1) + '%';
+
+  // 自动生成标题
+  const title = `${r.factorName} 对 ${r.targetName} 的预测效果`;
+
+  // 研究问题
+  const question = `当 ${r.factorName} ${r.triggerDesc} 时，${r.targetName} 是否会${r.dirDesc}？能否作为交易信号？`;
+
+  // 信号定义
+  const signalDef = [
+    `因子：${r.factorName}`,
+    `预测对象：${r.targetName}（${r.isPrice ? '价格' : '收益率'}）`,
+    `触发条件：${r.triggerDesc}`,
+    `方向判定：${r.dirDesc}`,
+    `观察窗口：未来 ${r.sigWindow} 个交易日`,
+    `回测区间：${r.sampleStart} ~ ${r.sampleEnd}`,
+  ].join('\n');
+
+  // 触发条件
+  const trigger = `${r.triggerDesc}，观察未来 ${r.sigWindow} 日，方向判定：${r.dirDesc}。样本 ${r.stats.count} 次，胜率 ${pct(r.stats.winRate)}。`;
+
+  // 历史验证结果（Markdown 表格）
+  const s = r.stats;
+  const stats = [
+    '| 指标 | 值 |',
+    '|------|-----|',
+    `| 触发次数 | ${s.count} |`,
+    `| 胜率 | ${pct(s.winRate)} |`,
+    `| 平均收益 | ${fmt(s.avgReturn)} |`,
+    `| 中位数收益 | ${fmt(s.median)} |`,
+    `| 平均最大有利波动 (MFE) | ${fmt(s.avgMFE)} |`,
+    `| 平均最大不利波动 (MAE) | ${fmt(s.avgMAE)} |`,
+    `| 盈亏比 | ${s.plRatio === Infinity ? '∞' : s.plRatio.toFixed(2)} |`,
+    `| 最近触发 | ${r.lastTriggerDate} |`,
+    `| 当前因子值 | ${r.lastFactorVal.toFixed(1)}（${r.nowTriggered ? '⚠️ 已触发' : '未触发'}）|`,
+    '',
+    '触发事件明细：',
+    '| # | 触发日期 | 因子值 | 收益 | MFE | MAE | 结果 |',
+    '|---|---------|--------|------|-----|-----|------|',
+    ...r.events.map((e, i) => `| ${i+1} | ${e.date} | ${e.factorVal.toFixed(1)} | ${fmt(e.change)} | ${fmt(e.mfe)} | ${fmt(e.mae)} | ${e.isWin ? '胜' : '负'} |`),
+  ].join('\n');
+
+  // 自动推断标签
+  const tagSet = new Set();
+  const fn = r.factorName;
+  if (fn.includes('基金')) tagSet.add('基金');
+  if (fn.includes('超长债')) tagSet.add('超长债');
+  if (fn.includes('证券')) tagSet.add('证券');
+  if (fn.includes('保险')) tagSet.add('保险');
+  if (fn.includes('理财')) tagSet.add('理财');
+  if (fn.includes('银行')) tagSet.add('银行');
+  if (fn.includes('大型')) tagSet.add('大型银行');
+  if (fn.includes('中小')) tagSet.add('中小银行');
+  if (fn.includes('货币')) tagSet.add('货币基金');
+  const tn = r.targetName;
+  if (tn.includes('TL')) tagSet.add('TL');
+  if (tn.includes('T主力') || tn === 'T主力') tagSet.add('T');
+  if (tn.includes('TF')) tagSet.add('TF');
+  if (tn.includes('TS')) tagSet.add('TS');
+  if (tn.includes('国债')) tagSet.add('国债');
+  if (tn.includes('国开')) tagSet.add('国开');
+  if (tn.includes('地方债')) tagSet.add('地方债');
+  if (r.dirDesc.includes('下行') || r.dirDesc.includes('价格上行')) tagSet.add('多头');
+  if (r.dirDesc.includes('上行') || r.dirDesc.includes('价格下行')) tagSet.add('空头');
+  if (tagSet.size === 0) tagSet.add('因子信号');
+
+  const prefill = {
+    title, question, signalDef, trigger, stats,
+    target: r.targetName,
+    status: '观察',
+    tags: Array.from(tagSet),
+    source: 'factor',
+  };
+
+  sessionStorage.setItem('fic_prefill_conclusion', JSON.stringify(prefill));
+  window.open('research_conclusions.html?prefill=1', '_blank');
 }
 
 function drawSigFactorChart(ff, events) {
