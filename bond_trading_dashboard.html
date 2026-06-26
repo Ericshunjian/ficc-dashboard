@@ -532,9 +532,9 @@ async function init() {
     if (noteEl) noteEl.textContent = '⏳ 首次加载，正在下载数据（约 5.8MB）...';
   }
 
-  // 2. 后台校验最新数据（不带时间戳，走 HTTP 缓存，304 极快）
+  // 2. 后台校验最新数据（带时间戳，强制绕过 CDN/浏览器缓存，确保拿到最新文件）
   try {
-    const resp = await fetch(DATA_URL_BTD);
+    const resp = await fetch(DATA_URL_BTD + '?t=' + Date.now());
     const raw = await resp.json();
     const newUpdated = raw.meta && raw.meta.last_updated;
     const cachedUpdated = cachedRaw && cachedRaw.meta && cachedRaw.meta.last_updated;
