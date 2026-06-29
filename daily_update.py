@@ -642,6 +642,24 @@ FACTOR_DEFS = [
     },
 ]
 
+# 估值因子定义（数据源：yield_curve_data.json，利差→MA10→100天百分位→再MA10）
+VALUATION_FACTOR_DEFS = [
+    {
+        "name": "资金利差因子（10年国债-DR001-MA10）",
+        "short_name": "资金利差因子",
+        "category": "估值因子",
+        "spread_components": ["10年国债", "DR001-MA10"],
+        "description": "10年国债收益率与DR001-MA10之差的MA10在过去100天的百分位（再MA10），反映长债相对隔夜资金中枢的carry空间，百分位越高=长债相对资金面越便宜",
+    },
+    {
+        "name": "期限利差因子（10年国债-SHIBOR3M）",
+        "short_name": "期限利差因子",
+        "category": "估值因子",
+        "spread_components": ["10年国债", "SHIBOR:3个月"],
+        "description": "10年国债收益率与SHIBOR3M之差的MA10在过去100天的百分位（再MA10），反映10Y-3M期限结构估值，百分位越高=期限利差处于历史高位",
+    },
+]
+
 
 def _percentile_rank(series):
     if len(series) < 2:
@@ -693,6 +711,56 @@ def _compute_factor_series(df_detail, factor_def):
         "ma10": [round(float(v), 4) if pd.notna(v) else None for v in df_valid["ma10"].tolist()],
         "percentile": [round(float(v), 4) if pd.notna(v) else None for v in df_valid["percentile"].tolist()],
     }
+
+
+def _compute_valuation_factors():
+    """从 yield_curve_data.json 计算估值因子（利差→MA10→100天百分位→再MA10）
+    返回 (factors_dict, factor_defs_used)
+    """
+    if not os.path.exists(CURVE_OUTPUT):
+        log.warning(f"  收益率曲线数据不存在，跳过估值因子: {CURVE_OUTPUT}")
+        return {}, []
+    with open(CURVE_OUTPUT, "r", encoding="utf-8") as f:
+        curve = json.load(f)
+    series = curve.get("series", {})
+
+    factors = {}
+    defs_used = []
+    for fd in VALUATION_FACTOR_DEFS:
+        comps = fd["spread_components"]
+        a_name, b_name = comps[0], comps[1]
+        a = series.get(a_name)
+        b = series.get(b_name)
+        if not a or not b:
+            log.warning(f"    {fd['short_name']}: 缺少序列 {a_name}/{b_name}，跳过")
+            continue
+        a_s = pd.Series(a["values"], index=pd.to_datetime(a["dates"]))
+        b_s = pd.Series(b["values"], index=pd.to_datetime(b["dates"]))
+        # 按日期对齐取交集
+        spread = (a_s - b_s).dropna()
+        if len(spread) == 0:
+            log.warning(f"    {fd['short_name']}: 利差为空，跳过")
+            continue
+        ma10 = spread.rolling(window=FACTOR_MA_WINDOW, min_periods=FACTOR_MA_WINDOW).mean()
+        perc = ma10.rolling(window=FACTOR_PERC_WINDOW, min_periods=FACTOR_PERC_MIN_PERIODS).apply(_percentile_rank, raw=False)
+        factor = perc.rolling(window=FACTOR_FINAL_MA, min_periods=1).mean()
+        valid = factor.dropna()
+        if len(valid) == 0:
+            log.warning(f"    {fd['short_name']}: 因子无有效值，跳过")
+            continue
+        df_all = pd.concat([spread, ma10, perc, factor], axis=1)
+        df_all.columns = ["spread", "ma10", "percentile", "factor"]
+        df_valid = df_all.loc[valid.index]
+        factors[fd["short_name"]] = {
+            "dates": [d.strftime("%Y-%m-%d") for d in valid.index],
+            "values": [round(float(v), 4) for v in valid.values],
+            "spreads": [round(float(v), 4) if pd.notna(v) else None for v in df_valid["spread"].tolist()],
+            "ma10": [round(float(v), 4) if pd.notna(v) else None for v in df_valid["ma10"].tolist()],
+            "percentile": [round(float(v), 4) if pd.notna(v) else None for v in df_valid["percentile"].tolist()],
+        }
+        defs_used.append(fd)
+        log.info(f"    估值因子 {fd['short_name']}: 有效天数 {len(valid)}, 日期 {valid.index[0].strftime('%Y-%m-%d')} ~ {valid.index[-1].strftime('%Y-%m-%d')}")
+    return factors, defs_used
 
 
 def update_merged_data():
@@ -776,12 +844,22 @@ def update_factor_data():
 
     factors = {}
     categories = {}
+    all_factor_defs = []
     for fd in FACTOR_DEFS:
         log.info(f"    计算: {fd['short_name']} ({fd['institution']})")
         result = _compute_factor_series(df, fd)
         factors[fd["short_name"]] = result
         categories.setdefault(fd["category"], []).append(fd["short_name"])
+        all_factor_defs.append(fd)
         log.info(f"      有效天数: {len(result['dates'])}")
+
+    # 估值因子（数据源：yield_curve_data.json）
+    log.info("    计算估值因子（利差百分位）...")
+    val_factors, val_defs = _compute_valuation_factors()
+    for fd in val_defs:
+        factors[fd["short_name"]] = val_factors[fd["short_name"]]
+        categories.setdefault(fd["category"], []).append(fd["short_name"])
+        all_factor_defs.append(fd)
 
     all_dates = set()
     for f in factors.values():
@@ -790,11 +868,11 @@ def update_factor_data():
 
     output = {
         "meta": {
-            "data_source": "bond_trading_data.json",
+            "data_source": "bond_trading_data_merged.json + yield_curve_data.json",
             "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "date_range": [all_dates[0] if all_dates else "", all_dates[-1] if all_dates else ""],
             "categories": categories,
-            "factor_defs": FACTOR_DEFS,
+            "factor_defs": all_factor_defs,
             "params": {
                 "target_bond_type": FACTOR_BOND_TYPE,
                 "target_maturity": FACTOR_MATURITY,

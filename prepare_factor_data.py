@@ -1,16 +1,13 @@
 """
-机构行为因子计算（基于合并后的历史数据）
-使用 bond_trading_data_merged.json（2021-06 ~ 至今）
+因子计算（基于合并后的历史数据 + 收益率曲线数据）
 
-5 个机构行为因子：
-  1. 基金·超长债因子      - 基金公司及产品 / 国债 / 20-30年
-  2. 中小银行·超长债因子   - 中小型银行 / 国债 / 20-30年
-  3. 基金·国开因子         - 基金公司及产品 / 政金债 / 7-10年
-  4. 保险·超长债因子       - 保险公司 / 国债 / 20-30年
-  5. 基金·超长国开因子     - 基金公司及产品 / 政金债 / 20-30年（备选，暂不加）
-
-计算流程（每个因子独立）：
-  净买入 → MA10 → 100天百分位(min_periods=60) → MA10 = 因子
+两大类因子：
+  A. 机构行为因子（数据源：bond_trading_data_merged.json，2021-06 ~ 至今）
+     净买入 → MA10 → 100天百分位(min_periods=60) → MA10 = 因子
+  B. 估值因子（数据源：yield_curve_data.json）
+     利差 → MA10 → 100天百分位(min_periods=60) → MA10 = 因子
+     - 资金利差因子：10年国债 - DR001-MA10
+     - 期限利差因子：10年国债 - SHIBOR3M
 """
 import pandas as pd
 import json
@@ -21,19 +18,20 @@ from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(SCRIPT_DIR, "bond_trading_data_merged.json")
+CURVE_PATH = os.path.join(SCRIPT_DIR, "yield_curve_data.json")
 OUTPUT_PATH = os.path.join(SCRIPT_DIR, "factor_data.json")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
                     handlers=[logging.StreamHandler(sys.stdout)])
 log = logging.getLogger(__name__)
 
-# ── 参数 ──
+# ── 参数（与 daily_update.py 保持一致）──
 MA_WINDOW = 10
 PERC_WINDOW = 100
 PERC_MIN_PERIODS = 60
 FINAL_MA = 10
 
-# ── 因子定义 ──
+# ── 机构行为因子定义 ──
 FACTOR_DEFS = [
     {
         "name": "基金公司及产品·超长国债净买入因子",
@@ -88,6 +86,24 @@ FACTOR_DEFS = [
         "bond_types": ["国债", "政金债"],  # 多券种求和
         "maturity": "7-10年",
         "description": "基金公司及产品对7-10年国债+政金债净买入合计的MA10在过去100天的百分位（再MA10）",
+    },
+]
+
+# ── 估值因子定义（数据源：yield_curve_data.json）──
+VALUATION_FACTOR_DEFS = [
+    {
+        "name": "资金利差因子（10年国债-DR001-MA10）",
+        "short_name": "资金利差因子",
+        "category": "估值因子",
+        "spread_components": ["10年国债", "DR001-MA10"],
+        "description": "10年国债收益率与DR001-MA10之差的MA10在过去100天的百分位（再MA10），反映长债相对隔夜资金中枢的carry空间，百分位越高=长债相对资金面越便宜",
+    },
+    {
+        "name": "期限利差因子（10年国债-SHIBOR3M）",
+        "short_name": "期限利差因子",
+        "category": "估值因子",
+        "spread_components": ["10年国债", "SHIBOR:3个月"],
+        "description": "10年国债收益率与SHIBOR3M之差的MA10在过去100天的百分位（再MA10），反映10Y-3M期限结构估值，百分位越高=期限利差处于历史高位",
     },
 ]
 
@@ -146,30 +162,92 @@ def compute_factor(df_detail, factor_def):
     }
 
 
+def compute_valuation_factors():
+    """从 yield_curve_data.json 计算估值因子（利差→MA10→100天百分位→再MA10）
+    返回 (factors_dict, factor_defs_used)
+    """
+    if not os.path.exists(CURVE_PATH):
+        log.warning(f"收益率曲线数据不存在，跳过估值因子: {CURVE_PATH}")
+        return {}, []
+    with open(CURVE_PATH, "r", encoding="utf-8") as f:
+        curve = json.load(f)
+    series = curve.get("series", {})
+
+    factors = {}
+    defs_used = []
+    for fd in VALUATION_FACTOR_DEFS:
+        comps = fd["spread_components"]
+        a_name, b_name = comps[0], comps[1]
+        a = series.get(a_name)
+        b = series.get(b_name)
+        if not a or not b:
+            log.warning(f"  估值因子 {fd['short_name']}: 缺少序列 {a_name}/{b_name}，跳过")
+            continue
+        a_s = pd.Series(a["values"], index=pd.to_datetime(a["dates"]))
+        b_s = pd.Series(b["values"], index=pd.to_datetime(b["dates"]))
+        # 按日期对齐取交集
+        spread = (a_s - b_s).dropna()
+        if len(spread) == 0:
+            log.warning(f"  估值因子 {fd['short_name']}: 利差为空，跳过")
+            continue
+        ma10 = spread.rolling(window=MA_WINDOW, min_periods=MA_WINDOW).mean()
+        perc = ma10.rolling(window=PERC_WINDOW, min_periods=PERC_MIN_PERIODS).apply(percentile_rank, raw=False)
+        factor = perc.rolling(window=FINAL_MA, min_periods=1).mean()
+        valid = factor.dropna()
+        if len(valid) == 0:
+            log.warning(f"  估值因子 {fd['short_name']}: 因子无有效值，跳过")
+            continue
+        df_all = pd.concat([spread, ma10, perc, factor], axis=1)
+        df_all.columns = ["spread", "ma10", "percentile", "factor"]
+        df_valid = df_all.loc[valid.index]
+        factors[fd["short_name"]] = {
+            "dates": [d.strftime("%Y-%m-%d") for d in valid.index],
+            "values": [round(float(v), 4) for v in valid.values],
+            "spreads": [round(float(v), 4) if pd.notna(v) else None for v in df_valid["spread"].tolist()],
+            "ma10": [round(float(v), 4) if pd.notna(v) else None for v in df_valid["ma10"].tolist()],
+            "percentile": [round(float(v), 4) if pd.notna(v) else None for v in df_valid["percentile"].tolist()],
+        }
+        defs_used.append(fd)
+        log.info(f"  估值因子 {fd['short_name']}: 有效天数 {len(valid)}, "
+                 f"{valid.index[0].strftime('%Y-%m-%d')} ~ {valid.index[-1].strftime('%Y-%m-%d')}, "
+                 f"最新值 {round(float(valid.iloc[-1]), 2)}")
+    return factors, defs_used
+
+
 def main():
+    factors = {}
+    categories = {}
+    all_factor_defs = []
+
+    # ── A. 机构行为因子 ──
     if not os.path.exists(DATA_PATH):
         log.error(f"数据文件不存在: {DATA_PATH}")
         return False
 
     with open(DATA_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
-
     df = pd.DataFrame(data["detail"])
-    log.info(f"原始记录数: {len(df)}")
-    log.info(f"日期范围: {df['date'].min()} ~ {df['date'].max()}")
+    log.info(f"机构行为数据: {len(df)} 条, {df['date'].min()} ~ {df['date'].max()}")
 
-    factors = {}
-    categories = {}
     for fd in FACTOR_DEFS:
         bt_desc = fd.get("bond_types", [fd.get("bond_type", "?")])
         log.info(f"计算因子: {fd['short_name']} ({fd['institution']}/{'+'.join(bt_desc)}/{fd['maturity']})")
         result = compute_factor(df, fd)
         factors[fd["short_name"]] = result
         categories.setdefault(fd["category"], []).append(fd["short_name"])
+        all_factor_defs.append(fd)
         log.info(f"  有效天数: {len(result['dates'])}")
         if result["dates"]:
             log.info(f"  日期范围: {result['dates'][0]} ~ {result['dates'][-1]}")
             log.info(f"  最新因子值: {result['values'][-1]}")
+
+    # ── B. 估值因子 ──
+    log.info("计算估值因子（利差百分位）...")
+    val_factors, val_defs = compute_valuation_factors()
+    for fd in val_defs:
+        factors[fd["short_name"]] = val_factors[fd["short_name"]]
+        categories.setdefault(fd["category"], []).append(fd["short_name"])
+        all_factor_defs.append(fd)
 
     all_dates = set()
     for f in factors.values():
@@ -178,11 +256,11 @@ def main():
 
     output = {
         "meta": {
-            "data_source": "bond_trading_data_merged.json",
+            "data_source": "bond_trading_data_merged.json + yield_curve_data.json",
             "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "date_range": [all_dates[0] if all_dates else "", all_dates[-1] if all_dates else ""],
             "categories": categories,
-            "factor_defs": FACTOR_DEFS,
+            "factor_defs": all_factor_defs,
             "params": {
                 "ma_window": MA_WINDOW,
                 "percentile_window": PERC_WINDOW,
@@ -200,7 +278,7 @@ def main():
 
     size_kb = os.path.getsize(OUTPUT_PATH) / 1024
     log.info(f"输出: {OUTPUT_PATH} ({size_kb:.1f} KB)")
-    log.info(f"因子数: {len(factors)}")
+    log.info(f"因子数: {len(factors)}（机构行为 {len(FACTOR_DEFS)} + 估值 {len(val_defs)}）")
     return True
 
 
