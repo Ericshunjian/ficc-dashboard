@@ -412,7 +412,9 @@
 // State
 // ============================================
 let allData = { meta: { terms: {} }, series: {} };
-let curveData = { meta: { categories: {} }, series: {} };  // 收益率曲线数据
+let curveData = { meta: { categories: {} }, series: {} };  // 收益率曲线数据（懒加载）
+let curveDataLoaded = false;  // curveData 是否已加载
+let curveDataLoading = false; // 是否正在加载（防重复）
 let chartYield = null;
 let chartSpread = null;
 let selectedCategory = 'bond';  // bond / irs / futures_rate / futures_price
@@ -445,12 +447,9 @@ const CATEGORY_CURVES = {
 // ============================================
 async function init() {
   try {
-    const [resp1, resp2] = await Promise.all([
-      fetch('bond_yield_data.json?t=' + Date.now()),
-      fetch('yield_curve_data.json?t=' + Date.now()),
-    ]);
+    // 只加载个券数据（153K，秒开）；yield_curve_data.json（2.3M）改为懒加载
+    const resp1 = await fetch('bond_yield_data.json?t=' + Date.now());
     allData = await resp1.json();
-    curveData = await resp2.json();
 
     const terms = Object.keys(allData.meta.terms);
     renderCategoryTags();
@@ -470,6 +469,24 @@ async function init() {
   }
 }
 
+// 懒加载收益率曲线数据（仅切换到 IRS/期货分类时触发，且只加载一次）
+async function ensureCurveData() {
+  if (curveDataLoaded) return true;
+  if (curveDataLoading) return false;  // 正在加载中，忽略重复触发
+  curveDataLoading = true;
+  try {
+    const resp = await fetch('yield_curve_data.json?t=' + Date.now());
+    curveData = await resp.json();
+    curveDataLoaded = true;
+    return true;
+  } catch (err) {
+    console.error('Curve data load error:', err);
+    return false;
+  } finally {
+    curveDataLoading = false;
+  }
+}
+
 // ── 分类切换（标签式） ──
 function renderCategoryTags() {
   const container = document.getElementById('category-tags');
@@ -478,9 +495,19 @@ function renderCategoryTags() {
     const tag = document.createElement('div');
     tag.className = 'tag' + (c.value === selectedCategory ? ' active' : '');
     tag.textContent = c.label;
-    tag.onclick = () => {
+    tag.onclick = async () => {
       selectedCategory = c.value;
       selectedTerm = '全部';
+      // 非个券分类需要曲线数据（2.3M，懒加载）
+      if (c.value !== 'bond' && !curveDataLoaded) {
+        const pool = document.getElementById('bond-pool');
+        pool.innerHTML = '<div class="bond-pool-empty">曲线数据加载中…（约 2MB）</div>';
+        const ok = await ensureCurveData();
+        if (!ok) {
+          pool.innerHTML = '<div class="bond-pool-empty">曲线数据加载失败，请稍后重试</div>';
+          return;
+        }
+      }
       renderCategoryTags();
       renderTermTags(Object.keys(allData.meta.terms));
       renderBondPool();
