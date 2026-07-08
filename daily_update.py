@@ -378,10 +378,15 @@ def update_ficc_yield_data():
 
     terms = {}
     col_info = {}
+    seen_codes = set()  # 同一 code 跨多个分组时，保留首次出现的分类（按 Excel 列顺序）
     for c in range(1, df.shape[1]):
         code = code_row[c]
         if pd.notna(code):
             code_str = str(code).strip()
+            if code_str in seen_codes:
+                log.warning(f"  跳过重复券 {code_str} (col{c})，已归入更早的分类 [{col_category[c]}]")
+                continue
+            seen_codes.add(code_str)
             category = col_category[c]
             duration = float(duration_row[c]) if pd.notna(duration_row[c]) else None
             terms.setdefault(category, []).append(code_str)
