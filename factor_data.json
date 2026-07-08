@@ -1,7 +1,7 @@
 {
   "meta": {
     "data_source": "bond_trading_data_merged.json + yield_curve_data.json",
-    "last_updated": "2026-07-08 09:23:23",
+    "last_updated": "2026-07-08 16:33:17",
     "date_range": [
       "2021-04-14",
       "2026-07-07"
