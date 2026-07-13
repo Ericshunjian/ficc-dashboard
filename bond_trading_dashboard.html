@@ -303,6 +303,42 @@
   }
   .chart-bottom canvas { width: 100% !important; height: 100% !important; }
 
+  /* Seasonal chart: yearly cumulative comparison */
+  .chart-seasonal {
+    flex: 1;
+    background: var(--panel-bg);
+    border-radius: var(--radius);
+    padding: 12px 20px 8px;
+    box-shadow: var(--shadow);
+    position: relative;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .chart-seasonal .chart-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chart-seasonal .chart-label::before {
+    content: '';
+    display: inline-block;
+    width: 8px; height: 8px;
+    background: var(--warning);
+    border-radius: 2px;
+    transform: rotate(45deg);
+  }
+  .chart-seasonal .chart-wrap {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+  }
+  .chart-seasonal canvas { width: 100% !important; height: 100% !important; }
+
   .no-data {
     display: flex;
     align-items: center;
@@ -406,6 +442,16 @@
         <span>请选择机构类型查看数据</span>
       </div>
     </div>
+
+    <!-- Seasonal: Yearly cumulative comparison -->
+    <div class="chart-seasonal" id="chart-seasonal-container">
+      <div class="chart-label">季节性累计净买入（亿元，按年对比，22年起）</div>
+      <div class="chart-wrap"><canvas id="chart-seasonal"></canvas></div>
+      <div class="no-data" id="no-data-seasonal" style="display:none">
+        <span class="icon">📅</span>
+        <span>请选择单个机构和单个券种查看</span>
+      </div>
+    </div>
   </div>
 
   <div class="source-note">
@@ -428,6 +474,7 @@ const INST_COLORS = [
 let allData = { detail: [], summary: [], meta: {} };
 let chartDaily = null;
 let chartCumulative = null;
+let chartSeasonal = null;
 let selectedInstitutions = new Set();
 let selectedBondTypes = new Set();
 let selectedMaturities = new Set();
@@ -657,6 +704,89 @@ function buildSeries() {
 }
 
 // ============================================
+// Seasonal series: single institution × single bond type
+// 横轴: 1月1日~12月31日，按年（2022+）分线，纵轴: 当年累计净买入
+// ============================================
+function buildSeasonalSeries() {
+  // 取第一个选中的机构和第一个选中的券种
+  const inst = [...selectedInstitutions][0];
+  const bond = [...selectedBondTypes][0];
+  if (!inst || !bond) return null;
+
+  // 收集 (year, dayOfYear, value)
+  // dayOfYear 1..366（用 2024 闰年作模板，方便跨年对齐）
+  const DAY_TEMPLATE = 366; // 2024 闰年
+  const yearBuckets = {};   // {year: {day -> value}}
+
+  allData.detail.forEach(row => {
+    if (row.institution !== inst) return;
+    if (row.bond_type !== bond) return;
+    if (!selectedMaturities.has(row.maturity)) return;
+    const y = parseInt(row.date.slice(0, 4), 10);
+    if (y < 2022) return;
+    if (!yearBuckets[y]) yearBuckets[y] = {};
+    // 算 day-of-year（基于该年）
+    const d = new Date(row.date + 'T00:00:00');
+    const start = new Date(y, 0, 1);
+    const doy = Math.floor((d - start) / 86400000) + 1; // 1..365/366
+    yearBuckets[y][doy] = (yearBuckets[y][doy] || 0) + row.value;
+  });
+
+  const years = Object.keys(yearBuckets).map(Number).sort();
+  if (years.length === 0) return null;
+
+  // 今天的 day-of-year（用于当前年断线：未来日期不画）
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const yearStart = new Date(currentYear, 0, 1);
+  const todayDoy = Math.floor((now - yearStart) / 86400000) + 1;
+
+  // 生成 X 轴标签：1月、2月、...、12月（用 2024 闰年模板计算每月首日）
+  const monthLabels = [];
+  const monthTickDoys = [];
+  for (let m = 1; m <= 12; m++) {
+    const d = new Date(2024, m - 1, 1);
+    monthLabels.push(String(m).padStart(2, '0') + '月');
+    const start2024 = new Date(2024, 0, 1);
+    monthTickDoys.push(Math.floor((d - start2024) / 86400000) + 1);
+  }
+
+  // 生成统一 X 轴：1..366
+  const xs = Array.from({ length: DAY_TEMPLATE }, (_, i) => i + 1);
+
+  // 每一年算一条累计曲线
+  const datasets = years.map(y => {
+    const bucket = yearBuckets[y];
+    let cum = 0;
+    const isCurrent = (y === currentYear);
+    const data = xs.map(doy => {
+      // 当前年：超过今天的日期不画（断线），避免未来时段变水平直线
+      if (isCurrent && doy > todayDoy) return null;
+      if (bucket[doy] !== undefined) cum += bucket[doy];
+      return +cum.toFixed(4);
+    });
+    return {
+      label: y + (isCurrent ? ' (进行中)' : ''),
+      data,
+      borderColor: isCurrent ? '#ef4444' : YEAR_COLORS[(y - 2022) % YEAR_COLORS.length],
+      backgroundColor: 'transparent',
+      borderWidth: isCurrent ? 2.5 : 1.5,
+      pointRadius: 0,
+      pointHoverRadius: 5,
+      pointHoverBackgroundColor: isCurrent ? '#ef4444' : YEAR_COLORS[(y - 2022) % YEAR_COLORS.length],
+      tension: 0.1,
+      fill: false,
+      spanGaps: true,
+    };
+  });
+
+  return { inst, bond, xs, monthLabels, monthTickDoys, datasets };
+}
+
+// Year colors: blue/green/yellow/purple/grey
+const YEAR_COLORS = ['#5470c6', '#22c55e', '#f59e0b', '#9a60b4', '#94a3b8', '#06b6d4', '#ec4899'];
+
+// ============================================
 // Update Charts
 // ============================================
 function updateChart() {
@@ -847,6 +977,106 @@ function updateChart() {
     },
     plugins: [zeroLinePlugin],
   });
+
+  // ── Render seasonal chart ──
+  renderSeasonalChart();
+}
+
+function renderSeasonalChart() {
+  // 多机构或多券种时，季节性图不适用 → 显示提示
+  if (selectedInstitutions.size !== 1 || selectedBondTypes.size !== 1) {
+    document.getElementById('no-data-seasonal').style.display = 'flex';
+    document.getElementById('no-data-seasonal').querySelector('span:last-child').textContent =
+      '季节性图仅支持单个机构×单个券种（当前选择：' + selectedInstitutions.size + ' 机构, ' + selectedBondTypes.size + ' 券种）';
+    document.getElementById('chart-seasonal').style.display = 'none';
+    if (chartSeasonal) { chartSeasonal.destroy(); chartSeasonal = null; }
+    return;
+  }
+
+  const seasonal = buildSeasonalSeries();
+  if (!seasonal) {
+    document.getElementById('no-data-seasonal').style.display = 'flex';
+    document.getElementById('no-data-seasonal').querySelector('span:last-child').textContent = '2022 年起无数据，请调整筛选条件';
+    document.getElementById('chart-seasonal').style.display = 'none';
+    if (chartSeasonal) { chartSeasonal.destroy(); chartSeasonal = null; }
+    return;
+  }
+
+  document.getElementById('no-data-seasonal').style.display = 'none';
+  document.getElementById('chart-seasonal').style.display = 'block';
+
+  if (chartSeasonal) chartSeasonal.destroy();
+  chartSeasonal = new Chart(document.getElementById('chart-seasonal'), {
+    type: 'line',
+    data: { labels: seasonal.xs, datasets: seasonal.datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            usePointStyle: true,
+            pointStyle: 'line',
+            padding: 12,
+            font: { size: 11 },
+          },
+        },
+        tooltip: {
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          titleColor: '#2c3e50',
+          bodyColor: '#2c3e50',
+          borderColor: '#e8ecf1',
+          borderWidth: 1,
+          cornerRadius: 6,
+          padding: 12,
+          callbacks: {
+            title: function(items) {
+              // 把 day-of-year 还原为月-日
+              const doy = items[0].label;
+              const d = new Date(2024, 0, doy);
+              const mm = String(d.getMonth() + 1).padStart(2, '0');
+              const dd = String(d.getDate()).padStart(2, '0');
+              return mm + '月' + dd + '日';
+            },
+            label: function(ctx) {
+              return ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(2) : '--') + ' 亿';
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          min: 1,
+          max: 366,
+          ticks: {
+            font: { size: 10 },
+            stepSize: 1,
+            autoSkip: false,
+            maxRotation: 0,
+            callback: function(value) {
+              const idx = seasonal.monthTickDoys.indexOf(value);
+              return idx >= 0 ? seasonal.monthLabels[idx] : '';
+            },
+          },
+          grid: {
+            color: function(ctx) {
+              // 月初显示深色网格线
+              if (seasonal.monthTickDoys.indexOf(ctx.tick.value) >= 0) return '#d0d5dd';
+              return '#f0f0f0';
+            },
+          },
+        },
+        y: {
+          ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + ' 亿' },
+          grid: { color: '#f0f0f0' },
+        },
+      },
+    },
+    plugins: [zeroLinePlugin],
+  });
 }
 
 // Zero-line plugin (reused by both charts)
@@ -876,6 +1106,10 @@ function showNoData(msg) {
   document.getElementById('no-data-bottom').querySelector('span:last-child').textContent = msg;
   document.getElementById('chart-daily').style.display = 'none';
   document.getElementById('chart-cumulative').style.display = 'none';
+  document.getElementById('no-data-seasonal').style.display = 'flex';
+  document.getElementById('no-data-seasonal').querySelector('span:last-child').textContent = '请先选择筛选条件';
+  document.getElementById('chart-seasonal').style.display = 'none';
+  if (chartSeasonal) { chartSeasonal.destroy(); chartSeasonal = null; }
   document.getElementById('chart-title').textContent = '各类型机构债券净买入走势';
   document.getElementById('chart-desc').textContent = '请选择机构和筛选条件后查看';
   ['kpi-total', 'kpi-avg', 'kpi-days'].forEach(id => {
