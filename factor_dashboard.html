@@ -1272,9 +1272,9 @@ function runSignalTest() {
       <div class="kpi-card ${nowTriggered?'win':''}"><div class="kpi-label">最近触发</div><div class="kpi-value" style="font-size:13px">${lastTrigger.date}</div><div class="kpi-sub">当前因子值:${lastFV.toFixed(1)} ${nowTriggered?'⚠️已触发':'未触发'}</div></div>
     </div>
     <div>
-      <div class="section-title"><span class="dot"></span>因子走势 + 触发点</div>
+      <div class="section-title"><span class="dot"></span>因子走势 + 触发点 + 预测对象</div>
       <div class="sig-chart-box">
-        <div class="sig-chart-label">${factorName}（蓝线）与触发时点（红点）</div>
+        <div class="sig-chart-label">${factorName}（蓝线·左轴）｜触发时点（红点）｜${targetName}（橙线·右轴）</div>
         <div class="sig-chart-wrap"><canvas id="sig-chart-factor"></canvas></div>
       </div>
     </div>
@@ -1305,7 +1305,7 @@ function runSignalTest() {
     </div>
   `;
 
-  drawSigFactorChart(ff, events);
+  drawSigFactorChart(ff, events, targetSeries);
   drawSigEventChart(events, unit);
   drawSigNavChart(events, unit);
 
@@ -1405,26 +1405,60 @@ function saveAsConclusion() {
   window.open('research_conclusions.html?prefill=1', '_blank');
 }
 
-function drawSigFactorChart(ff, events) {
+function drawSigFactorChart(ff, events, targetSeries) {
   if (sigChartFactor) sigChartFactor.destroy();
   const ctx = document.getElementById('sig-chart-factor');
   const tDates = new Set(events.map(e => e.date));
   const tPoints = ff.dates.map((d, i) => tDates.has(d) ? ff.values[i] : null);
+
+  // ── 预测对象曲线：按 ff.dates 对齐（前向填充缺失日）──
+  const datasets = [
+    { label: '因子值', data: ff.values, borderColor: '#5470c6', borderWidth: 1.5, pointRadius: 0, tension: 0.1, fill: false, yAxisID: 'y' },
+    { label: '触发点', data: tPoints, borderColor: '#ef4444', backgroundColor: '#ef4444', pointRadius: 4, showLine: false, yAxisID: 'y' },
+  ];
+  const scales = {
+    x: { ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 }, grid: { display: false } },
+    y: { position: 'left', title: { display: true, text: '因子分位值', font: { size: 11 } }, ticks: { font: { size: 10 } }, grid: { color: '#f0f0f0' } },
+  };
+  if (targetSeries) {
+    // 建立 预测对象 date→value 索引，按 ff.dates 前向填充对齐
+    const tMap = new Map();
+    targetSeries.dates.forEach((d, i) => tMap.set(d, targetSeries.values[i]));
+    const tvAligned = [];
+    let lastVal = null;
+    ff.dates.forEach(d => {
+      if (tMap.has(d)) lastVal = tMap.get(d);
+      tvAligned.push(lastVal);
+    });
+    const tColor = '#f59e0b';
+    datasets.push({
+      label: targetSeries.label + '（右轴）',
+      data: tvAligned,
+      borderColor: tColor,
+      backgroundColor: tColor + '22',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.1,
+      fill: false,
+      yAxisID: 'y1',
+    });
+    scales.y1 = {
+      position: 'right',
+      title: { display: true, text: targetSeries.label + (targetSeries.isPrice ? '（元）' : '（%）'), font: { size: 11 } },
+      ticks: { font: { size: 10 }, color: tColor },
+      grid: { drawOnChartArea: false },
+    };
+  }
+
   sigChartFactor = new Chart(ctx, {
     type: 'line',
-    data: { labels: ff.dates, datasets: [
-      { label: '因子值', data: ff.values, borderColor: '#5470c6', borderWidth: 1.5, pointRadius: 0, tension: 0.1, fill: false },
-      { label: '触发点', data: tPoints, borderColor: '#ef4444', backgroundColor: '#ef4444', pointRadius: 4, showLine: false },
-    ]},
+    data: { labels: ff.dates, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: { legend: { labels: { usePointStyle: true, font: { size: 11 } } },
         zoom: { pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true, speed: 0.1 }, mode: 'x', onDoubleClick: function(c){c.resetZoom();return false;} } } },
-      scales: {
-        x: { ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 }, grid: { display: false } },
-        y: { title: { display: true, text: '因子分位值', font: { size: 11 } }, ticks: { font: { size: 10 } }, grid: { color: '#f0f0f0' } },
-      },
+      scales,
     },
   });
 }
