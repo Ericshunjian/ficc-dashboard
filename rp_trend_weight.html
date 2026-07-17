@@ -44,7 +44,7 @@
     <b>线性趋势线</b>＝全部日频净值的最小二乘线性回归(OLS)直线（原滚动均线已替换为线性趋势）。<br>
     <b>偏离</b>＝净值 − 线性趋势。上下轨＝线性趋势 ±2·滚动残差std(窗口60日)。<br>
     <b>权重(动量式)</b>：z＝偏离／滚动残差std，权重＝clip(1 + 0.4·z, 0.4, 1.6)。净值相对趋势偏高→加仓，偏低→减仓。
-    <span class="upd">更新于 2026-07-17 17:31</span>
+    <span class="upd">更新于 2026-07-17 17:43</span>
   </div>
   <div class="kpi-row" id="kpis"></div>
   <div class="toolbar">
@@ -116,7 +116,7 @@ charts.push(new Chart(document.getElementById('c2'),{type:'line',data:{labels:da
 ]},options:common}));
 charts.push(new Chart(document.getElementById('c3'),{type:'line',data:{labels:dates,datasets:[
   {label:'权重',data:wt,borderColor:'#bc8cff',backgroundColor:'rgba(188,140,255,.12)',fill:true,pointRadius:0,borderWidth:1.6,tension:.15},
-]},options:{...common,scales:{x:{grid,ticks},y:{grid,ticks,min:0.3,max:1.7}}}));
+]},options:{...common,scales:{x:{grid,ticks},y:{grid,ticks,min:0.3,max:1.7}}}}));
 // === 今年以来净值 ===
 let ytdChart=null;
 function drawYtd(mode){
