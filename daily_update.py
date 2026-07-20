@@ -424,14 +424,18 @@ def update_ficc_yield_data():
         if cat and cat not in terms_sorted:
             terms_sorted[cat] = terms.get(cat, [])
 
+    # meta.date_range 用实际序列日期（已过滤 0/NaN），避免最新一天值未填入时范围虚高
+    if series:
+        meta_d0 = min(s['dates'][0] for s in series.values())
+        meta_d1 = max(s['dates'][-1] for s in series.values())
+    else:
+        meta_d0 = meta_d1 = ''
+
     output = {
         'meta': {
             'data_source': 'FICC原始数据（现券）.xlsx',
             'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'date_range': [
-                data['date'].min().strftime('%Y-%m-%d'),
-                data['date'].max().strftime('%Y-%m-%d'),
-            ],
+            'date_range': [meta_d0, meta_d1],
             'terms': terms_sorted,
             'bond_count': len(series),
             'total_records': sum(len(s['dates']) for s in series.values()),
@@ -520,9 +524,12 @@ def _parse_curve_sheet(df):
         vals = [round(float(v), 4) for v in sub[col_name].tolist()]
         series[short] = {'dates': dates, 'values': vals}
 
-    if len(data) == 0:
+    # dmin/dmax 用实际序列日期（已过滤 0/NaN），避免最新一天值未填入时 meta 虚高
+    if not series:
         return series, None, None
-    return series, data['date'].min(), data['date'].max()
+    d0 = min(pd.to_datetime(s['dates'][0]) for s in series.values())
+    d1 = max(pd.to_datetime(s['dates'][-1]) for s in series.values())
+    return series, d0, d1
 
 
 def update_yield_curve_data():
