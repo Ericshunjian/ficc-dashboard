@@ -460,6 +460,32 @@
         <input type="number" id="sig-ndays" value="3" min="2" max="60" step="1" style="width:60px">
       </div>
       <div class="cfg-group">
+        <span class="cfg-label">触发去重</span>
+        <select id="sig-dedup" onchange="onDedupChange()">
+          <option value="reset" selected>信号复位后再触发</option>
+          <option value="cooldown">冷却 N 日</option>
+          <option value="none">不去重（每日都算）</option>
+        </select>
+      </div>
+      <div class="cfg-group" id="cfg-cooldays" style="display:none">
+        <span class="cfg-label">冷却日数</span>
+        <input type="number" id="sig-cooldays" value="5" min="1" max="60" step="1" style="width:60px">
+      </div>
+      <div class="cfg-group">
+        <span class="cfg-label">确认因子（可选）</span>
+        <select id="sig-factor2" onchange="onFactor2Change()"><option value="">（无）</option></select>
+      </div>
+      <div class="cfg-group" id="cfg-cond2" style="display:none">
+        <span class="cfg-label">确认条件</span>
+        <div style="display:flex;gap:4px">
+          <select id="sig-cond2">
+            <option value="above">&gt; 阈值</option>
+            <option value="below">&lt; 阈值</option>
+          </select>
+          <input type="number" id="sig-threshold2" value="80" min="0" max="100" step="5" style="width:56px">
+        </div>
+      </div>
+      <div class="cfg-group">
         <span class="cfg-label">预测对象</span>
         <select id="sig-target"></select>
       </div>
@@ -1053,7 +1079,19 @@ function refreshSigFactorOptions() {
     sel.appendChild(opt);
   });
 
-  // 预测对象：全部曲线
+  // 确认因子下拉：全量因子 + （无）
+  const sel2 = document.getElementById('sig-factor2');
+  const prev2 = sel2.value;
+  sel2.innerHTML = '<option value="">（无）</option>';
+  Object.values(factorData.meta.categories).flat().forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    sel2.appendChild(opt);
+  });
+  if (prev2 && sel2.querySelector(`option[value="${prev2}"]`)) sel2.value = prev2;
+  onFactor2Change();
+
+  // 预测对象：全部曲线 + 利差
   const targetSel = document.getElementById('sig-target');
   targetSel.innerHTML = '';
   const groups = {
@@ -1076,11 +1114,32 @@ function refreshSigFactorOptions() {
     });
     if (og.children.length > 0) targetSel.appendChild(og);
   }
+  // 利差组（两腿数据都存在才列出）
+  const ogSpread = document.createElement('optgroup');
+  ogSpread.label = '利差';
+  SPREAD_DEFS.forEach(sd => {
+    if (curveData.series[sd.a] && curveData.series[sd.b]) {
+      const opt = document.createElement('option');
+      opt.value = sd.name; opt.textContent = sd.name;
+      ogSpread.appendChild(opt);
+    }
+  });
+  if (ogSpread.children.length > 0) targetSel.appendChild(ogSpread);
   // 默认 10年国债
   targetSel.value = '10年国债';
 }
 
 function onSigFactorChange() {}
+
+function onDedupChange() {
+  const m = document.getElementById('sig-dedup').value;
+  document.getElementById('cfg-cooldays').style.display = m === 'cooldown' ? '' : 'none';
+}
+
+function onFactor2Change() {
+  const v = document.getElementById('sig-factor2').value;
+  document.getElementById('cfg-cond2').style.display = v ? '' : 'none';
+}
 
 function onTriggerChange() {
   const t = document.getElementById('sig-trigger').value;
@@ -1103,10 +1162,41 @@ function setSigWindow(n) {
   });
 }
 
+// 利差预测对象（由两条腿曲线动态合成，值 = a - b，单位 %）
+const SPREAD_DEFS = [
+  { name: '30-10年国债利差', a: '30年国债', b: '10年国债' },
+  { name: '10-5年国债利差', a: '10年国债', b: '5年国债' },
+  { name: '10-1年国债利差', a: '10年国债', b: '1年国债' },
+  { name: '5-1年国债利差', a: '5年国债', b: '1年国债' },
+  { name: '10年国开-国债利差', a: '10年国开', b: '10年国债' },
+  { name: '5年国开-国债利差', a: '5年国开', b: '5年国债' },
+];
+
 function getTargetSeries(name) {
+  const sd = SPREAD_DEFS.find(s => s.name === name);
+  if (sd) {
+    const sa = curveData.series[sd.a], sb = curveData.series[sd.b];
+    if (!sa || !sb) return null;
+    const bMap = {};
+    sb.dates.forEach((d, i) => bMap[d] = sb.values[i]);
+    const dates = [], values = [];
+    sa.dates.forEach((d, i) => {
+      if (bMap[d] !== undefined) { dates.push(d); values.push(+(sa.values[i] - bMap[d]).toFixed(4)); }
+    });
+    if (dates.length === 0) return null;
+    return { label: name, dates, values, isPrice: false, isSpread: true };
+  }
   const s = curveData.series[name];
   if (!s) return null;
-  return { label: name, dates: s.dates, values: s.values, isPrice: PRICE_TARGETS.includes(name) };
+  return { label: name, dates: s.dates, values: s.values, isPrice: PRICE_TARGETS.includes(name), isSpread: false };
+}
+
+// 统一方向归一化：返回值 > 0 表示按所选方向赚钱
+// 方向语义与按钮一致：down = 收益率↓/价格↑（做多），up = 收益率↑/价格↓（做空）
+function favorableChange(change, isPrice, dir) {
+  return isPrice
+    ? (dir === 'down' ? change : -change)
+    : (dir === 'down' ? -change : change);
 }
 
 function detectTriggers(factorSeries, type, threshold, ndays) {
@@ -1157,20 +1247,58 @@ function computeReturns(trigger, targetSeries, winN) {
   const startVal = tValues[tIdx];
   const endVal = tValues[endIdx];
   const change = targetSeries.isPrice ? (endVal - startVal) : (endVal - startVal) * 100;
-  const isWin = targetSeries.isPrice
-    ? (sigDirection === 'up' ? change > 0 : change < 0)
-    : (sigDirection === 'down' ? change < 0 : change > 0);
+  const isWin = favorableChange(change, targetSeries.isPrice, sigDirection) > 0;
 
   let mfe = -Infinity, mae = Infinity;
   for (let i = tIdx; i <= endIdx; i++) {
     const pathChange = targetSeries.isPrice ? (tValues[i] - startVal) : (tValues[i] - startVal) * 100;
-    const favorable = targetSeries.isPrice
-      ? (sigDirection === 'up' ? pathChange : -pathChange)
-      : (sigDirection === 'down' ? -pathChange : pathChange);
+    const favorable = favorableChange(pathChange, targetSeries.isPrice, sigDirection);
     if (favorable > mfe) mfe = favorable;
     if (favorable < mae) mae = favorable;
   }
   return { change, isWin, mfe, mae, startDate: tDates[tIdx], endDate: tDates[endIdx] };
+}
+
+// 触发去重：reset=条件「不满足→满足」边沿才触发；cooldown=距上次触发至少 N 个交易日；none=不去重
+function applyDedup(triggers, mode, coolN) {
+  if (mode === 'none' || triggers.length === 0) return triggers;
+  if (mode === 'cooldown') {
+    const out = [];
+    let lastIdx = -Infinity;
+    triggers.forEach(t => {
+      if (t.idx - lastIdx >= coolN) { out.push(t); lastIdx = t.idx; }
+    });
+    return out;
+  }
+  const idxSet = new Set(triggers.map(t => t.idx));
+  return triggers.filter(t => t.idx === 0 || !idxSet.has(t.idx - 1));
+}
+
+// Spearman 秩相关（处理并列值）
+function rankArr(arr) {
+  const idx = arr.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]);
+  const r = new Array(arr.length);
+  let i = 0;
+  while (i < idx.length) {
+    let j = i;
+    while (j + 1 < idx.length && idx[j + 1][0] === idx[i][0]) j++;
+    const avg = (i + j) / 2 + 1;
+    for (let k = i; k <= j; k++) r[idx[k][1]] = avg;
+    i = j + 1;
+  }
+  return r;
+}
+function spearman(x, y) {
+  const rx = rankArr(x), ry = rankArr(y);
+  const n = x.length;
+  const mx = rx.reduce((s, v) => s + v, 0) / n;
+  const my = ry.reduce((s, v) => s + v, 0) / n;
+  let cov = 0, vx = 0, vy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = rx[i] - mx, dy = ry[i] - my;
+    cov += dx * dy; vx += dx * dx; vy += dy * dy;
+  }
+  return (vx === 0 || vy === 0) ? 0 : cov / Math.sqrt(vx * vy);
 }
 
 function runSignalTest() {
@@ -1196,7 +1324,34 @@ function runSignalTest() {
     }
   });
 
-  const triggers = detectTriggers(ff, triggerType, threshold, ndays);
+  let triggers = detectTriggers(ff, triggerType, threshold, ndays);
+  // 触发去重（默认"信号复位后再触发"，避免连续满足条件时样本注水）
+  const dedupMode = document.getElementById('sig-dedup').value;
+  const coolN = parseInt(document.getElementById('sig-cooldays').value) || 5;
+  const rawTriggerCount = triggers.length;
+  triggers = applyDedup(triggers, dedupMode, coolN);
+  const dedupDesc = { reset: '复位后再触发', cooldown: `冷却${coolN}日`, none: '不去重' }[dedupMode];
+
+  // 确认因子（可选）：主触发当日确认条件也需满足
+  const f2name = document.getElementById('sig-factor2').value;
+  let factor2Desc = '';
+  if (f2name) {
+    const f2 = factorData.series[f2name];
+    const cond2 = document.getElementById('sig-cond2').value;
+    const th2 = parseFloat(document.getElementById('sig-threshold2').value);
+    const th2v = isNaN(th2) ? 80 : th2;
+    if (f2) {
+      const f2map = {};
+      f2.dates.forEach((d, i) => f2map[d] = f2.values[i]);
+      triggers = triggers.filter(t => {
+        const v = f2map[t.date];
+        if (v === undefined) return false;
+        return cond2 === 'above' ? v > th2v : v < th2v;
+      });
+      factor2Desc = ` 且 ${f2name}${cond2 === 'above' ? '>' : '<'}${th2v}`;
+    }
+  }
+
   const events = [];
   triggers.forEach(t => {
     const ret = computeReturns(t, targetSeries, sigWindow);
@@ -1251,25 +1406,70 @@ function runSignalTest() {
   const unit = targetSeries.isPrice ? '元' : 'bp';
   const retFmt = v => (v >= 0 ? '+' : '') + v.toFixed(2) + ' ' + unit;
   const triggerDesc = {above:`因子>${threshold}`,below:`因子<${threshold}`,cross_up:`上穿${threshold}`,consecutive_up:`连续${ndays}日上升`,new_high:`创${ndays}日新高`}[triggerType];
-  const dirDesc = sigDirection === 'down' ? (targetSeries.isPrice?'价格上行=赢':'收益率下行=赢') : (targetSeries.isPrice?'价格下行=赢':'收益率上行=赢');
+  const tgtWord = targetSeries.isPrice ? '价格' : (targetSeries.isSpread ? '利差' : '收益率');
+  const dirDesc = sigDirection === 'down' ? `${tgtWord}下行=赢` : `${tgtWord}上行=赢`;
+
+  // ── Rank IC：全样本因子值 vs 未来 sigWindow 日方向归一化收益 ──
+  let ic = null, icN = 0, icT = null;
+  {
+    const xs = [], ys = [];
+    ff.dates.forEach((d, i) => {
+      const r = computeReturns({ date: d }, targetSeries, sigWindow);
+      if (!r) return;
+      xs.push(ff.values[i]);
+      ys.push(favorableChange(r.change, targetSeries.isPrice, sigDirection));
+    });
+    if (xs.length >= 10) {
+      ic = spearman(xs, ys);
+      icN = xs.length;
+      icT = ic * Math.sqrt((icN - 2) / Math.max(1e-9, 1 - ic * ic));
+    }
+  }
+
+  // ── 分年度稳健性 ──
+  const byYear = {};
+  events.forEach(e => {
+    const y = e.date.slice(0, 4);
+    (byYear[y] = byYear[y] || []).push(e);
+  });
+  const yearly = Object.keys(byYear).sort().map(y => {
+    const evs = byYear[y];
+    const w = evs.filter(e => e.isWin).length;
+    return {
+      year: y, count: evs.length, winRate: w / evs.length,
+      avg: evs.reduce((s, e) => s + e.change, 0) / evs.length,
+    };
+  });
 
   document.getElementById('signal-result').innerHTML = `
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
       <div>
         <div style="font-size:14px;font-weight:700;margin-bottom:4px">${factorName} → ${targetName}</div>
-        <div style="font-size:11px;color:var(--text-secondary)">触发: ${triggerDesc} ｜ 方向: ${dirDesc} ｜ 窗口: 未来${sigWindow}日 ｜ 样本: ${events[0].date} ~ ${lastTrigger.date}</div>
+        <div style="font-size:11px;color:var(--text-secondary)">触发: ${triggerDesc}${factor2Desc} ｜ 去重: ${dedupDesc} ｜ 方向: ${dirDesc} ｜ 窗口: 未来${sigWindow}日 ｜ 样本: ${events[0].date} ~ ${lastTrigger.date}</div>
       </div>
       <button class="sig-btn sig-btn-outline" onclick="saveAsConclusion()" title="把本次检验结果保存到研究结论库">💾 保存为研究结论</button>
     </div>
     <div class="kpi-grid">
-      <div class="kpi-card ${winRate>=0.5?'win':'lose'}"><div class="kpi-label">触发次数</div><div class="kpi-value">${events.length}</div></div>
+      <div class="kpi-card ${winRate>=0.5?'win':'lose'}"><div class="kpi-label">触发次数</div><div class="kpi-value">${events.length}</div><div class="kpi-sub">原始${rawTriggerCount}次→去重后${triggers.length}次</div></div>
       <div class="kpi-card ${winRate>=0.5?'win':'lose'}"><div class="kpi-label">胜率</div><div class="kpi-value">${(winRate*100).toFixed(1)}%</div><div class="kpi-sub">${wins.length}胜 ${losses.length}负</div></div>
       <div class="kpi-card"><div class="kpi-label">平均收益</div><div class="kpi-value">${retFmt(avgReturn)}</div></div>
       <div class="kpi-card"><div class="kpi-label">中位数收益</div><div class="kpi-value">${retFmt(median)}</div></div>
       <div class="kpi-card"><div class="kpi-label">平均最大有利波动</div><div class="kpi-value" style="color:var(--danger)">${retFmt(avgMFE)}</div></div>
       <div class="kpi-card"><div class="kpi-label">平均最大不利波动</div><div class="kpi-value" style="color:var(--success)">${retFmt(avgMAE)}</div></div>
       <div class="kpi-card"><div class="kpi-label">盈亏比</div><div class="kpi-value">${plRatio===Infinity?'∞':plRatio.toFixed(2)}</div><div class="kpi-sub">均胜${retFmt(avgWin)}/均亏${retFmt(avgLoss)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Rank IC（全样本）</div><div class="kpi-value" style="color:${ic===null?'inherit':(ic>0?'var(--danger)':'var(--success)')}">${ic===null?'--':ic.toFixed(3)}</div><div class="kpi-sub">n=${icN} t=${icT===null?'--':icT.toFixed(1)}${icT!==null&&Math.abs(icT)>=2?' 显著':''}</div></div>
       <div class="kpi-card ${nowTriggered?'win':''}"><div class="kpi-label">最近触发</div><div class="kpi-value" style="font-size:13px">${lastTrigger.date}</div><div class="kpi-sub">当前因子值:${lastFV.toFixed(1)} ${nowTriggered?'⚠️已触发':'未触发'}</div></div>
+    </div>
+    <div>
+      <div class="section-title"><span class="dot"></span>分年度稳健性</div>
+      <div class="sig-chart-box" style="overflow-x:auto">
+        <table class="event-table">
+          <thead><tr><th>年度</th><th>触发数</th><th>胜率</th><th>平均收益(${unit})</th></tr></thead>
+          <tbody>
+            ${yearly.map(y=>`<tr><td>${y.year}</td><td>${y.count}</td><td class="${y.winRate>=0.5?'pos':'neg'}">${(y.winRate*100).toFixed(1)}%</td><td class="${y.avg>=0?'pos':'neg'}">${retFmt(y.avg)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
     </div>
     <div>
       <div class="section-title"><span class="dot"></span>因子走势 + 触发点 + 预测对象</div>
@@ -1311,9 +1511,11 @@ function runSignalTest() {
 
   // 缓存本次检验结果，供「保存为研究结论」使用
   lastSignalResult = {
-    factorName, targetName, triggerType, threshold, ndays, triggerDesc,
+    factorName, targetName, triggerType, threshold, ndays, triggerDesc, factor2Desc, dedupDesc,
+    rawTriggerCount, dedupedCount: triggers.length,
     sigDirection, dirDesc, sigWindow, startDate, endDate,
-    unit, isPrice: targetSeries.isPrice,
+    unit, isPrice: targetSeries.isPrice, isSpread: !!targetSeries.isSpread,
+    ic, icN, icT, yearly,
     events: events.map(e => ({ date: e.date, factorVal: e.factorVal, change: e.change, mfe: e.mfe, mae: e.mae, isWin: e.isWin, startDate: e.startDate, endDate: e.endDate })),
     stats: { count: events.length, winRate, avgReturn, median, avgWin, avgLoss, plRatio, avgMFE, avgMAE },
     lastTriggerDate: lastTrigger.date, lastFactorVal: lastFV, nowTriggered,
@@ -1338,30 +1540,37 @@ function saveAsConclusion() {
   // 信号定义
   const signalDef = [
     `因子：${r.factorName}`,
-    `预测对象：${r.targetName}（${r.isPrice ? '价格' : '收益率'}）`,
-    `触发条件：${r.triggerDesc}`,
+    `预测对象：${r.targetName}（${r.isPrice ? '价格' : (r.isSpread ? '利差' : '收益率')}）`,
+    `触发条件：${r.triggerDesc}${r.factor2Desc || ''}`,
+    `触发去重：${r.dedupDesc || '复位后再触发'}（原始${r.rawTriggerCount}次→去重后${r.dedupedCount}次）`,
     `方向判定：${r.dirDesc}`,
     `观察窗口：未来 ${r.sigWindow} 个交易日`,
     `回测区间：${r.sampleStart} ~ ${r.sampleEnd}`,
   ].join('\n');
 
   // 触发条件
-  const trigger = `${r.triggerDesc}，观察未来 ${r.sigWindow} 日，方向判定：${r.dirDesc}。样本 ${r.stats.count} 次，胜率 ${pct(r.stats.winRate)}。`;
+  const trigger = `${r.triggerDesc}${r.factor2Desc || ''}，观察未来 ${r.sigWindow} 日，方向判定：${r.dirDesc}。样本 ${r.stats.count} 次，胜率 ${pct(r.stats.winRate)}。`;
 
   // 历史验证结果（Markdown 表格）
   const s = r.stats;
   const stats = [
     '| 指标 | 值 |',
     '|------|-----|',
-    `| 触发次数 | ${s.count} |`,
+    `| 触发次数 | ${s.count}（原始${r.rawTriggerCount}次，${r.dedupDesc || '复位后再触发'}）|`,
     `| 胜率 | ${pct(s.winRate)} |`,
     `| 平均收益 | ${fmt(s.avgReturn)} |`,
     `| 中位数收益 | ${fmt(s.median)} |`,
     `| 平均最大有利波动 (MFE) | ${fmt(s.avgMFE)} |`,
     `| 平均最大不利波动 (MAE) | ${fmt(s.avgMAE)} |`,
     `| 盈亏比 | ${s.plRatio === Infinity ? '∞' : s.plRatio.toFixed(2)} |`,
+    `| Rank IC（全样本） | ${r.ic === null ? '--' : r.ic.toFixed(3)}（n=${r.icN}，t=${r.icT === null ? '--' : r.icT.toFixed(1)}）|`,
     `| 最近触发 | ${r.lastTriggerDate} |`,
     `| 当前因子值 | ${r.lastFactorVal.toFixed(1)}（${r.nowTriggered ? '⚠️ 已触发' : '未触发'}）|`,
+    '',
+    '分年度稳健性：',
+    '| 年度 | 触发数 | 胜率 | 平均收益 |',
+    '|------|--------|------|----------|',
+    ...(r.yearly || []).map(y => `| ${y.year} | ${y.count} | ${pct(y.winRate)} | ${fmt(y.avg)} |`),
     '',
     '触发事件明细：',
     '| # | 触发日期 | 因子值 | 收益 | MFE | MAE | 结果 |',
@@ -1484,30 +1693,11 @@ function drawSigEventChart(events, unit) {
 function drawSigNavChart(events, unit) {
   if (sigChartNav) sigChartNav.destroy();
   const ctx = document.getElementById('sig-chart-nav');
-  // 累计净值：初始 0，每次触发后累加 change（按有利方向归一化）
-  // 有利方向的收益 = isPrice ? (dir=up?change:change) : (dir=down? -change : change)
-  // 简化：直接用 favorable = isWin 对应的方向收益
-  // 但净值应反映实际盈亏，用 favorable 值（正=赚，负=亏）
+  // 累计净值：胜=+|change|，负=-|change|（isWin 已按方向归一化）
   let cum = 0;
   const navData = [];
   events.forEach(e => {
-    // favorable 已在 computeReturns 中定义：正=有利，负=不利
-    // 这里用 mfe 方向太乐观，改用 change 按方向归一化
-    const favorable = e.change * (e.isWin ? 1 : -1) >= 0
-      ? Math.abs(e.change) * (e.isWin ? 1 : -1)
-      : e.change;
-    // 更简单：直接用方向归一化的收益
-    // 对收益率类 dir=down：收益下行（change<0）= 赚 → favorable = -change
-    // 对收益率类 dir=up：收益上行（change>0）= 赚 → favorable = change
-    // 对价格类 dir=up：价格上行（change>0）= 赚 → favorable = change
-    // 对价格类 dir=down：价格下行（change<0）= 赚 → favorable = -change
-    let fav;
-    if (e.isWin) {
-      fav = Math.abs(e.change);
-    } else {
-      fav = -Math.abs(e.change);
-    }
-    cum += fav;
+    cum += e.isWin ? Math.abs(e.change) : -Math.abs(e.change);
     navData.push(+cum.toFixed(4));
   });
 
