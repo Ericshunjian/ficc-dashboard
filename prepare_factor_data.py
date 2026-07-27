@@ -89,6 +89,19 @@ FACTOR_DEFS = [
     },
 ]
 
+# ── 技术指标因子定义（数据源：yield_curve_data.json 期货主力后复权价，原始值不标准化）──
+TECHNICAL_FACTOR_DEFS = [
+    {
+        "name": "3T-TL组合价差MACD柱因子",
+        "short_name": "3T-TL·MACD柱因子",
+        "category": "技术指标因子",
+        "underlying": "3T-TL",
+        "indicator": "macd_hist",
+        "raw_value": True,
+        "description": "3T-TL组合价差（3×T主力−1×TL主力，后复权价）的MACD柱（DIF−DEA，参数12/26/9），原始值，0轴以上=多头动能增强，上穿0轴≈金叉",
+    },
+]
+
 # ── 估值因子定义（数据源：yield_curve_data.json）──
 VALUATION_FACTOR_DEFS = [
     {
@@ -214,6 +227,54 @@ def compute_valuation_factors():
     return factors, defs_used
 
 
+def compute_technical_factors():
+    """从 yield_curve_data.json 计算技术指标因子（原始值，不做百分位标准化）
+    目前支持：3T-TL 组合价差（3×T主力−1×TL主力）的 MACD 柱（DIF−DEA，12/26/9）
+    返回 (factors_dict, factor_defs_used)
+    """
+    if not os.path.exists(CURVE_PATH):
+        log.warning(f"收益率曲线数据不存在，跳过技术指标因子: {CURVE_PATH}")
+        return {}, []
+    with open(CURVE_PATH, "r", encoding="utf-8") as f:
+        curve = json.load(f)
+    series = curve.get("series", {})
+
+    factors = {}
+    defs_used = []
+    for fd in TECHNICAL_FACTOR_DEFS:
+        if fd.get("underlying") == "3T-TL" and fd.get("indicator") == "macd_hist":
+            t = series.get("T主力")
+            tl = series.get("TL主力")
+            if not t or not tl:
+                log.warning(f"  技术指标因子 {fd['short_name']}: 缺少 T主力/TL主力 序列，跳过")
+                continue
+            t_s = pd.Series(t["values"], index=pd.to_datetime(t["dates"]))
+            tl_s = pd.Series(tl["values"], index=pd.to_datetime(tl["dates"]))
+            spread = (3 * t_s - tl_s).dropna()
+            if len(spread) < 40:
+                log.warning(f"  技术指标因子 {fd['short_name']}: 3T-TL 价差数据过少（{len(spread)}天），跳过")
+                continue
+            ema_fast = spread.ewm(span=12, adjust=False).mean()
+            ema_slow = spread.ewm(span=26, adjust=False).mean()
+            dif = ema_fast - ema_slow
+            dea = dif.ewm(span=9, adjust=False).mean()
+            hist = dif - dea
+            factors[fd["short_name"]] = {
+                "dates": [d.strftime("%Y-%m-%d") for d in hist.index],
+                "values": [round(float(v), 4) for v in hist.values],
+                "spreads": [round(float(v), 4) for v in spread.values],
+                "dif": [round(float(v), 4) for v in dif.values],
+                "dea": [round(float(v), 4) for v in dea.values],
+            }
+            defs_used.append(fd)
+            log.info(f"  技术指标因子 {fd['short_name']}: 有效天数 {len(hist)}, "
+                     f"{hist.index[0].strftime('%Y-%m-%d')} ~ {hist.index[-1].strftime('%Y-%m-%d')}, "
+                     f"最新值 {round(float(hist.iloc[-1]), 4)}")
+        else:
+            log.warning(f"  未知技术指标因子定义: {fd.get('short_name')}，跳过")
+    return factors, defs_used
+
+
 def main():
     factors = {}
     categories = {}
@@ -249,6 +310,14 @@ def main():
         categories.setdefault(fd["category"], []).append(fd["short_name"])
         all_factor_defs.append(fd)
 
+    # ── C. 技术指标因子（原始值不标准化）──
+    log.info("计算技术指标因子（MACD 原始值）...")
+    tech_factors, tech_defs = compute_technical_factors()
+    for fd in tech_defs:
+        factors[fd["short_name"]] = tech_factors[fd["short_name"]]
+        categories.setdefault(fd["category"], []).append(fd["short_name"])
+        all_factor_defs.append(fd)
+
     all_dates = set()
     for f in factors.values():
         all_dates.update(f["dates"])
@@ -278,7 +347,7 @@ def main():
 
     size_kb = os.path.getsize(OUTPUT_PATH) / 1024
     log.info(f"输出: {OUTPUT_PATH} ({size_kb:.1f} KB)")
-    log.info(f"因子数: {len(factors)}（机构行为 {len(FACTOR_DEFS)} + 估值 {len(val_defs)}）")
+    log.info(f"因子数: {len(factors)}（机构行为 {len(FACTOR_DEFS)} + 估值 {len(val_defs)} + 技术 {len(tech_defs)}）")
     return True
 
 

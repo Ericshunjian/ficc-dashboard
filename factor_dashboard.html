@@ -418,7 +418,7 @@
   <div class="tab-content active" id="tab-trend" style="flex:1;flex-direction:column;overflow:hidden">
     <div class="chart-area">
       <div class="chart-box factor-chart">
-        <div class="chart-label">因子走势（百分位 0-100）</div>
+        <div class="chart-label" id="factor-chart-label">因子走势（百分位 0-100）</div>
         <div class="chart-wrap"><canvas id="chart-factor"></canvas></div>
         <div class="no-data" id="no-data">
           <span class="icon">🔬</span>
@@ -532,7 +532,7 @@
   </div>
 
   <div class="source-note" id="source-note">
-    因子计算：机构净买入 → MA10 → 100天百分位 → MA10 ｜ min_periods=60
+    因子计算：机构行为/估值因子 = 原始值 → MA10 → 100天百分位 → MA10（0-100）｜ 技术指标因子 = MACD 原始值（不标准化，0轴多空）｜ min_periods=60
   </div>
 </main>
 
@@ -886,6 +886,11 @@ function updateChart() {
   document.getElementById('no-data').style.display = 'none';
   document.getElementById('chart-factor').style.display = 'block';
 
+  // 原始值类因子（如技术指标 MACD）不做 0-100 百分位，y 轴需自适应
+  const anyRaw = selectedFactors.some(f => isRawFactor(f.name));
+  document.getElementById('factor-chart-label').textContent =
+    anyRaw ? '因子走势（原始值）' : '因子走势（百分位 0-100）';
+
   // ── 上图：因子走势 ──
   if (chartFactor) chartFactor.destroy();
   chartFactor = new Chart(document.getElementById('chart-factor'), {
@@ -926,10 +931,10 @@ function updateChart() {
           grid: { display: false },
         },
         y: {
-          title: { display: true, text: '因子值 (0-100)', font: { size: 11 } },
+          title: { display: true, text: anyRaw ? '因子值' : '因子值 (0-100)', font: { size: 11 } },
           ticks: { font: { size: 10 } },
           grid: { color: '#f0f0f0' },
-          min: 0, max: 100,
+          ...(anyRaw ? {} : { min: 0, max: 100 }),
         },
       },
     },
@@ -987,10 +992,10 @@ function updateChart() {
           },
           'y-factor': {
             type: 'linear', position: 'left',
-            title: { display: true, text: '因子值 (0-100)', font: { size: 11 } },
+            title: { display: true, text: anyRaw ? '因子值' : '因子值 (0-100)', font: { size: 11 } },
             ticks: { font: { size: 10 } },
             grid: { color: '#f0f0f0' },
-            min: 0, max: 100,
+            ...(anyRaw ? {} : { min: 0, max: 100 }),
           },
           'y-bench': {
             type: 'linear', position: 'right',
@@ -1125,11 +1130,38 @@ function refreshSigFactorOptions() {
     }
   });
   if (ogSpread.children.length > 0) targetSel.appendChild(ogSpread);
+  // 期货组合组（所有腿数据都存在才列出）
+  const ogCombo = document.createElement('optgroup');
+  ogCombo.label = '期货组合';
+  COMBO_DEFS.forEach(cd => {
+    if (cd.legs.every(l => curveData.series[l.n])) {
+      const opt = document.createElement('option');
+      opt.value = cd.name; opt.textContent = cd.name;
+      ogCombo.appendChild(opt);
+    }
+  });
+  if (ogCombo.children.length > 0) targetSel.appendChild(ogCombo);
   // 默认 10年国债
   targetSel.value = '10年国债';
 }
 
-function onSigFactorChange() {}
+function onSigFactorChange() {
+  // 原始值类因子（MACD等）阈值默认0轴、步长0.01、不限制范围；百分位类恢复0-100
+  const fn = document.getElementById('sig-factor').value;
+  adjustThresholdInput('sig-threshold', fn);
+}
+
+function adjustThresholdInput(inputId, factorName) {
+  const inp = document.getElementById(inputId);
+  if (!inp) return;
+  if (factorName && isRawFactor(factorName)) {
+    inp.min = ''; inp.max = ''; inp.step = '0.01'; inp.value = '0';
+  } else {
+    inp.min = '0'; inp.max = '100'; inp.step = '5';
+    const cur = parseFloat(inp.value);
+    if (isNaN(cur) || cur === 0) inp.value = '80';
+  }
+}
 
 function onDedupChange() {
   const m = document.getElementById('sig-dedup').value;
@@ -1139,6 +1171,7 @@ function onDedupChange() {
 function onFactor2Change() {
   const v = document.getElementById('sig-factor2').value;
   document.getElementById('cfg-cond2').style.display = v ? '' : 'none';
+  if (v) adjustThresholdInput('sig-threshold2', v);
 }
 
 function onTriggerChange() {
@@ -1172,7 +1205,45 @@ const SPREAD_DEFS = [
   { name: '5年国开-国债利差', a: '5年国开', b: '5年国债' },
 ];
 
+// 期货组合预测对象（由期货主力价格动态合成，值 = Σ coef×价格，按价格类处理：做多=组合值上行赚钱）
+const COMBO_DEFS = [
+  { name: '3T-TL', legs: [{ n: 'T主力', w: 3 }, { n: 'TL主力', w: -1 }] },
+];
+
+// 判断因子是否为原始值类型（技术指标因子不做百分位标准化）
+function isRawFactor(name) {
+  const fd = factorData.meta.factor_defs ? factorData.meta.factor_defs.find(d => d.short_name === name) : null;
+  return !!(fd && fd.raw_value);
+}
+
+// 因子值格式化：原始值类用 3 位小数，百分位类用 1 位小数
+function fmtFactorVal(v, name) {
+  return v === null || v === undefined ? '--' : v.toFixed(isRawFactor(name) ? 3 : 1);
+}
+
 function getTargetSeries(name) {
+  // 期货组合（多腿价格加权，按价格类处理）
+  const cd = COMBO_DEFS.find(c => c.name === name);
+  if (cd) {
+    const legSeries = cd.legs.map(l => {
+      const s = curveData.series[l.n];
+      return s ? { w: l.w, map: Object.fromEntries(s.dates.map((d, i) => [d, s.values[i]])) } : null;
+    });
+    if (legSeries.some(x => !x)) return null;
+    // 取所有腿日期的交集
+    let common = new Set(legSeries[0].map && Object.keys(legSeries[0].map));
+    for (let k = 1; k < legSeries.length; k++) {
+      common = new Set([...common].filter(d => d in legSeries[k].map));
+    }
+    const dates = [...common].sort();
+    if (dates.length === 0) return null;
+    const values = dates.map(d => {
+      let v = 0;
+      legSeries.forEach(l => v += l.w * l.map[d]);
+      return +v.toFixed(4);
+    });
+    return { label: name, dates, values, isPrice: true, isSpread: false };
+  }
   const sd = SPREAD_DEFS.find(s => s.name === name);
   if (sd) {
     const sa = curveData.series[sd.a], sb = curveData.series[sd.b];
@@ -1311,7 +1382,8 @@ function runSignalTest() {
   if (!factorSeries || !targetSeries) { alert('数据不存在'); return; }
 
   const triggerType = document.getElementById('sig-trigger').value;
-  const threshold = parseFloat(document.getElementById('sig-threshold').value) || 80;
+  const _thRaw = parseFloat(document.getElementById('sig-threshold').value);
+  const threshold = isNaN(_thRaw) ? 80 : _thRaw;
   const ndays = parseInt(document.getElementById('sig-ndays').value) || 3;
   const startDate = document.getElementById('date-start').value;
   const endDate = document.getElementById('date-end').value;
@@ -1458,7 +1530,7 @@ function runSignalTest() {
       <div class="kpi-card"><div class="kpi-label">平均最大不利波动</div><div class="kpi-value" style="color:var(--success)">${retFmt(avgMAE)}</div></div>
       <div class="kpi-card"><div class="kpi-label">盈亏比</div><div class="kpi-value">${plRatio===Infinity?'∞':plRatio.toFixed(2)}</div><div class="kpi-sub">均胜${retFmt(avgWin)}/均亏${retFmt(avgLoss)}</div></div>
       <div class="kpi-card"><div class="kpi-label">Rank IC（全样本）</div><div class="kpi-value" style="color:${ic===null?'inherit':(ic>0?'var(--danger)':'var(--success)')}">${ic===null?'--':ic.toFixed(3)}</div><div class="kpi-sub">n=${icN} t=${icT===null?'--':icT.toFixed(1)}${icT!==null&&Math.abs(icT)>=2?' 显著':''}</div></div>
-      <div class="kpi-card ${nowTriggered?'win':''}"><div class="kpi-label">最近触发</div><div class="kpi-value" style="font-size:13px">${lastTrigger.date}</div><div class="kpi-sub">当前因子值:${lastFV.toFixed(1)} ${nowTriggered?'⚠️已触发':'未触发'}</div></div>
+      <div class="kpi-card ${nowTriggered?'win':''}"><div class="kpi-label">最近触发</div><div class="kpi-value" style="font-size:13px">${lastTrigger.date}</div><div class="kpi-sub">当前因子值:${fmtFactorVal(lastFV, factorName)} ${nowTriggered?'⚠️已触发':'未触发'}</div></div>
     </div>
     <div>
       <div class="section-title"><span class="dot"></span>分年度稳健性</div>
@@ -1498,14 +1570,14 @@ function runSignalTest() {
         <table class="event-table">
           <thead><tr><th>#</th><th>触发日期</th><th>因子值</th><th>起始日</th><th>结束日</th><th>收益(${unit})</th><th>最大有利</th><th>最大不利</th><th>结果</th></tr></thead>
           <tbody>
-            ${events.map((e,i)=>`<tr><td>${i+1}</td><td>${e.date}</td><td>${e.factorVal.toFixed(1)}</td><td>${e.startDate}</td><td>${e.endDate}</td><td class="${e.change>=0?'pos':'neg'}">${retFmt(e.change)}</td><td class="pos">${retFmt(e.mfe)}</td><td class="neg">${retFmt(e.mae)}</td><td><span class="win-badge ${e.isWin?'w':'l'}">${e.isWin?'胜':'负'}</span></td></tr>`).join('')}
+            ${events.map((e,i)=>`<tr><td>${i+1}</td><td>${e.date}</td><td>${fmtFactorVal(e.factorVal, factorName)}</td><td>${e.startDate}</td><td>${e.endDate}</td><td class="${e.change>=0?'pos':'neg'}">${retFmt(e.change)}</td><td class="pos">${retFmt(e.mfe)}</td><td class="neg">${retFmt(e.mae)}</td><td><span class="win-badge ${e.isWin?'w':'l'}">${e.isWin?'胜':'负'}</span></td></tr>`).join('')}
           </tbody>
         </table>
       </div>
     </div>
   `;
 
-  drawSigFactorChart(ff, events, targetSeries);
+  drawSigFactorChart(ff, events, targetSeries, factorName);
   drawSigEventChart(events, unit);
   drawSigNavChart(events, unit);
 
@@ -1565,7 +1637,7 @@ function saveAsConclusion() {
     `| 盈亏比 | ${s.plRatio === Infinity ? '∞' : s.plRatio.toFixed(2)} |`,
     `| Rank IC（全样本） | ${r.ic === null ? '--' : r.ic.toFixed(3)}（n=${r.icN}，t=${r.icT === null ? '--' : r.icT.toFixed(1)}）|`,
     `| 最近触发 | ${r.lastTriggerDate} |`,
-    `| 当前因子值 | ${r.lastFactorVal.toFixed(1)}（${r.nowTriggered ? '⚠️ 已触发' : '未触发'}）|`,
+    `| 当前因子值 | ${fmtFactorVal(r.lastFactorVal, r.factorName)}（${r.nowTriggered ? '⚠️ 已触发' : '未触发'}）|`,
     '',
     '分年度稳健性：',
     '| 年度 | 触发数 | 胜率 | 平均收益 |',
@@ -1575,7 +1647,7 @@ function saveAsConclusion() {
     '触发事件明细：',
     '| # | 触发日期 | 因子值 | 收益 | MFE | MAE | 结果 |',
     '|---|---------|--------|------|-----|-----|------|',
-    ...r.events.map((e, i) => `| ${i+1} | ${e.date} | ${e.factorVal.toFixed(1)} | ${fmt(e.change)} | ${fmt(e.mfe)} | ${fmt(e.mae)} | ${e.isWin ? '胜' : '负'} |`),
+    ...r.events.map((e, i) => `| ${i+1} | ${e.date} | ${fmtFactorVal(e.factorVal, r.factorName)} | ${fmt(e.change)} | ${fmt(e.mfe)} | ${fmt(e.mae)} | ${e.isWin ? '胜' : '负'} |`),
   ].join('\n');
 
   // 自动推断标签
@@ -1590,7 +1662,10 @@ function saveAsConclusion() {
   if (fn.includes('大型')) tagSet.add('大型银行');
   if (fn.includes('中小')) tagSet.add('中小银行');
   if (fn.includes('货币')) tagSet.add('货币基金');
+  if (fn.includes('MACD')) tagSet.add('MACD');
+  if (fn.includes('3T-TL')) tagSet.add('3T-TL');
   const tn = r.targetName;
+  if (tn === '3T-TL') { tagSet.add('3T-TL'); tagSet.add('TL'); tagSet.add('T'); }
   if (tn.includes('TL')) tagSet.add('TL');
   if (tn.includes('T主力') || tn === 'T主力') tagSet.add('T');
   if (tn.includes('TF')) tagSet.add('TF');
@@ -1614,11 +1689,12 @@ function saveAsConclusion() {
   window.open('research_conclusions.html?prefill=1', '_blank');
 }
 
-function drawSigFactorChart(ff, events, targetSeries) {
+function drawSigFactorChart(ff, events, targetSeries, factorName) {
   if (sigChartFactor) sigChartFactor.destroy();
   const ctx = document.getElementById('sig-chart-factor');
   const tDates = new Set(events.map(e => e.date));
   const tPoints = ff.dates.map((d, i) => tDates.has(d) ? ff.values[i] : null);
+  const rawF = isRawFactor(factorName);
 
   // ── 预测对象曲线：按 ff.dates 对齐（前向填充缺失日）──
   const datasets = [
@@ -1627,7 +1703,7 @@ function drawSigFactorChart(ff, events, targetSeries) {
   ];
   const scales = {
     x: { ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 }, grid: { display: false } },
-    y: { position: 'left', title: { display: true, text: '因子分位值', font: { size: 11 } }, ticks: { font: { size: 10 } }, grid: { color: '#f0f0f0' } },
+    y: { position: 'left', title: { display: true, text: rawF ? '因子值' : '因子分位值', font: { size: 11 } }, ticks: { font: { size: 10 } }, grid: { color: '#f0f0f0' } },
   };
   if (targetSeries) {
     // 建立 预测对象 date→value 索引，按 ff.dates 前向填充对齐
