@@ -311,8 +311,8 @@ async function init() {
   console.log('[backtest] init start');
   try {
     const [r1, r2] = await Promise.all([
-      fetch('yield_curve_data.json?t=' + Date.now()),
-      fetch('bond_yield_data.json?t=' + Date.now()),
+      fetch('yield_curve_data.json', { cache: 'no-cache' }),
+      fetch('bond_yield_data.json', { cache: 'no-cache' }),
     ]);
     curveData = await r1.json();
     bondData = await r2.json();

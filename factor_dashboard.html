@@ -562,9 +562,10 @@ const COLOR_BENCHMARK = '#2c3e50';
 async function init() {
   try {
     // 并行加载因子数据和收益率曲线数据
+    // cache:'no-cache' = 协商缓存：数据未变返回304(仅头部,秒开)，变了才下载body；比 ?t=随机数(每次全量下载)快
     const [fResp, cResp] = await Promise.all([
-      fetch('factor_data.json?t=' + Date.now()),
-      fetch('yield_curve_data.json?t=' + Date.now()),
+      fetch('factor_data.json', { cache: 'no-cache' }),
+      fetch('yield_curve_data.json', { cache: 'no-cache' }),
     ]);
     factorData = await fResp.json();
     curveData = await cResp.json();

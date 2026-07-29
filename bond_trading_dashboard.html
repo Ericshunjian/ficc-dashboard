@@ -581,7 +581,7 @@ async function init() {
 
   // 2. 后台校验最新数据（带时间戳，强制绕过 CDN/浏览器缓存，确保拿到最新文件）
   try {
-    const resp = await fetch(DATA_URL_BTD + '?t=' + Date.now());
+    const resp = await fetch(DATA_URL_BTD, { cache: 'no-cache' });
     const raw = await resp.json();
     const newUpdated = raw.meta && raw.meta.last_updated;
     const cachedUpdated = cachedRaw && cachedRaw.meta && cachedRaw.meta.last_updated;

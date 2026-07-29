@@ -412,7 +412,7 @@ const COLOR_SPREAD = '#ee6666';
 // ============================================
 async function init() {
   try {
-    const resp = await fetch('yield_curve_data.json?t=' + Date.now());
+    const resp = await fetch('yield_curve_data.json', { cache: 'no-cache' });
     allData = await resp.json();
 
     const cats = Object.keys(allData.meta.categories);

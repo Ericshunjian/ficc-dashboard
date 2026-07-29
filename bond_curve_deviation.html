@@ -135,7 +135,7 @@ const CURVE_TAG = { '国债': 'tag-treasury', '国开': 'tag-policy', '地方债
 let DATA = null, mainChart = null, histChart = null;
 
 async function init() {
-  const res = await fetch('curve_deviation.json?t=' + Date.now());
+  const res = await fetch('curve_deviation.json', { cache: 'no-cache' });
   DATA = await res.json();
   const dates = DATA.curves['国债'].dates;
   const sel = document.getElementById('dateSelect');
