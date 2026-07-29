@@ -1427,7 +1427,7 @@ function runSignalTest() {
   const events = [];
   triggers.forEach(t => {
     const ret = computeReturns(t, targetSeries, sigWindow);
-    if (ret) events.push({ ...t, ...ret });
+    if (ret) events.push({ ...t, ...ret, fav: favorableChange(ret.change, targetSeries.isPrice, sigDirection) });
   });
 
   if (events.length === 0) {
@@ -1439,12 +1439,12 @@ function runSignalTest() {
   const wins = events.filter(e => e.isWin);
   const losses = events.filter(e => !e.isWin);
   const winRate = events.length > 0 ? wins.length / events.length : 0;
-  const avgReturn = events.reduce((s,e) => s + e.change, 0) / events.length;
-  const sorted = events.map(e=>e.change).sort((a,b)=>a-b);
+  const avgReturn = events.reduce((s,e) => s + e.fav, 0) / events.length;
+  const sorted = events.map(e=>e.fav).sort((a,b)=>a-b);
   const median = sorted.length > 0
     ? (sorted.length % 2 === 1 ? sorted[Math.floor(sorted.length/2)] : (sorted[sorted.length/2-1]+sorted[sorted.length/2])/2) : 0;
-  const avgWin = wins.length > 0 ? wins.reduce((s,e)=>s+e.change,0)/wins.length : 0;
-  const avgLoss = losses.length > 0 ? losses.reduce((s,e)=>s+e.change,0)/losses.length : 0;
+  const avgWin = wins.length > 0 ? wins.reduce((s,e)=>s+e.fav,0)/wins.length : 0;
+  const avgLoss = losses.length > 0 ? losses.reduce((s,e)=>s+e.fav,0)/losses.length : 0;
   const plRatio = avgLoss !== 0 ? Math.abs(avgWin / avgLoss) : Infinity;
   const avgMFE = events.reduce((s,e)=>s+e.mfe,0)/events.length;
   const avgMAE = events.reduce((s,e)=>s+e.mae,0)/events.length;
@@ -1509,7 +1509,7 @@ function runSignalTest() {
     const w = evs.filter(e => e.isWin).length;
     return {
       year: y, count: evs.length, winRate: w / evs.length,
-      avg: evs.reduce((s, e) => s + e.change, 0) / evs.length,
+      avg: evs.reduce((s, e) => s + e.fav, 0) / evs.length,
     };
   });
 
@@ -1570,7 +1570,7 @@ function runSignalTest() {
         <table class="event-table">
           <thead><tr><th>#</th><th>触发日期</th><th>因子值</th><th>起始日</th><th>结束日</th><th>收益(${unit})</th><th>最大有利</th><th>最大不利</th><th>结果</th></tr></thead>
           <tbody>
-            ${events.map((e,i)=>`<tr><td>${i+1}</td><td>${e.date}</td><td>${fmtFactorVal(e.factorVal, factorName)}</td><td>${e.startDate}</td><td>${e.endDate}</td><td class="${e.change>=0?'pos':'neg'}">${retFmt(e.change)}</td><td class="pos">${retFmt(e.mfe)}</td><td class="neg">${retFmt(e.mae)}</td><td><span class="win-badge ${e.isWin?'w':'l'}">${e.isWin?'胜':'负'}</span></td></tr>`).join('')}
+            ${events.map((e,i)=>`<tr><td>${i+1}</td><td>${e.date}</td><td>${fmtFactorVal(e.factorVal, factorName)}</td><td>${e.startDate}</td><td>${e.endDate}</td><td class="${e.fav>=0?'pos':'neg'}">${retFmt(e.fav)}</td><td class="pos">${retFmt(e.mfe)}</td><td class="neg">${retFmt(e.mae)}</td><td><span class="win-badge ${e.isWin?'w':'l'}">${e.isWin?'胜':'负'}</span></td></tr>`).join('')}
           </tbody>
         </table>
       </div>
@@ -1588,7 +1588,7 @@ function runSignalTest() {
     sigDirection, dirDesc, sigWindow, startDate, endDate,
     unit, isPrice: targetSeries.isPrice, isSpread: !!targetSeries.isSpread,
     ic, icN, icT, yearly,
-    events: events.map(e => ({ date: e.date, factorVal: e.factorVal, change: e.change, mfe: e.mfe, mae: e.mae, isWin: e.isWin, startDate: e.startDate, endDate: e.endDate })),
+    events: events.map(e => ({ date: e.date, factorVal: e.factorVal, change: e.fav, mfe: e.mfe, mae: e.mae, isWin: e.isWin, startDate: e.startDate, endDate: e.endDate })),
     stats: { count: events.length, winRate, avgReturn, median, avgWin, avgLoss, plRatio, avgMFE, avgMAE },
     lastTriggerDate: lastTrigger.date, lastFactorVal: lastFV, nowTriggered,
     sampleStart: events[0].date, sampleEnd: lastTrigger.date,
@@ -1753,7 +1753,7 @@ function drawSigEventChart(events, unit) {
   const ctx = document.getElementById('sig-chart-event');
   sigChartEvent = new Chart(ctx, {
     type: 'bar',
-    data: { labels: events.map(e=>e.date), datasets: [{ label: `收益(${unit})`, data: events.map(e=>e.change),
+    data: { labels: events.map(e=>e.date), datasets: [{ label: `收益(${unit})`, data: events.map(e=>e.fav),
       backgroundColor: events.map(e => e.isWin ? '#ef4444' : '#22c55e') }] },
     options: {
       responsive: true, maintainAspectRatio: false,
@@ -1769,11 +1769,11 @@ function drawSigEventChart(events, unit) {
 function drawSigNavChart(events, unit) {
   if (sigChartNav) sigChartNav.destroy();
   const ctx = document.getElementById('sig-chart-nav');
-  // 累计净值：胜=+|change|，负=-|change|（isWin 已按方向归一化）
+  // 累计净值：fav 已按方向归一化（赚=正、亏=负），直接累加
   let cum = 0;
   const navData = [];
   events.forEach(e => {
-    cum += e.isWin ? Math.abs(e.change) : -Math.abs(e.change);
+    cum += e.fav;
     navData.push(+cum.toFixed(4));
   });
 
@@ -1808,7 +1808,7 @@ function drawSigNavChart(events, unit) {
               const e = events[idx];
               return [
                 `累计净值: ${(ctx.parsed.y>=0?'+':'')}${ctx.parsed.y.toFixed(2)} ${unit}`,
-                `本次收益: ${(e.change>=0?'+':'')}${e.change.toFixed(2)} ${unit} (${e.isWin?'胜':'负'})`,
+                `本次收益: ${(e.fav>=0?'+':'')}${e.fav.toFixed(2)} ${unit} (${e.isWin?'胜':'负'})`,
               ];
             },
           },
