@@ -9,7 +9,10 @@
 """
 import json
 import logging
+import os
 from datetime import date, datetime
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -41,8 +44,8 @@ def interp(x, xs, ys):
 
 
 def main():
-    yc = json.load(open("yield_curve_data.json", encoding="utf-8"))
-    bd = json.load(open("bond_yield_data.json", encoding="utf-8"))
+    yc = json.load(open(os.path.join(SCRIPT_DIR, "yield_curve_data.json"), encoding="utf-8"))
+    bd = json.load(open(os.path.join(SCRIPT_DIR, "bond_yield_data.json"), encoding="utf-8"))
 
     # 曲线按日期重排：{类别: {日期: {期限: 收益率}}}
     curve_by_date = {}
@@ -130,10 +133,10 @@ def main():
         "curves": out_curves,
         "bonds": out_bonds,
     }
-    with open("curve_deviation.json", "w", encoding="utf-8") as f:
+    out_path = os.path.join(SCRIPT_DIR, "curve_deviation.json")
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
-    import os
-    log.info(f"  输出 curve_deviation.json ({os.path.getsize('curve_deviation.json')/1024:.1f} KB)")
+    log.info(f"  输出 curve_deviation.json ({os.path.getsize(out_path)/1024:.1f} KB)")
     log.info(f"  个券 {len(out_bonds)} 只, 曲线外插值(50Y)记录 {n_out_of_range} 条")
 
     # 最新一天偏离度一览

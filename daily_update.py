@@ -1070,13 +1070,23 @@ def main():
         log.exception(f"因子数据处理失败: {e}")
         ok5 = False
 
+    ok6 = True
+    try:
+        log.info("[6/6] 曲线偏离度 (依赖现券+曲线数据)")
+        import curve_deviation
+        curve_deviation.main()
+    except Exception as e:
+        log.exception(f"曲线偏离度处理失败: {e}")
+        ok6 = False
+
     log.info("=" * 50)
     log.info(f"完成: 预处理={'成功' if ok0 else '失败'}, "
              f"机构行为={'成功' if ok1 else '失败'}, "
              f"FICC={'成功' if ok2 else '失败'}, "
              f"曲线={'成功' if ok3 else '失败'}, "
              f"合并={'成功' if ok4 else '失败'}, "
-             f"因子={'成功' if ok5 else '失败'}")
+             f"因子={'成功' if ok5 else '失败'}, "
+             f"偏离度={'成功' if ok6 else '失败'}")
 
     # push 到 Gitee + GitCode + GitHub
     if ok1 or ok2 or ok3 or ok5:
@@ -1086,7 +1096,7 @@ def main():
         except Exception as e:
             log.warning(f"Git push 失败（不影响本地数据）: {e}")
 
-    return ok0 and ok1 and ok2 and ok3 and ok4 and ok5
+    return ok0 and ok1 and ok2 and ok3 and ok4 and ok5 and ok6
 
 
 def git_push_data():
@@ -1122,6 +1132,7 @@ def git_push_data():
         'bond_yield_data.json',
         'yield_curve_data.json',
         'factor_data.json',
+        'curve_deviation.json',
     ]
     for f in json_files:
         run_git('add', f)
@@ -1134,6 +1145,7 @@ def git_push_data():
         'yield_curve_dashboard.html',
         'factor_dashboard.html',
         'backtest_dashboard.html',
+        'bond_curve_deviation.html',
     ]
     for f in html_files:
         if (repo_dir / f).exists():
