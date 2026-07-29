@@ -27,35 +27,41 @@ CATEGORY_TO_CURVE = {
 
 # 2025-08-08 起新发行国债/地方债/金融债利息收入恢复征收6%增值税（此前免税）
 TAX_CUT_DATE = date(2025, 8, 8)
-# 名义期限显式覆盖：地方债 category 无期限；2600004 被误标50年组（实际30年，dur≈29.9）
-NOMINAL_YEARS_OVERRIDE = {
-    "2605207.IB": 30, "104870.IB": 30, "2205697.IB": 20,
-    "2600004.IB": 30,
+
+# 显式起息日表（联网核实自财政部/国开行/中债公告）。
+# 只有 2025 年发行的券处于免税/含税临界，必须逐一精确；2026 年(26xxxx)必含税、
+# 2024 及之前(24xxxx/23xxxx/21xxxx/10xxxx)必免税，无需列入。
+# duration 反推起息日不可靠（对超长期特别国债/国开债误差达数月，已弃用）。
+ISSUE_DATE = {
+    "2500002.IB": date(2025, 4, 25),   # 25超长特别国债02 免税
+    "2500005.IB": date(2025, 7, 15),   # 25超长特别国债05 免税
+    "2500006.IB": date(2025, 8, 25),   # 25超长特别国债06 含税
+    "2500003.IB": date(2026, 2, 13),   # 26超长特别国债 含税(2026)
+    "2500001.IB": date(2025, 4, 25),   # 25超长特别国债01(20年) 免税
+    "250021.IB":  date(2025, 11, 6),   # 25附息国债21(50年) 含税
+    "250003.IB":  date(2025, 1, 25),   # 25附息国债03 免税
+    "250016.IB":  date(2025, 8, 25),   # 25附息国债16 含税
+    "250020.IB":  date(2025, 10, 25),  # 25附息国债20 含税
+    "250022.IB":  date(2025, 11, 15),  # 25附息国债22 含税
+    "250024.IB":  date(2025, 12, 15),  # 25附息国债24 含税
+    "250210.IB":  date(2025, 4, 2),    # 25国开10 免税
+    "250215.IB":  date(2025, 6, 18),   # 25国开15 免税
+    "250218.IB":  date(2025, 10, 22),  # 25国开18 含税
+    "250220.IB":  date(2025, 9, 5),    # 25国开20 含税
+    "2505601.IB": date(2025, 6, 24),   # 25山东债57 免税
 }
 
 
-def nominal_years(cat, code):
-    """名义发行期限（年）。用于由到期日反推起息日。"""
-    if code in NOMINAL_YEARS_OVERRIDE:
-        return NOMINAL_YEARS_OVERRIDE[code]
-    m = re.match(r"^(\d+)年", cat)
-    if m:
-        return int(m.group(1))
-    if "7-10" in cat:
-        return 10
-    if "2-7" in cat:
-        return 5
-    return None
-
-
-def estimate_issue_date(d0, dur0, nom):
-    """数据起始日 + 起始剩余期限 → 到期日；到期日 − 名义期限 → 起息日（近似）。"""
-    from datetime import timedelta
-    mat = d0 + timedelta(days=dur0 * 365.25)
-    try:
-        return date(mat.year - nom, mat.month, mat.day)
-    except ValueError:  # 2月29日
-        return date(mat.year - nom, mat.month, mat.day - 1)
+def is_tax_free(code):
+    """起息日 <2025-08-08 → 免税。显式表优先；否则按代码年份推断。"""
+    if code in ISSUE_DATE:
+        return ISSUE_DATE[code] < TAX_CUT_DATE
+    yy = int(code[:2])
+    if yy >= 26:   # 2026 年及以后发行
+        return False
+    if yy <= 24:   # 2024 年及以前发行
+        return True
+    return None    # 2025 年发行但未列入表（不应发生）
 
 
 def build_curve_nodes(yc_series):
@@ -149,13 +155,8 @@ def main():
             devs.append(dev)
             spr30.append(s30)
             all_dates.add(ds)
-        nom = nominal_years(cat, code)
-        tax_free = None
-        if nom:
-            issue = estimate_issue_date(d0, dur0, nom)
-            tax_free = issue < TAX_CUT_DATE
         out_bonds[code] = {
-            "category": cat, "curve": cname, "tax_free": tax_free,
+            "category": cat, "curve": cname, "tax_free": is_tax_free(code),
             "dates": dates, "yields": yields, "rem": rems,
             "dev_bp": devs, "spread30_bp": spr30,
         }
