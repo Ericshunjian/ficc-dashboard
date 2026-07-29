@@ -24,6 +24,7 @@
     --accent4: #73c0de;
     --accent5: #fac858;
     --accent6: #9a60b4;
+    --accent7: #fc8452;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -121,6 +122,7 @@
   .card-4 { --accent: var(--accent4); }
   .card-5 { --accent: var(--accent5); }
   .card-6 { --accent: var(--accent6); }
+  .card-7 { --accent: var(--accent7); }
 
   .card-icon {
     font-size: 40px;
@@ -284,6 +286,18 @@
       </div>
       <div class="card-meta">
         <span>数据：本地存储（localStorage）</span>
+        <span class="arrow">进入 →</span>
+      </div>
+    </a>
+
+    <a class="card card-7" href="bond_curve_deviation.html">
+      <div class="card-icon">🎯</div>
+      <div class="card-title">个券相对价值</div>
+      <div class="card-desc">
+        个券 YTM 对同类别收益率曲线的偏离度（按剩余期限插值）：曲线+散点一图看清哪只真便宜，附偏离度排名与历史走势。
+      </div>
+      <div class="card-meta">
+        <span>数据：FICC 现券 + 收益率曲线</span>
         <span class="arrow">进入 →</span>
       </div>
     </a>

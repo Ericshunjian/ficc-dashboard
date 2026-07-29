@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>个券相对价值：曲线偏离度</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --panel-bg: #ffffff;
+    --text: #2c3e50;
+    --text-secondary: #7f8c8d;
+    --border: #e8ecf1;
+    --primary: #5470c6;
+    --primary-light: #e8edff;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --radius: 8px;
+    --up: #ef4444;
+    --down: #22c55e;
+    --c-treasury: #5470c6;
+    --c-policy: #22a06b;
+    --c-local: #8e44ad;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; padding: 20px 24px;
+  }
+  .header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .header h1 { font-size: 20px; font-weight: 700; }
+  .header .subtitle { font-size: 12px; color: var(--text-secondary); }
+  .spacer { flex: 1; }
+  .back-home {
+    font-size: 12px; color: var(--text-secondary); text-decoration: none;
+    padding: 5px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel-bg);
+  }
+  .back-home:hover { color: var(--primary); border-color: var(--primary); }
+  .panel {
+    background: var(--panel-bg); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 16px 20px; margin-bottom: 16px;
+  }
+  .controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .controls label { font-size: 13px; font-weight: 600; }
+  .controls select {
+    font-size: 13px; padding: 6px 10px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--panel-bg); color: var(--text);
+  }
+  .legend-note { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+  #mainChartWrap { position: relative; height: 460px; }
+  #histChartWrap { position: relative; height: 240px; display: none; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th:nth-child(2), td:nth-child(2) { text-align: left; }
+  th { color: var(--text-secondary); font-weight: 600; cursor: default; position: sticky; top: 0; background: var(--panel-bg); }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--primary-light); }
+  tbody tr.selected { background: var(--primary-light); outline: 1px solid var(--primary); }
+  .dev-pos { color: var(--up); font-weight: 700; }
+  .dev-neg { color: var(--down); font-weight: 700; }
+  .dev-na { color: var(--text-secondary); }
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
+  }
+  .tag-treasury { background: #e8edff; color: var(--c-treasury); }
+  .tag-policy { background: #e6f7ef; color: var(--c-policy); }
+  .tag-local { background: #f3e9fa; color: var(--c-local); }
+  .table-wrap { max-height: 420px; overflow-y: auto; }
+  .note-box {
+    font-size: 12px; color: var(--text-secondary); line-height: 1.8;
+    background: #fafbfc; border: 1px dashed var(--border); border-radius: 6px;
+    padding: 10px 14px; margin-top: 10px;
+  }
+  .loading { padding: 60px; text-align: center; color: var(--text-secondary); font-size: 14px; }
+  #histTitle { font-size: 14px; font-weight: 700; margin: 4px 0 10px; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>个券相对价值 · 曲线偏离度</h1>
+      <div class="subtitle">个券 YTM − 同类别收益率曲线（按当日剩余期限线性插值） · 数据每日更新</div>
+    </div>
+    <div class="spacer"></div>
+    <a class="back-home" href="index.html">← 返回首页</a>
+  </div>
+
+  <div class="panel">
+    <div class="controls">
+      <label>日期</label>
+      <select id="dateSelect"></select>
+      <span class="legend-note">实线=中债曲线（节点连线即插值口径）；散点=个券。散点在曲线上方 → 收益率偏高 → 价格偏便宜</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div id="mainChartWrap"><div class="loading">数据加载中…</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="controls" style="margin-bottom:10px;">
+      <label>偏离度排名</label>
+      <span class="legend-note">正偏离（红）= 收益率高于曲线 = 便宜；负偏离（绿）= 贵。点击行查看该券偏离度历史走势</span>
+    </div>
+    <div class="table-wrap">
+      <table id="devTable">
+        <thead>
+          <tr>
+            <th>代码</th><th>分组</th><th>剩余期限</th><th>YTM(%)</th>
+            <th>曲线值(%)</th><th>偏离度(bp)</th><th>读法</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="note-box" id="methodNote"></div>
+  </div>
+
+  <div class="panel">
+    <div id="histTitle"></div>
+    <div id="histChartWrap"><canvas id="histCanvas"></canvas></div>
+  </div>
+
+<script>
+const CURVE_COLORS = { '国债': '#5470c6', '国开': '#22a06b', '地方债': '#8e44ad' };
+const CURVE_TAG = { '国债': 'tag-treasury', '国开': 'tag-policy', '地方债': 'tag-local' };
+let DATA = null, mainChart = null, histChart = null;
+
+async function init() {
+  const res = await fetch('curve_deviation.json?t=' + Date.now());
+  DATA = await res.json();
+  const dates = DATA.curves['国债'].dates;
+  const sel = document.getElementById('dateSelect');
+  sel.innerHTML = dates.map(d => `<option value="${d}">${d}</option>`).join('');
+  sel.value = dates[dates.length - 1];
+  sel.onchange = () => render(sel.value);
+  document.getElementById('methodNote').innerHTML =
+    '口径说明：' + DATA.meta.dev_definition + '<br>' +
+    '① ' + DATA.meta.note_interp + '<br>② ' + DATA.meta.note_50y + '<br>③ ' + DATA.meta.note_short;
+  render(sel.value);
+}
+
+function interpY(nodes, vals, x) {
+  if (x < nodes[0] || x > nodes[nodes.length - 1]) return null;
+  for (let i = 1; i < nodes.length; i++) {
+    if (x <= nodes[i]) {
+      const [x0, x1, y0, y1] = [nodes[i-1], nodes[i], vals[i-1], vals[i]];
+      return x1 === x0 ? y0 : y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+    }
+  }
+  return vals[vals.length - 1];
+}
+
+function render(ds) {
+  const datasets = [];
+  const tableRows = [];
+  let ci = 0;
+  for (const cname of ['国债', '国开', '地方债']) {
+    const c = DATA.curves[cname];
+    const idx = c.dates.indexOf(ds);
+    if (idx < 0) continue;
+    const pts = c.nodes.map((t, i) => ({ x: t, y: c.values[idx][i] }));
+    datasets.push({
+      type: 'line', label: cname + '曲线', data: pts,
+      borderColor: CURVE_COLORS[cname], backgroundColor: CURVE_COLORS[cname],
+      borderWidth: 2, pointRadius: 4, pointStyle: 'rectRot', tension: 0,
+      order: 1 + ci,
+    });
+    ci++;
+  }
+  for (const code of Object.keys(DATA.bonds)) {
+    const b = DATA.bonds[code];
+    const i = b.dates.indexOf(ds);
+    if (i < 0) continue;
+    const rem = b.rem[i], y = b.yields[i];
+    const dev = b.dev_bp[i], s30 = b.spread30_bp[i];
+    const c = DATA.curves[b.curve];
+    const cidx = c.dates.indexOf(ds);
+    const cy = cidx >= 0 ? interpY(c.nodes, c.values[cidx], rem) : null;
+    datasets.push({
+      type: 'scatter', label: code, data: [{ x: rem, y: y }],
+      backgroundColor: CURVE_COLORS[b.curve], borderColor: '#fff', borderWidth: 1,
+      pointRadius: 6, pointHoverRadius: 8, order: 10,
+      showInLegend: false,
+      meta: { code, category: b.category, curve: b.curve, rem, y, cy, dev, s30 },
+    });
+    tableRows.push({ code, category: b.category, curve: b.curve, rem, y, cy, dev, s30 });
+  }
+
+  const wrap = document.getElementById('mainChartWrap');
+  wrap.innerHTML = '<canvas id="mainCanvas"></canvas>';
+  if (mainChart) { mainChart.destroy(); mainChart = null; }
+  mainChart = new Chart(document.getElementById('mainCanvas'), {
+    data: { datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'nearest', intersect: true },
+      plugins: {
+        legend: { labels: { filter: it => it.text.includes('曲线') } },
+        tooltip: {
+          filter: it => it.dataset.type === 'scatter',
+          callbacks: {
+            title: items => items[0].dataset.meta.code + '（' + items[0].dataset.meta.category + '）',
+            label: it => {
+              const m = it.dataset.meta;
+              const lines = [
+                'YTM: ' + m.y.toFixed(4) + '%   剩余: ' + m.rem.toFixed(2) + 'Y',
+                '曲线(' + m.curve + '): ' + (m.cy == null ? 'N/A' : m.cy.toFixed(4) + '%'),
+              ];
+              if (m.dev != null) lines.push('偏离度: ' + (m.dev > 0 ? '+' : '') + m.dev.toFixed(2) + ' bp');
+              else if (m.s30 != null) lines.push('对30Y利差: +' + m.s30.toFixed(2) + ' bp');
+              else lines.push('偏离度: N/A（期限<1Y）');
+              return lines;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { type: 'linear', title: { display: true, text: '剩余期限（年）' }, min: 0, max: 52, grid: { color: '#f0f2f6' } },
+        y: { title: { display: true, text: '收益率（%）' }, grid: { color: '#f0f2f6' } },
+      },
+    },
+  });
+
+  renderTable(tableRows);
+}
+
+function renderTable(rows) {
+  const norm = rows.filter(r => r.dev != null).sort((a, b) => b.dev - a.dev);
+  const s50 = rows.filter(r => r.dev == null && r.s30 != null).sort((a, b) => b.s30 - a.s30);
+  const na = rows.filter(r => r.dev == null && r.s30 == null);
+  const tbody = document.querySelector('#devTable tbody');
+  const fmt = v => (v > 0 ? '+' : '') + v.toFixed(2);
+  const rowHtml = (r, devVal, star) => {
+    const cls = devVal == null ? 'dev-na' : devVal > 0 ? 'dev-pos' : 'dev-neg';
+    const read = devVal == null ? '—' : devVal > 3 ? '明显便宜' : devVal > 0.5 ? '略便宜' : devVal >= -0.5 ? '贴合曲线' : devVal >= -3 ? '略贵' : '明显贵';
+    return `<tr data-code="${r.code}">
+      <td>${r.code.replace('.IB','')}</td>
+      <td><span class="tag ${CURVE_TAG[r.curve]}">${r.category}</span></td>
+      <td>${r.rem.toFixed(2)}Y</td>
+      <td>${r.y.toFixed(4)}</td>
+      <td>${r.cy == null ? '—' : r.cy.toFixed(4)}</td>
+      <td class="${cls}">${devVal == null ? 'N/A' : fmt(devVal) + (star || '')}</td>
+      <td>${read}</td>
+    </tr>`;
+  };
+  tbody.innerHTML =
+    norm.map(r => rowHtml(r, r.dev, '')).join('') +
+    s50.map(r => rowHtml(r, r.s30, '*')).join('') +
+    na.map(r => rowHtml(r, null, '')).join('');
+  tbody.querySelectorAll('tr').forEach(tr => tr.onclick = () => {
+    tbody.querySelectorAll('tr').forEach(x => x.classList.remove('selected'));
+    tr.classList.add('selected');
+    showHistory(tr.dataset.code);
+  });
+}
+
+function showHistory(code) {
+  const b = DATA.bonds[code];
+  const useS30 = b.dev_bp.every(v => v == null);
+  const vals = useS30 ? b.spread30_bp : b.dev_bp;
+  const pts = b.dates.map((d, i) => ({ x: d, y: vals[i] })).filter(p => p.y != null);
+  document.getElementById('histTitle').textContent =
+    code + '（' + b.category + '）偏离度历史' + (useS30 ? '（对30Y利差，bp）' : '（bp）');
+  document.getElementById('histChartWrap').style.display = 'block';
+  if (histChart) histChart.destroy();
+  histChart = new Chart(document.getElementById('histCanvas'), {
+    type: 'line',
+    data: { datasets: [{
+      label: '偏离度(bp)', data: pts,
+      borderColor: '#5470c6', borderWidth: 1.5, pointRadius: 0, tension: 0.2,
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { maxTicksLimit: 10, maxRotation: 0 }, grid: { color: '#f0f2f6' } },
+        y: { title: { display: true, text: 'bp' }, grid: { color: '#f0f2f6' } },
+      },
+    },
+  });
+  document.getElementById('histTitle').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+init().catch(e => {
+  document.getElementById('mainChartWrap').innerHTML =
+    '<div class="loading">加载失败: ' + e.message + '</div>';
+});
+</script>
+</body>
+</html>
