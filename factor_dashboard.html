@@ -505,6 +505,16 @@
           <div class="win-btn" data-w="20" onclick="setSigWindow(20)">20日</div>
         </div>
       </div>
+      <div class="cfg-group" id="cfg-pct" style="display:none">
+        <span class="cfg-label">百分位</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer">
+            <input type="checkbox" id="sig-pct-enable" onchange="onPctChange()"> 转为百分位
+          </label>
+          <input type="number" id="sig-pct-window" value="60" min="5" max="250" step="5" onchange="onPctChange()" style="width:52px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:var(--bg);outline:none" title="百分位窗口（交易日）">
+          <span style="font-size:10px;color:var(--text-secondary)">日</span>
+        </div>
+      </div>
       <div class="cfg-group">
         <span class="cfg-label">回测区间</span>
         <div style="display:flex;align-items:center;gap:4px">
@@ -772,8 +782,9 @@ function buildFactorSeries() {
   const datasets = selectedFactors.map(f => {
     const s = factorData.series[f.name];
     if (!s) return { label: f.name, data: [], borderColor: f.color };
+    const vals = getEffectiveValues(f.name);
     const valMap = {};
-    s.dates.forEach((d, i) => valMap[d] = s.values[i]);
+    s.dates.forEach((d, i) => valMap[d] = vals[i]);
     const data = dates.map(d => {
       const v = valMap[d];
       return v !== undefined ? v : null;
@@ -811,8 +822,9 @@ function buildCompareSeries(factorDates) {
   const factorDatasets = selectedFactors.map(f => {
     const s = factorData.series[f.name];
     if (!s) return null;
+    const vals = getEffectiveValues(f.name);
     const fMap = {};
-    s.dates.forEach((d, i) => fMap[d] = s.values[i]);
+    s.dates.forEach((d, i) => fMap[d] = vals[i]);
     const data = factorDates.map(d => {
       const v = fMap[d];
       return v !== undefined ? v : null;
@@ -887,8 +899,8 @@ function updateChart() {
   document.getElementById('no-data').style.display = 'none';
   document.getElementById('chart-factor').style.display = 'block';
 
-  // 原始值类因子（如技术指标 MACD）不做 0-100 百分位，y 轴需自适应
-  const anyRaw = selectedFactors.some(f => isRawFactor(f.name));
+  // 原始值类因子（如技术指标 MACD）未开百分位时 y 轴需自适应；开了百分位则按 0-100
+  const anyRaw = selectedFactors.some(f => isRawFactor(f.name) && !isPctMode(f.name));
   document.getElementById('factor-chart-label').textContent =
     anyRaw ? '因子走势（原始值）' : '因子走势（百分位 0-100）';
 
@@ -1147,15 +1159,35 @@ function refreshSigFactorOptions() {
 }
 
 function onSigFactorChange() {
-  // 原始值类因子（MACD等）阈值默认0轴、步长0.01、不限制范围；百分位类恢复0-100
   const fn = document.getElementById('sig-factor').value;
+  // 百分位开关组仅对原始值类因子显示；同步开关状态到UI
+  const showPct = fn && isRawFactor(fn);
+  document.getElementById('cfg-pct').style.display = showPct ? '' : 'none';
+  if (showPct) {
+    const st = getPctState(fn);
+    document.getElementById('sig-pct-enable').checked = st.enabled;
+    document.getElementById('sig-pct-window').value = st.window;
+  }
   adjustThresholdInput('sig-threshold', fn);
+}
+
+// 百分位开关/窗口变化：更新状态 → 调阈值 → 重跑检验
+function onPctChange() {
+  const fn = document.getElementById('sig-factor').value;
+  if (!fn || !isRawFactor(fn)) return;
+  const st = getPctState(fn);
+  st.enabled = document.getElementById('sig-pct-enable').checked;
+  const w = parseInt(document.getElementById('sig-pct-window').value);
+  st.window = (w >= 5 && w <= 250) ? w : 60;
+  adjustThresholdInput('sig-threshold', fn);
+  runSignalTest();
 }
 
 function adjustThresholdInput(inputId, factorName) {
   const inp = document.getElementById(inputId);
   if (!inp) return;
-  if (factorName && isRawFactor(factorName)) {
+  // 原始值类 且 未开百分位 → 0轴、步长0.01、不限范围；其余（含开了百分位的原始因子）→ 0-100
+  if (factorName && isRawFactor(factorName) && !isPctMode(factorName)) {
     inp.min = ''; inp.max = ''; inp.step = '0.01'; inp.value = '0';
   } else {
     inp.min = '0'; inp.max = '100'; inp.step = '5';
@@ -1217,9 +1249,58 @@ function isRawFactor(name) {
   return !!(fd && fd.raw_value);
 }
 
-// 因子值格式化：原始值类用 3 位小数，百分位类用 1 位小数
+// 因子值格式化：原始值类(未开百分位)用 3 位小数，其余(含开了百分位的原始因子)用 1 位小数
 function fmtFactorVal(v, name) {
-  return v === null || v === undefined ? '--' : v.toFixed(isRawFactor(name) ? 3 : 1);
+  const raw = isRawFactor(name) && !isPctMode(name);
+  return v === null || v === undefined ? '--' : v.toFixed(raw ? 3 : 1);
+}
+
+// ============================================
+// 因子百分位转换（仅对原始值类因子开放）
+// 状态：factorPct = { [factorName]: { enabled: bool, window: number } }
+// ============================================
+let factorPct = {};
+
+function getPctState(name) {
+  if (!factorPct[name]) factorPct[name] = { enabled: false, window: 60 };
+  return factorPct[name];
+}
+
+// 滚动百分位：值 = 当前值在过去 window 天（含当日）中的分位 × 100；前 window-1 天不足 → null
+function toPercentile(dates, values, window) {
+  const out = new Array(values.length).fill(null);
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (v === null || v === undefined) { out[i] = null; continue; }
+    if (i < window - 1) { out[i] = null; continue; }  // min_periods = window
+    // 取过去 window 个非空值
+    const hist = [];
+    for (let j = Math.max(0, i - window + 1); j <= i; j++) {
+      const hv = values[j];
+      if (hv !== null && hv !== undefined) hist.push(hv);
+    }
+    if (hist.length < window) { out[i] = null; continue; }
+    const below = hist.filter(x => x < v).length;
+    const equal = hist.filter(x => x === v).length;
+    out[i] = +(((below + 0.5 * equal) / hist.length) * 100).toFixed(2);
+  }
+  return out;
+}
+
+// 获取因子当前生效的 values（开了百分位则返回百分位序列，否则原始序列）
+function getEffectiveValues(name) {
+  const s = factorData.series[name];
+  if (!s) return null;
+  const st = getPctState(name);
+  if (st.enabled && isRawFactor(name)) {
+    return toPercentile(s.dates, s.values, st.window);
+  }
+  return s.values;
+}
+
+// 因子当前是否以百分位模式显示
+function isPctMode(name) {
+  return getPctState(name).enabled && isRawFactor(name);
 }
 
 function getTargetSeries(name) {
@@ -1389,11 +1470,12 @@ function runSignalTest() {
   const startDate = document.getElementById('date-start').value;
   const endDate = document.getElementById('date-end').value;
 
-  // 过滤因子
+  // 过滤因子（用生效值：开了百分位则为百分位序列）
+  const effValues = getEffectiveValues(factorName);
   const ff = { dates: [], values: [] };
   factorSeries.dates.forEach((d, i) => {
     if ((!startDate || d >= startDate) && (!endDate || d <= endDate)) {
-      ff.dates.push(d); ff.values.push(factorSeries.values[i]);
+      ff.dates.push(d); ff.values.push(effValues[i]);
     }
   });
 
@@ -1695,7 +1777,7 @@ function drawSigFactorChart(ff, events, targetSeries, factorName) {
   const ctx = document.getElementById('sig-chart-factor');
   const tDates = new Set(events.map(e => e.date));
   const tPoints = ff.dates.map((d, i) => tDates.has(d) ? ff.values[i] : null);
-  const rawF = isRawFactor(factorName);
+  const rawF = isRawFactor(factorName) && !isPctMode(factorName);
 
   // ── 预测对象曲线：按 ff.dates 对齐（前向填充缺失日）──
   const datasets = [
