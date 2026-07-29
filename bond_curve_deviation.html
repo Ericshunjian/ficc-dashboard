@@ -144,7 +144,8 @@ async function init() {
   sel.onchange = () => render(sel.value);
   document.getElementById('methodNote').innerHTML =
     '口径说明：' + DATA.meta.dev_definition + '<br>' +
-    '① ' + DATA.meta.note_interp + '<br>② ' + DATA.meta.note_50y + '<br>③ ' + DATA.meta.note_short;
+    '① ' + DATA.meta.note_interp + '<br>② ' + DATA.meta.note_50y + '<br>③ ' + DATA.meta.note_short +
+    (DATA.meta.note_tax ? '<br>④ ' + DATA.meta.note_tax : '');
   render(sel.value);
 }
 
@@ -188,11 +189,11 @@ function render(ds) {
     datasets.push({
       type: 'scatter', label: code, data: [{ x: rem, y: y }],
       backgroundColor: CURVE_COLORS[b.curve], borderColor: '#fff', borderWidth: 1,
-      pointRadius: 6, pointHoverRadius: 8, order: 10,
+      pointRadius: 6, pointHoverRadius: 6, order: 10,
       showInLegend: false,
-      meta: { code, category: b.category, curve: b.curve, rem, y, cy, dev, s30 },
+      meta: { code, category: b.category, curve: b.curve, rem, y, cy, dev, s30, tax_free: b.tax_free },
     });
-    tableRows.push({ code, category: b.category, curve: b.curve, rem, y, cy, dev, s30 });
+    tableRows.push({ code, category: b.category, curve: b.curve, rem, y, cy, dev, s30, tax_free: b.tax_free });
   }
 
   const wrap = document.getElementById('mainChartWrap');
@@ -202,13 +203,19 @@ function render(ds) {
     data: { datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'nearest', intersect: true },
+      animation: false,
+      events: ['mousemove', 'mouseout', 'click'],
+      interaction: { mode: 'point', intersect: true },
       plugins: {
         legend: { labels: { filter: it => it.text.includes('曲线') } },
         tooltip: {
           filter: it => it.dataset.type === 'scatter',
           callbacks: {
-            title: items => items[0].dataset.meta.code + '（' + items[0].dataset.meta.category + '）',
+            title: items => {
+              const m = items[0].dataset.meta;
+              const tax = m.tax_free ? ' · 免税' : ' · 含税';
+              return m.code + '（' + m.category + tax + '）';
+            },
             label: it => {
               const m = it.dataset.meta;
               const lines = [
@@ -242,8 +249,9 @@ function renderTable(rows) {
   const rowHtml = (r, devVal, star) => {
     const cls = devVal == null ? 'dev-na' : devVal > 0 ? 'dev-pos' : 'dev-neg';
     const read = devVal == null ? '—' : devVal > 3 ? '明显便宜' : devVal > 0.5 ? '略便宜' : devVal >= -0.5 ? '贴合曲线' : devVal >= -3 ? '略贵' : '明显贵';
+    const taxTag = r.tax_free ? ' <span style="color:#8e44ad;font-size:10px;font-weight:600;">(免税)</span>' : '';
     return `<tr data-code="${r.code}">
-      <td>${r.code.replace('.IB','')}</td>
+      <td>${r.code.replace('.IB','')}${taxTag}</td>
       <td><span class="tag ${CURVE_TAG[r.curve]}">${r.category}</span></td>
       <td>${r.rem.toFixed(2)}Y</td>
       <td>${r.y.toFixed(4)}</td>
@@ -280,6 +288,7 @@ function showHistory(code) {
     }]},
     options: {
       responsive: true, maintainAspectRatio: false,
+      animation: false,
       plugins: { legend: { display: false } },
       scales: {
         x: { ticks: { maxTicksLimit: 10, maxRotation: 0 }, grid: { color: '#f0f2f6' } },

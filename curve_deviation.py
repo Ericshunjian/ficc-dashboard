@@ -25,6 +25,38 @@ CATEGORY_TO_CURVE = {
     "地方债": "地方债",
 }
 
+# 2025-08-08 起新发行国债/地方债/金融债利息收入恢复征收6%增值税（此前免税）
+TAX_CUT_DATE = date(2025, 8, 8)
+# 名义期限显式覆盖：地方债 category 无期限；2600004 被误标50年组（实际30年，dur≈29.9）
+NOMINAL_YEARS_OVERRIDE = {
+    "2605207.IB": 30, "104870.IB": 30, "2205697.IB": 20,
+    "2600004.IB": 30,
+}
+
+
+def nominal_years(cat, code):
+    """名义发行期限（年）。用于由到期日反推起息日。"""
+    if code in NOMINAL_YEARS_OVERRIDE:
+        return NOMINAL_YEARS_OVERRIDE[code]
+    m = re.match(r"^(\d+)年", cat)
+    if m:
+        return int(m.group(1))
+    if "7-10" in cat:
+        return 10
+    if "2-7" in cat:
+        return 5
+    return None
+
+
+def estimate_issue_date(d0, dur0, nom):
+    """数据起始日 + 起始剩余期限 → 到期日；到期日 − 名义期限 → 起息日（近似）。"""
+    from datetime import timedelta
+    mat = d0 + timedelta(days=dur0 * 365.25)
+    try:
+        return date(mat.year - nom, mat.month, mat.day)
+    except ValueError:  # 2月29日
+        return date(mat.year - nom, mat.month, mat.day - 1)
+
 
 def build_curve_nodes(yc_series):
     """从 yield_curve_data.json 的 series key 动态发现曲线节点（如 15年国债 加列后自动生效）。"""
@@ -117,8 +149,13 @@ def main():
             devs.append(dev)
             spr30.append(s30)
             all_dates.add(ds)
+        nom = nominal_years(cat, code)
+        tax_free = None
+        if nom:
+            issue = estimate_issue_date(d0, dur0, nom)
+            tax_free = issue < TAX_CUT_DATE
         out_bonds[code] = {
-            "category": cat, "curve": cname,
+            "category": cat, "curve": cname, "tax_free": tax_free,
             "dates": dates, "yields": yields, "rem": rems,
             "dev_bp": devs, "spread30_bp": spr30,
         }
@@ -146,6 +183,7 @@ def main():
             "note_50y": "剩余期限超出曲线最长节点的券（如50年国债>30Y节点）：dev_bp=null，以spread30_bp（对最长节点利差）参考；若曲线补充50年节点则自动转为正常偏离度",
             "note_interp": ("节点间线性插值。" + gap_note) if gap_note else "节点间线性插值。",
             "note_short": "剩余期限<曲线最短节点的券：dev_bp与spread30_bp均为null",
+            "note_tax": "tax_free=true 表示起息日<2025-08-08的免税券（利息免6%增值税）；2025-08-08起新发行券利息恢复征税，其YTM天然高于曲线（含税补偿），偏离度高不代表便宜",
             "bond_date_range": bd["meta"]["date_range"],
         },
         "curves": out_curves,
