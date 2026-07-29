@@ -447,6 +447,7 @@
           <option value="above">因子值 &gt; 阈值</option>
           <option value="below">因子值 &lt; 阈值</option>
           <option value="cross_up">从下上穿阈值</option>
+          <option value="cross_down">从上下穿阈值</option>
           <option value="consecutive_up">连续 N 日上升</option>
           <option value="new_high">创 N 日新高</option>
         </select>
@@ -1209,7 +1210,7 @@ function onFactor2Change() {
 
 function onTriggerChange() {
   const t = document.getElementById('sig-trigger').value;
-  const showThreshold = ['above','below','cross_up'].includes(t);
+  const showThreshold = ['above','below','cross_up','cross_down'].includes(t);
   const showDays = ['consecutive_up','new_high'].includes(t);
   document.getElementById('cfg-threshold').style.display = showThreshold ? '' : 'none';
   document.getElementById('cfg-ndays').style.display = showDays ? '' : 'none';
@@ -1362,6 +1363,9 @@ function detectTriggers(factorSeries, type, threshold, ndays) {
       case 'below': hit = values[i] < threshold; break;
       case 'cross_up':
         if (i > 0 && values[i-1] <= threshold && values[i] > threshold) hit = true;
+        break;
+      case 'cross_down':
+        if (i > 0 && values[i-1] >= threshold && values[i] < threshold) hit = true;
         break;
       case 'consecutive_up':
         if (i >= ndays) {
@@ -1541,6 +1545,9 @@ function runSignalTest() {
     case 'cross_up':
       if (ff.values.length >= 2) nowTriggered = ff.values[ff.values.length-2] <= threshold && lastFV > threshold;
       break;
+    case 'cross_down':
+      if (ff.values.length >= 2) nowTriggered = ff.values[ff.values.length-2] >= threshold && lastFV < threshold;
+      break;
     case 'consecutive_up':
       if (ff.values.length >= ndays) {
         nowTriggered = true;
@@ -1560,7 +1567,7 @@ function runSignalTest() {
 
   const unit = targetSeries.isPrice ? '元' : 'bp';
   const retFmt = v => (v >= 0 ? '+' : '') + v.toFixed(2) + ' ' + unit;
-  const triggerDesc = {above:`因子>${threshold}`,below:`因子<${threshold}`,cross_up:`上穿${threshold}`,consecutive_up:`连续${ndays}日上升`,new_high:`创${ndays}日新高`}[triggerType];
+  const triggerDesc = {above:`因子>${threshold}`,below:`因子<${threshold}`,cross_up:`上穿${threshold}`,cross_down:`下穿${threshold}`,consecutive_up:`连续${ndays}日上升`,new_high:`创${ndays}日新高`}[triggerType];
   const tgtWord = targetSeries.isPrice ? '价格' : (targetSeries.isSpread ? '利差' : '收益率');
   const dirDesc = sigDirection === 'down' ? `${tgtWord}下行=赢` : `${tgtWord}上行=赢`;
 
