@@ -97,7 +97,7 @@
     <div class="controls">
       <label>日期</label>
       <select id="dateSelect"></select>
-      <span class="legend-note">实线=中债曲线（节点连线即插值口径）；散点=个券。散点在曲线上方 → 收益率偏高 → 价格偏便宜</span>
+      <span class="legend-note">实线=中债曲线（节点连线即插值口径）；散点=个券。散点在曲线上方 → 收益率偏高 → 价格偏便宜。50 年券（剩余期限&gt;30Y）不在图中，见下方排名表</span>
     </div>
   </div>
 
@@ -168,7 +168,7 @@ function render(ds) {
     const c = DATA.curves[cname];
     const idx = c.dates.indexOf(ds);
     if (idx < 0) continue;
-    const pts = c.nodes.map((t, i) => ({ x: t, y: c.values[idx][i] }));
+    const pts = c.nodes.map((t, i) => ({ x: t, y: c.values[idx][i] })).filter(p => p.x <= 30);
     datasets.push({
       type: 'line', label: cname + '曲线', data: pts,
       borderColor: CURVE_COLORS[cname], backgroundColor: CURVE_COLORS[cname],
@@ -177,6 +177,7 @@ function render(ds) {
     });
     ci++;
   }
+  const X_MAX = 30;
   for (const code of Object.keys(DATA.bonds)) {
     const b = DATA.bonds[code];
     const i = b.dates.indexOf(ds);
@@ -186,13 +187,15 @@ function render(ds) {
     const c = DATA.curves[b.curve];
     const cidx = c.dates.indexOf(ds);
     const cy = cidx >= 0 ? interpY(c.nodes, c.values[cidx], rem) : null;
-    datasets.push({
-      type: 'scatter', label: code, data: [{ x: rem, y: y }],
-      backgroundColor: CURVE_COLORS[b.curve], borderColor: '#fff', borderWidth: 1,
-      pointRadius: 6, pointHoverRadius: 6, order: 10,
-      showInLegend: false,
-      meta: { code, category: b.category, curve: b.curve, rem, y, cy, dev, s30, tax_free: b.tax_free },
-    });
+    if (rem <= X_MAX) {
+      datasets.push({
+        type: 'scatter', label: code, data: [{ x: rem, y: y }],
+        backgroundColor: CURVE_COLORS[b.curve], borderColor: '#fff', borderWidth: 1,
+        pointRadius: 6, pointHoverRadius: 6, order: 10,
+        showInLegend: false,
+        meta: { code, category: b.category, curve: b.curve, rem, y, cy, dev, s30, tax_free: b.tax_free },
+      });
+    }
     tableRows.push({ code, category: b.category, curve: b.curve, rem, y, cy, dev, s30, tax_free: b.tax_free });
   }
 
@@ -231,7 +234,7 @@ function render(ds) {
         },
       },
       scales: {
-        x: { type: 'linear', title: { display: true, text: '剩余期限（年）' }, min: 0, max: 52, grid: { color: '#f0f2f6' } },
+        x: { type: 'linear', title: { display: true, text: '剩余期限（年）' }, min: 0, max: 30, grid: { color: '#f0f2f6' } },
         y: { title: { display: true, text: '收益率（%）' }, grid: { color: '#f0f2f6' } },
       },
     },
