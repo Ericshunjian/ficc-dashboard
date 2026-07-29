@@ -306,12 +306,55 @@
   <div class="footer">
     数据每日 9:30 自动更新 · 仅用于研究辅助，不构成投资建议
     <div class="visit-stats">
-      <span id="busuanzi_container_site_pv" style="display:none">本站总访问量 <span id="busuanzi_value_site_pv"></span> 次</span>
-      <span id="busuanzi_container_site_uv" style="display:none"> · 访客数 <span id="busuanzi_value_site_uv"></span> 人</span>
+      <span id="week-stats">访问统计加载中…</span>
     </div>
   </div>
 </div>
 
-<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+<script>
+(function () {
+  // ISO 周（周一起始）：返回 yyyywW 形式的数字 key
+  function isoWeekKey(d) {
+    var t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    var day = (t.getUTCDay() + 6) % 7; // 周一=0
+    t.setUTCDate(t.getUTCDate() - day + 3); // 本周四（ISO 周锚点）
+    var firstThu = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
+    var fday = (firstThu.getUTCDay() + 6) % 7;
+    firstThu.setUTCDate(firstThu.getUTCDate() - fday + 3);
+    var week = 1 + Math.round((t - firstThu) / 6048e5);
+    return t.getUTCFullYear() * 100 + week;
+  }
+  function mondayLabel(d) {
+    var t = new Date(d.getTime());
+    var day = (t.getDay() + 6) % 7;
+    t.setDate(t.getDate() - day);
+    return (t.getMonth() + 1) + '月' + t.getDate() + '日';
+  }
+  window.BusuanziCallback = function (data) {
+    var el = document.getElementById('week-stats');
+    try {
+      var wk = isoWeekKey(new Date());
+      var KEY = 'ficc_week_stats';
+      var base = null;
+      try { base = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+      if (!base || base.week !== wk) {
+        // 新的一周：以当前累计值为基线，从 0 重新计
+        base = { week: wk, uv: data.site_uv, pv: data.site_pv, since: mondayLabel(new Date()) };
+        localStorage.setItem(KEY, JSON.stringify(base));
+      }
+      var wPv = Math.max(0, data.site_pv - base.pv);
+      var wUv = Math.max(0, data.site_uv - base.uv);
+      el.innerHTML = '本周（' + base.since + '起）：访问量 <b>' + wPv + '</b> 次 · 访客 <b>' + wUv + '</b> 人' +
+        '　｜　累计：' + data.site_pv + ' 次 · ' + data.site_uv + ' 人';
+    } catch (e) {
+      el.textContent = '累计访问 ' + data.site_pv + ' 次 · ' + data.site_uv + ' 人';
+    }
+  };
+  var s = document.createElement('script');
+  s.src = 'https://busuanzi.ibruce.info/busuanzi?jsonpCallback=BusuanziCallback';
+  s.onerror = function () { document.getElementById('week-stats').textContent = ''; };
+  document.body.appendChild(s);
+})();
+</script>
 </body>
 </html>

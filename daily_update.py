@@ -445,7 +445,7 @@ def update_ficc_yield_data():
 
     tmp = FICC_OUTPUT + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
+        json.dump(output, f, ensure_ascii=False, separators=(',', ':'))
     os.replace(tmp, FICC_OUTPUT)
     log.info(f"  输出: {FICC_OUTPUT} ({os.path.getsize(FICC_OUTPUT)/1024:.1f} KB)")
     log.info(f"  债券数: {len(series)}, 总记录: {output['meta']['total_records']}")
@@ -580,7 +580,7 @@ def update_yield_curve_data():
 
     tmp = CURVE_OUTPUT + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
+        json.dump(output, f, ensure_ascii=False, separators=(',', ':'))
     os.replace(tmp, CURVE_OUTPUT)
     log.info(f"  输出: {CURVE_OUTPUT} ({os.path.getsize(CURVE_OUTPUT)/1024:.1f} KB)")
     log.info(f"  总曲线数: {len(all_series)}")
@@ -898,7 +898,7 @@ def update_merged_data():
 
     tmp = FACTOR_MERGED_DATA + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(merged, f, ensure_ascii=False, indent=2)
+        json.dump(merged, f, ensure_ascii=False, separators=(',', ':'))
     os.replace(tmp, FACTOR_MERGED_DATA)
     log.info(f"  合并数据已更新: {all_dates[0]} ~ {all_dates[-1]}, 共 {len(merged['detail'])} 条")
     return True
@@ -969,7 +969,7 @@ def update_factor_data():
 
     tmp = FACTOR_OUTPUT + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
+        json.dump(output, f, ensure_ascii=False, separators=(',', ':'))
     os.replace(tmp, FACTOR_OUTPUT)
     log.info(f"  输出: {FACTOR_OUTPUT} ({os.path.getsize(FACTOR_OUTPUT)/1024:.1f} KB)")
     log.info(f"  因子数: {len(factors)}")
