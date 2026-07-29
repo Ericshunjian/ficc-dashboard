@@ -10,6 +10,7 @@
 import json
 import logging
 import os
+import re
 from datetime import date, datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -17,16 +18,24 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-CURVE_NODES = {
-    "国债": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 30],
-    "国开": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-    "地方债": [1, 2, 3, 5, 7, 10, 15, 20, 30],
-}
+CURVE_RE = re.compile(r"^(\d+)年(国债|国开|地方债)$")
 CATEGORY_TO_CURVE = {
     "50年国债": "国债", "30年国债": "国债", "7-10年国债": "国债", "2-7年国债": "国债",
     "7-10年国开": "国开", "2-7年国开": "国开",
     "地方债": "地方债",
 }
+
+
+def build_curve_nodes(yc_series):
+    """从 yield_curve_data.json 的 series key 动态发现曲线节点（如 15年国债 加列后自动生效）。"""
+    nodes = {}
+    for key in yc_series:
+        m = CURVE_RE.match(key)
+        if m:
+            nodes.setdefault(m.group(2), []).append(int(m.group(1)))
+    for k in nodes:
+        nodes[k] = sorted(nodes[k])
+    return nodes
 
 
 def interp(x, xs, ys):
@@ -46,6 +55,10 @@ def interp(x, xs, ys):
 def main():
     yc = json.load(open(os.path.join(SCRIPT_DIR, "yield_curve_data.json"), encoding="utf-8"))
     bd = json.load(open(os.path.join(SCRIPT_DIR, "bond_yield_data.json"), encoding="utf-8"))
+
+    # 曲线节点动态发现（Excel 加列如 15年/20年/50年国债 后自动生效）
+    CURVE_NODES = build_curve_nodes(yc["series"])
+    log.info(f"  曲线节点: " + ", ".join(f"{k}={v}" for k, v in CURVE_NODES.items()))
 
     # 曲线按日期重排：{类别: {日期: {期限: 收益率}}}
     curve_by_date = {}
@@ -121,13 +134,18 @@ def main():
             "values": [[per_date[d].get(n) for n in nodes] for d in dates],
         }
 
+    tn = CURVE_NODES.get("国债", [])
+    gap_note = ""
+    if tn and not any(10 < n < 30 for n in tn):
+        gap_note = "国债曲线10-30Y之间暂无中间节点，该区间为两点线性插值；真实曲线呈凸形，15-25Y券偏离度系统性偏高（含插值误差），同剩余期限券之间相对比较仍有效。"
     out = {
         "meta": {
             "generated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "dev_definition": "dev_bp = (个券YTM - 同类别曲线按当日剩余期限线性插值) × 100，单位bp；正值=收益率高于曲线=现券价格偏便宜",
-            "note_50y": "50年国债剩余期限超出曲线最长节点30Y，dev_bp=null，以spread30_bp（对30Y节点利差）参考",
-            "note_interp": "国债曲线10-30Y之间无中间节点，该区间为两点线性插值；真实曲线呈凸形，15-25Y券偏离度系统性偏高（含插值误差），同剩余期限券之间相对比较仍有效",
-            "note_short": "剩余期限<1Y的券低于曲线最短节点，dev_bp与spread30_bp均为null",
+            "curve_nodes": CURVE_NODES,
+            "note_50y": "剩余期限超出曲线最长节点的券（如50年国债>30Y节点）：dev_bp=null，以spread30_bp（对最长节点利差）参考；若曲线补充50年节点则自动转为正常偏离度",
+            "note_interp": ("节点间线性插值。" + gap_note) if gap_note else "节点间线性插值。",
+            "note_short": "剩余期限<曲线最短节点的券：dev_bp与spread30_bp均为null",
             "bond_date_range": bd["meta"]["date_range"],
         },
         "curves": out_curves,
