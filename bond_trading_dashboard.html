@@ -459,8 +459,8 @@
     <div class="chart-top" id="chart-top-container">
       <div class="chart-label">日度净买入（亿元）
         <span class="anomaly-legend">
-          <span class="lg"><span class="box" style="background:#ef4444cc"></span>买入异动(60日分位≥90%)</span>
-          <span class="lg"><span class="box" style="background:#22c55ecc"></span>卖出异动(≤10%)</span>
+          <span class="lg"><span class="box" style="background:#ef4444cc"></span>买入异动(90日分位≥95%)</span>
+          <span class="lg"><span class="box" style="background:#22c55ecc"></span>卖出异动(≤5%)</span>
         </span>
       </div>
       <div class="chart-wrap"><canvas id="chart-daily"></canvas></div>
@@ -523,13 +523,14 @@ let chartDaily = null;
 let chartCumulative = null;
 let chartSeasonal = null;
 let chartOverlay = null;
-let yieldCurveDates = null;  // { 曲线名: { date: value } } 收益率曲线，用于「净买入×收益率」叠加
+let yieldCurveSeries = null;  // yield_curve_data.json 的原始 series（{曲线名:{dates,values}}）
+let yieldCurveDates = {};     // 懒建的 {曲线名: {date: value}} 缓存，用于「净买入×收益率」叠加
 
 // ── 异动检测参数（历史百分位口径，非 Z-score）──
-const ANOMALY_WINDOW = 60;  // 历史 60 个交易日
+const ANOMALY_WINDOW = 90;  // 历史 90 个交易日
 const ANOMALY_MIN = 30;     // 最少样本期（不足则不判定）
-const ANOMALY_HIGH = 90;    // 百分位 ≥90% → 大幅买入异动（红）
-const ANOMALY_LOW = 10;     // 百分位 ≤10% → 大幅卖出异动（绿）
+const ANOMALY_HIGH = 95;    // 百分位 ≥95% → 大幅买入异动（红）
+const ANOMALY_LOW = 5;      // 百分位 ≤5% → 大幅卖出异动（绿）
 let selectedInstitutions = new Set();
 let selectedBondTypes = new Set();
 let selectedMaturities = new Set();
@@ -625,6 +626,8 @@ function renderFromData() {
 async function init() {
   const noteEl = document.getElementById('source-note');
   const origNote = noteEl ? noteEl.textContent : '';
+  // 立即后台并行加载收益率曲线（不 await，与 bond 数据下载并行，加快叠加图就绪）
+  loadYieldCurve();
 
   // 1. 先从 IndexedDB 读缓存 → 命中则立即渲染（秒开）
   const cachedRaw = await idbGet(CACHE_KEY_BTD);
@@ -677,9 +680,6 @@ async function init() {
       }
     }
   }
-
-  // 后台加载收益率曲线（供「净买入×收益率」叠加图使用）
-  loadYieldCurve();
 }
 
 // ============================================
@@ -702,24 +702,37 @@ async function loadYieldCurve() {
   }
 }
 function setYieldCurve(raw) {
-  const series = raw.series || {};
-  yieldCurveDates = {};
-  for (const k in series) {
-    const s = series[k];
+  yieldCurveSeries = raw.series || {};
+  yieldCurveDates = {};  // 清空懒建缓存
+  renderOverlayChart();  // 收益率就绪后刷新叠加图（无参 → 自行聚合一次）
+}
+// 懒建单条曲线的 date→value 映射（只在用到时才构建，避免一次性处理全部 52 条）
+function getCurveMap(key) {
+  if (!yieldCurveDates[key]) {
+    const s = (yieldCurveSeries || {})[key];
+    if (!s) return null;
     const m = {};
     (s.dates || []).forEach((d, i) => { m[d] = s.values[i]; });
-    yieldCurveDates[k] = m;
+    yieldCurveDates[key] = m;
   }
-  renderOverlayChart();  // 收益率就绪后刷新叠加图
+  return yieldCurveDates[key];
 }
 
 // ============================================
 // 异动检测：历史百分位口径（非 Z-score）
 // 对每个机构，在「当前券种+期限」筛选下的完整历史净买入序列上，
-// 用滚动 60 日窗口（不含当日）算当日的历史百分位，标记大幅买入/卖出
+// 用滚动 90 日窗口（不含当日）算当日的历史百分位，标记大幅买入/卖出
 // 返回 { inst: { date: {type:'high'|'low', pct:number} } }
 // ============================================
+let _anomalyCacheKey = '';
+let _anomalyCache = null;
 function computeAnomalyFlags() {
+  // 缓存：仅当 机构/券种/期限 变化才重算（拖时间轴不重算，因百分位基于全历史）
+  const key = [...selectedInstitutions].sort().join('|') + '::' +
+              [...selectedBondTypes].sort().join('|') + '::' +
+              [...selectedMaturities].sort().join('|');
+  if (_anomalyCache && key === _anomalyCacheKey) return _anomalyCache;
+
   const instList = [...selectedInstitutions];
   const instHist = {};
   instList.forEach(i => { instHist[i] = {}; });
@@ -736,7 +749,7 @@ function computeAnomalyFlags() {
     const vals = dates.map(d => hist[d]);
     const map = {};
     for (let i = 0; i < dates.length; i++) {
-      const win = vals.slice(Math.max(0, i - ANOMALY_WINDOW), i); // 过去60日（不含当日）
+      const win = vals.slice(Math.max(0, i - ANOMALY_WINDOW), i); // 过去90日（不含当日）
       if (win.length < ANOMALY_MIN) continue;
       const v = vals[i];
       const below = win.filter(x => x <= v).length;
@@ -746,6 +759,8 @@ function computeAnomalyFlags() {
     }
     flags[inst] = map;
   });
+  _anomalyCacheKey = key;
+  _anomalyCache = flags;
   return flags;
 }
 
@@ -932,6 +947,17 @@ function updateChart() {
   // 异动检测（历史百分位口径），用于日度图高亮 + tooltip
   const anomalyFlags = computeAnomalyFlags();
 
+  // 预计算跨机构合计净买入（供「净买入×收益率」叠加图复用，避免重复遍历明细）
+  const overlayDailyNet = {};
+  dates.forEach(d => {
+    let s = 0;
+    for (const inst of instList) {
+      const v = instDateValues[inst] && instDateValues[inst][d];
+      if (v !== undefined) s += v;
+    }
+    overlayDailyNet[d] = s;
+  });
+
   const startDate = document.getElementById('date-start').value;
   const endDate = document.getElementById('date-end').value;
   const bondList = [...selectedBondTypes];
@@ -1051,7 +1077,7 @@ function updateChart() {
             label: function(ctx) {
               let s = ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(2) + ' 亿';
               const f = (anomalyFlags[ctx.dataset.label] || {})[dates[ctx.dataIndex]];
-              if (f) s += ' ｜ ' + (f.type === 'high' ? '买入' : '卖出') + '异动·60日分位' + f.pct.toFixed(0) + '%';
+              if (f) s += ' ｜ ' + (f.type === 'high' ? '买入' : '卖出') + '异动·90日分位' + f.pct.toFixed(0) + '%';
               return s;
             },
           },
@@ -1124,7 +1150,7 @@ function updateChart() {
   renderSeasonalChart();
 
   // ── Render overlay chart (净买入 × 收益率) ──
-  renderOverlayChart();
+  renderOverlayChart(dates, overlayDailyNet);
 }
 
 function renderSeasonalChart() {
@@ -1250,7 +1276,7 @@ function resolveCurveKey(bond, maturity) {
   return yr + '年' + cfg.suffix;
 }
 
-function renderOverlayChart() {
+function renderOverlayChart(prefDates, prefNetByDate) {
   const noData = document.getElementById('no-data-overlay');
   const noDataText = document.getElementById('no-data-overlay-text');
   const canvas = document.getElementById('chart-overlay');
@@ -1272,28 +1298,35 @@ function renderOverlayChart() {
     return;
   }
   // 条件2：收益率数据就绪
-  if (!yieldCurveDates) { hideWith('收益率曲线加载中…'); return; }
+  if (!yieldCurveSeries) { hideWith('收益率曲线加载中…'); return; }
   // 期限（单选；未选视为「合计」→ 该券种10年）
   const maturity = [...selectedMaturities][0] || '合计';
   const curveKey = resolveCurveKey(bond, maturity);
   if (!curveKey) { hideWith('「' + bond + ' · ' + maturity + '」无对应收益率曲线'); return; }
-  const curveMap = yieldCurveDates[curveKey];
+  const curveMap = getCurveMap(curveKey);
   if (!curveMap) { hideWith('收益率曲线「' + curveKey + '」不存在'); return; }
 
   // 当前筛选下 跨机构合计的日度净买入（显示窗口内）
-  const startDate = document.getElementById('date-start').value;
-  const endDate = document.getElementById('date-end').value;
-  const dateSet = new Set();
-  const dayNet = {};
-  allData.detail.forEach(row => {
-    if (!selectedInstitutions.has(row.institution)) return;
-    if (row.bond_type !== bond) return;
-    if (!selectedMaturities.has(row.maturity)) return;
-    if (row.date < startDate || row.date > endDate) return;
-    dateSet.add(row.date);
-    dayNet[row.date] = (dayNet[row.date] || 0) + row.value;
-  });
-  const dates = [...dateSet].sort();
+  // 优先复用 updateChart 传入的聚合结果（避免重复遍历 28 万行明细）
+  let dates, dayNet;
+  if (prefDates && prefNetByDate) {
+    dates = prefDates;
+    dayNet = prefNetByDate;
+  } else {
+    const startDate = document.getElementById('date-start').value;
+    const endDate = document.getElementById('date-end').value;
+    const dateSet = new Set();
+    dayNet = {};
+    allData.detail.forEach(row => {
+      if (!selectedInstitutions.has(row.institution)) return;
+      if (row.bond_type !== bond) return;
+      if (!selectedMaturities.has(row.maturity)) return;
+      if (row.date < startDate || row.date > endDate) return;
+      dateSet.add(row.date);
+      dayNet[row.date] = (dayNet[row.date] || 0) + row.value;
+    });
+    dates = [...dateSet].sort();
+  }
   if (dates.length === 0) { hideWith('当前筛选无数据'); return; }
 
   const netVals = dates.map(d => +(dayNet[d] || 0).toFixed(4));
