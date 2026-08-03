@@ -305,6 +305,49 @@
     padding: 8px 28px; font-size: 11px; color: var(--text-secondary);
     border-top: 1px solid var(--border); background: var(--panel-bg);
   }
+
+  /* ── 利差看板 ── */
+  .watchlist-panel {
+    margin: 12px 28px 0; background: var(--panel-bg); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 10px 14px 12px; flex-shrink: 0;
+  }
+  .watchlist-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .watchlist-title { font-size: 13px; font-weight: 700; color: var(--text); }
+  .watchlist-status { font-size: 10px; color: var(--text-secondary); margin-left: auto; }
+  .watchlist-sync-btn {
+    border: 1px solid var(--border); background: #fff; border-radius: 6px;
+    width: 22px; height: 22px; cursor: pointer; font-size: 13px; color: var(--primary);
+    display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  }
+  .watchlist-sync-btn:hover { background: var(--hover); }
+  .watchlist-cards { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+  .watchlist-cards::-webkit-scrollbar { height: 5px; }
+  .watchlist-cards::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 4px; }
+  .watchlist-empty { font-size: 12px; color: var(--text-secondary); padding: 16px 4px; }
+  .wl-card {
+    flex: 0 0 auto; width: 220px; border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; cursor: pointer; transition: all .15s; background: #fff;
+  }
+  .wl-card:hover { border-color: var(--primary); box-shadow: 0 2px 8px rgba(84,112,198,.15); }
+  .wl-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+  .wl-pair { font-size: 11px; font-weight: 600; color: var(--text); line-height: 1.3; word-break: break-all; }
+  .wl-del {
+    border: none; background: none; color: var(--text-secondary); cursor: pointer;
+    font-size: 15px; line-height: 1; padding: 0 2px; border-radius: 4px; flex-shrink: 0;
+  }
+  .wl-del:hover { color: var(--danger); background: #fee; }
+  .wl-metrics { display: flex; align-items: baseline; gap: 8px; margin: 4px 0 2px; }
+  .wl-spread { font-size: 16px; font-weight: 700; }
+  .wl-spread.pos { color: var(--accent); }
+  .wl-spread.neg { color: var(--success); }
+  .wl-pct { font-size: 10px; color: var(--text-secondary); }
+  .wl-chart { margin-top: 2px; line-height: 0; }
+  .wl-toast {
+    position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%);
+    background: rgba(44,62,80,.92); color: #fff; font-size: 12px; padding: 8px 16px;
+    border-radius: 8px; z-index: 999; opacity: 0; transition: opacity .2s; pointer-events: none;
+  }
+  .wl-toast.show { opacity: 1; }
 </style>
 </head>
 <body>
@@ -356,6 +399,12 @@
       </div>
     </div>
 
+    <!-- 保存到看板 -->
+    <div class="filter-group">
+      <button class="btn btn-primary" id="btn-save-pair" onclick="saveCurrentPair()" style="width:100%">⭐ 保存当前配对到看板</button>
+      <p class="hint" id="save-pair-hint">A、B 都选「个券」后可保存为常用模板（云端同步）</p>
+    </div>
+
     <!-- 时间范围 -->
     <div class="filter-group">
       <label class="filter-label"><span class="dot"></span>时间范围（可选）</label>
@@ -383,6 +432,18 @@
       <div class="kpi-card" id="kpi-spread"><div class="kpi-value">--</div><div class="kpi-label">最新利差 (bp)</div></div>
       <div class="kpi-card" id="kpi-avg"><div class="kpi-value">--</div><div class="kpi-label">日均利差 (bp)</div></div>
       <div class="kpi-card" id="kpi-days"><div class="kpi-value">--</div><div class="kpi-label">样本天数</div></div>
+    </div>
+  </div>
+
+  <!-- ── 利差看板（云端同步的常用个券利差模板）── -->
+  <div class="watchlist-panel" id="watchlist-panel">
+    <div class="watchlist-header">
+      <span class="watchlist-title">📌 我的利差看板</span>
+      <button class="watchlist-sync-btn" onclick="pullWatchlist(true)" title="从云端刷新">⟳</button>
+      <span class="watchlist-status" id="watchlist-status">加载中…</span>
+    </div>
+    <div class="watchlist-cards" id="watchlist-cards">
+      <div class="watchlist-empty">看板加载中…</div>
     </div>
   </div>
 
@@ -461,6 +522,7 @@ async function init() {
     document.getElementById('date-end').value = allData.meta.date_range[1];
 
     updateChart();
+    pullWatchlist(false);  // 加载云端利差看板
   } catch (err) {
     console.error('Data load error:', err);
     document.getElementById('no-data').style.display = 'flex';
@@ -1002,6 +1064,219 @@ function resetFilters() {
   document.getElementById('date-start').value = allData.meta.date_range[0];
   document.getElementById('date-end').value = allData.meta.date_range[1];
   updateChart();
+}
+
+// ============================================
+// 利差看板（云端同步 · GitHub Contents API）
+// 复用研究结论库的 ficc_github_sync_config（token/owner/repo/branch）
+// 数据文件：spread_watchlist.json （仅存「个券 vs 个券」配对）
+// ============================================
+let watchlist = [];   // [{a:'bond:CODE', b:'bond:CODE', note:'', added:'YYYY-MM-DD'}]
+const WATCH_PATH = 'spread_watchlist.json';
+
+function getWatchSyncConfig() {
+  let base = {};
+  try { base = JSON.parse(localStorage.getItem('ficc_github_sync_config')) || {}; } catch(e) {}
+  return {
+    owner: base.owner || 'Ericshunjian',
+    repo: base.repo || 'ficc-dashboard',
+    branch: base.branch || 'main',
+    token: base.token || '',
+    path: WATCH_PATH,
+  };
+}
+function b64encode(s) { return btoa(unescape(encodeURIComponent(s))); }
+
+// 轻量 toast
+let _toastTimer = null;
+function toast(msg) {
+  let el = document.getElementById('wl-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'wl-toast'; el.className = 'wl-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+// 从云端拉取看板
+async function pullWatchlist(showToast) {
+  const cfg = getWatchSyncConfig();
+  const statusEl = document.getElementById('watchlist-status');
+  const raw = `https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/${cfg.path}?t=${Date.now()}`;
+  try {
+    const r = await fetch(raw);
+    if (!r.ok) {
+      if (r.status === 404) {
+        watchlist = [];
+        renderWatchlist();
+        if (statusEl) statusEl.textContent = '云端暂无（保存后自动创建）';
+        if (showToast) toast('云端暂无看板，保存一对即自动创建');
+        return;
+      }
+      throw new Error('HTTP ' + r.status);
+    }
+    const remote = await r.json();
+    watchlist = Array.isArray(remote) ? remote : (remote.pairs || []);
+    renderWatchlist();
+    if (statusEl) statusEl.textContent = `云端已同步（${watchlist.length} 对）`;
+    if (showToast) toast(`✅ 已从云端拉取 ${watchlist.length} 对利差`);
+  } catch(err) {
+    if (statusEl) statusEl.textContent = '云端拉取失败';
+    if (showToast) toast('拉取失败：' + err.message);
+    renderWatchlist();
+  }
+}
+
+// 上传看板到云端
+async function pushWatchlist() {
+  const cfg = getWatchSyncConfig();
+  const statusEl = document.getElementById('watchlist-status');
+  if (!cfg.token) {
+    if (statusEl) statusEl.textContent = '未配置 Token，仅存本机';
+    toast('未配置 GitHub Token，看板未上云（请先在「研究结论库」页配置 Token）');
+    return;
+  }
+  if (statusEl) statusEl.textContent = '上传中…';
+  try {
+    const api = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path}`;
+    let sha = null;
+    try {
+      const r = await fetch(api + '?ref=' + encodeURIComponent(cfg.branch), { headers: { Authorization: 'token ' + cfg.token, Accept: 'application/vnd.github+json' } });
+      if (r.ok) { const j = await r.json(); sha = j.sha; }
+    } catch(e) {}
+    const payload = { meta: { updated: new Date().toISOString(), note: '个券利差看板' }, pairs: watchlist };
+    const body = { message: 'chore: 同步利差看板 ' + new Date().toISOString().slice(0,16).replace('T',' '), content: b64encode(JSON.stringify(payload, null, 2)), branch: cfg.branch };
+    if (sha) body.sha = sha;
+    const r2 = await fetch(api, { method: 'PUT', headers: { Authorization: 'token ' + cfg.token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r2.ok) { const e = await r2.json().catch(()=>({})); throw new Error(e.message || r2.status); }
+    if (statusEl) statusEl.textContent = `已上云（${watchlist.length} 对）`;
+    toast(`✅ 看板已同步到云（${watchlist.length} 对）`);
+  } catch(err) {
+    if (statusEl) statusEl.textContent = '上传失败';
+    toast('上传失败：' + err.message);
+  }
+}
+
+// 计算某配对的利差序列（全历史，bp）
+function buildPairSpreads(itemA, itemB) {
+  const sA = getItemSeries(itemA), sB = getItemSeries(itemB);
+  if (!sA || !sB) return null;
+  const mapA = {}, mapB = {};
+  sA.dates.forEach((d,i)=>{ mapA[d]=sA.values[i]; });
+  sB.dates.forEach((d,i)=>{ mapB[d]=sB.values[i]; });
+  const common = sA.dates.filter(d => mapB[d]!==undefined && mapA[d]!==undefined);
+  const spreads = common.map(d => +((mapA[d]-mapB[d])*100).toFixed(2));
+  return { dates: common, spreads, labelA: sA.label, labelB: sB.label };
+}
+
+// 迷你走势图（SVG）
+function sparklineSVG(spreads, w, h) {
+  w = w || 200; h = h || 40;
+  if (!spreads || spreads.length < 2) return '<div style="font-size:10px;color:var(--text-secondary);padding:8px 0">数据不足</div>';
+  const min = Math.min.apply(null, spreads), max = Math.max.apply(null, spreads);
+  const range = (max - min) || 1;
+  const step = (w - 4) / (spreads.length - 1);
+  let pts = '';
+  for (let i = 0; i < spreads.length; i++) {
+    const x = 2 + i * step;
+    const y = (h - 3) - ((spreads[i] - min) / range) * (h - 6);
+    pts += x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+  }
+  let zeroLine = '';
+  if (min < 0 && max > 0) {
+    const zeroY = (h - 3) - ((0 - min) / range) * (h - 6);
+    zeroLine = `<line x1="2" y1="${zeroY.toFixed(1)}" x2="${w-2}" y2="${zeroY.toFixed(1)}" stroke="#ddd" stroke-dasharray="3,3" stroke-width="1"/>`;
+  }
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${zeroLine}<polyline points="${pts.trim()}" fill="none" stroke="#5470c6" stroke-width="1.5"/></svg>`;
+}
+
+function labelOf(item) {
+  const i = item.indexOf(':');
+  return i >= 0 ? item.slice(i + 1) : item;
+}
+
+// 渲染看板卡片
+function renderWatchlist() {
+  const box = document.getElementById('watchlist-cards');
+  if (!box) return;
+  if (!watchlist.length) {
+    box.innerHTML = '<div class="watchlist-empty">暂无保存的利差配对。把两只个券拖入 A、B 框，点左侧「⭐ 保存当前配对到看板」。</div>';
+    return;
+  }
+  box.innerHTML = '';
+  watchlist.forEach((p, idx) => {
+    const r = buildPairSpreads(p.a, p.b);
+    const card = document.createElement('div');
+    card.className = 'wl-card';
+    if (!r || r.spreads.length === 0) {
+      card.innerHTML = `<div class="wl-card-head"><span class="wl-pair">${labelOf(p.a)} − ${labelOf(p.b)}</span><button class="wl-del" title="删除">×</button></div><div class="watchlist-empty" style="padding:8px 0">无共同数据</div>`;
+    } else {
+      const N = 250;  // 近一年（约250个交易日）
+      const spreads = r.spreads.slice(-N);
+      const last = spreads[spreads.length - 1];
+      const below = spreads.filter(x => x <= last).length;
+      const pct = Math.round(below / spreads.length * 100);
+      const cls = last >= 0 ? 'pos' : 'neg';
+      card.innerHTML = `
+        <div class="wl-card-head">
+          <span class="wl-pair">${r.labelA} − ${r.labelB}</span>
+          <button class="wl-del" title="删除">×</button>
+        </div>
+        <div class="wl-metrics">
+          <span class="wl-spread ${cls}">${last >= 0 ? '+' : ''}${last.toFixed(1)}bp</span>
+          <span class="wl-pct">近一年分位 ${pct}%</span>
+        </div>
+        <div class="wl-chart">${sparklineSVG(spreads, 200, 40)}</div>
+      `;
+    }
+    card.addEventListener('click', (e) => {
+      if (e.target.classList.contains('wl-del')) return;
+      loadPair(idx);
+    });
+    card.querySelector('.wl-del').addEventListener('click', (e) => {
+      e.stopPropagation();
+      removePair(idx);
+    });
+    box.appendChild(card);
+  });
+}
+
+// 保存当前 A/B 配对（仅限个券对个券）
+function saveCurrentPair() {
+  if (!slotA || !slotB) { toast('请先把两只个券拖入 A、B 框'); return; }
+  if (slotA === slotB) { toast('A、B 是同一只券，无法保存'); return; }
+  if (!slotA.startsWith('bond:') || !slotB.startsWith('bond:')) {
+    toast('看板仅支持「个券 vs 个券」，请把 A、B 都选为个券'); return;
+  }
+  const dup = watchlist.some(p => (p.a === slotA && p.b === slotB) || (p.a === slotB && p.b === slotA));
+  if (dup) { toast('该配对已在看板中'); return; }
+  watchlist.push({ a: slotA, b: slotB, note: '', added: new Date().toISOString().slice(0,10) });
+  renderWatchlist();
+  pushWatchlist();
+}
+
+// 删除配对
+function removePair(idx) {
+  const p = watchlist[idx];
+  if (!p) return;
+  if (!confirm(`删除看板配对：${labelOf(p.a)} − ${labelOf(p.b)} ？`)) return;
+  watchlist.splice(idx, 1);
+  renderWatchlist();
+  pushWatchlist();
+}
+
+// 载入配对到 A/B 槽
+function loadPair(idx) {
+  const p = watchlist[idx];
+  if (!p) return;
+  slotA = p.a; slotB = p.b;
+  renderSlots();
+  updateChart();
+  toast(`已载入：${labelOf(p.a)} − ${labelOf(p.b)}`);
 }
 
 // ============================================

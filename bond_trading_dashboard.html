@@ -230,7 +230,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    overflow: hidden;
+    overflow-y: auto;
   }
 
   /* Top chart: daily bar */
@@ -339,6 +339,38 @@
   }
   .chart-seasonal canvas { width: 100% !important; height: 100% !important; }
 
+  /* ── 四图依次排列（容器可滚动），新增「净买入×收益率」双轴叠加图 ── */
+  .chart-top, .chart-bottom, .chart-seasonal, .chart-overlay {
+    flex: 0 0 auto;
+    height: 300px;
+  }
+  .chart-overlay {
+    background: var(--panel-bg);
+    border-radius: var(--radius);
+    padding: 12px 20px 8px;
+    box-shadow: var(--shadow);
+    position: relative;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .chart-overlay .chart-label {
+    font-size: 12px; font-weight: 600; color: var(--text-secondary);
+    margin-bottom: 4px; display: flex; align-items: center; gap: 6px;
+  }
+  .chart-overlay .chart-label::before {
+    content: ''; display: inline-block; width: 8px; height: 8px;
+    background: var(--accent); border-radius: 2px;
+  }
+  .chart-overlay .chart-wrap { flex: 1; min-height: 0; position: relative; }
+  .chart-overlay canvas { width: 100% !important; height: 100% !important; }
+  .anomaly-legend {
+    font-size: 10px; color: var(--text-secondary); font-weight: 400;
+    margin-left: auto; display: flex; gap: 10px; align-items: center;
+  }
+  .anomaly-legend .lg { display: inline-flex; align-items: center; gap: 3px; }
+  .anomaly-legend .box { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
   .no-data {
     display: flex;
     align-items: center;
@@ -425,7 +457,12 @@
   <div class="chart-area">
     <!-- Top: Daily bar chart -->
     <div class="chart-top" id="chart-top-container">
-      <div class="chart-label">日度净买入（亿元）</div>
+      <div class="chart-label">日度净买入（亿元）
+        <span class="anomaly-legend">
+          <span class="lg"><span class="box" style="background:#ef4444cc"></span>买入异动(60日分位≥90%)</span>
+          <span class="lg"><span class="box" style="background:#22c55ecc"></span>卖出异动(≤10%)</span>
+        </span>
+      </div>
       <div class="chart-wrap"><canvas id="chart-daily"></canvas></div>
       <div class="no-data" id="no-data-top" style="display:none">
         <span class="icon">📊</span>
@@ -452,6 +489,16 @@
         <span>请选择单个机构和单个券种查看</span>
       </div>
     </div>
+
+    <!-- Overlay: 净买入 × 收益率 双轴叠加 -->
+    <div class="chart-overlay" id="chart-overlay-container">
+      <div class="chart-label" id="overlay-label">净买入 × 收益率叠加（单券种·限国债/政金债/地方债）</div>
+      <div class="chart-wrap"><canvas id="chart-overlay"></canvas></div>
+      <div class="no-data" id="no-data-overlay" style="display:none">
+        <span class="icon">📉</span>
+        <span id="no-data-overlay-text">请选择单个券种（国债/政金债/地方债）查看收益率叠加</span>
+      </div>
+    </div>
   </div>
 
   <div class="source-note">
@@ -475,6 +522,14 @@ let allData = { detail: [], summary: [], meta: {} };
 let chartDaily = null;
 let chartCumulative = null;
 let chartSeasonal = null;
+let chartOverlay = null;
+let yieldCurveDates = null;  // { 曲线名: { date: value } } 收益率曲线，用于「净买入×收益率」叠加
+
+// ── 异动检测参数（历史百分位口径，非 Z-score）──
+const ANOMALY_WINDOW = 60;  // 历史 60 个交易日
+const ANOMALY_MIN = 30;     // 最少样本期（不足则不判定）
+const ANOMALY_HIGH = 90;    // 百分位 ≥90% → 大幅买入异动（红）
+const ANOMALY_LOW = 10;     // 百分位 ≤10% → 大幅卖出异动（绿）
 let selectedInstitutions = new Set();
 let selectedBondTypes = new Set();
 let selectedMaturities = new Set();
@@ -487,6 +542,8 @@ const IDB_NAME = 'ficc_cache';
 const IDB_STORE = 'kv';
 const CACHE_KEY_BTD = 'bond_trading_data';
 const DATA_URL_BTD = 'bond_trading_data.json';
+const CACHE_KEY_YC = 'yield_curve_data';
+const DATA_URL_YC = 'yield_curve_data.json';
 
 function idbOpen() {
   return new Promise((resolve, reject) => {
@@ -620,6 +677,76 @@ async function init() {
       }
     }
   }
+
+  // 后台加载收益率曲线（供「净买入×收益率」叠加图使用）
+  loadYieldCurve();
+}
+
+// ============================================
+// 收益率曲线加载（供「净买入×收益率」叠加图）
+// ============================================
+async function loadYieldCurve() {
+  try {
+    const cached = await idbGet(CACHE_KEY_YC);
+    if (cached && cached.series) setYieldCurve(cached);
+    const resp = await fetch(DATA_URL_YC, { cache: 'no-cache' });
+    const raw = await resp.json();
+    const newUpd = raw.meta && raw.meta.last_updated;
+    const oldUpd = cached && cached.meta && cached.meta.last_updated;
+    if (newUpd !== oldUpd) {
+      setYieldCurve(raw);
+      await idbSet(CACHE_KEY_YC, raw);
+    }
+  } catch (e) {
+    console.warn('收益率曲线加载失败', e);
+  }
+}
+function setYieldCurve(raw) {
+  const series = raw.series || {};
+  yieldCurveDates = {};
+  for (const k in series) {
+    const s = series[k];
+    const m = {};
+    (s.dates || []).forEach((d, i) => { m[d] = s.values[i]; });
+    yieldCurveDates[k] = m;
+  }
+  renderOverlayChart();  // 收益率就绪后刷新叠加图
+}
+
+// ============================================
+// 异动检测：历史百分位口径（非 Z-score）
+// 对每个机构，在「当前券种+期限」筛选下的完整历史净买入序列上，
+// 用滚动 60 日窗口（不含当日）算当日的历史百分位，标记大幅买入/卖出
+// 返回 { inst: { date: {type:'high'|'low', pct:number} } }
+// ============================================
+function computeAnomalyFlags() {
+  const instList = [...selectedInstitutions];
+  const instHist = {};
+  instList.forEach(i => { instHist[i] = {}; });
+  allData.detail.forEach(row => {
+    if (!selectedInstitutions.has(row.institution)) return;
+    if (!selectedBondTypes.has(row.bond_type)) return;
+    if (!selectedMaturities.has(row.maturity)) return;
+    instHist[row.institution][row.date] = (instHist[row.institution][row.date] || 0) + row.value;
+  });
+  const flags = {};
+  instList.forEach(inst => {
+    const hist = instHist[inst];
+    const dates = Object.keys(hist).sort();
+    const vals = dates.map(d => hist[d]);
+    const map = {};
+    for (let i = 0; i < dates.length; i++) {
+      const win = vals.slice(Math.max(0, i - ANOMALY_WINDOW), i); // 过去60日（不含当日）
+      if (win.length < ANOMALY_MIN) continue;
+      const v = vals[i];
+      const below = win.filter(x => x <= v).length;
+      const pct = below / win.length * 100;
+      if (pct >= ANOMALY_HIGH) map[dates[i]] = { type: 'high', pct };
+      else if (pct <= ANOMALY_LOW) map[dates[i]] = { type: 'low', pct };
+    }
+    flags[inst] = map;
+  });
+  return flags;
 }
 
 function renderTagGroup(containerId, items, selectedSet, isMulti, singleByDefault) {
@@ -802,6 +929,9 @@ function updateChart() {
     return;
   }
 
+  // 异动检测（历史百分位口径），用于日度图高亮 + tooltip
+  const anomalyFlags = computeAnomalyFlags();
+
   const startDate = document.getElementById('date-start').value;
   const endDate = document.getElementById('date-end').value;
   const bondList = [...selectedBondTypes];
@@ -816,12 +946,21 @@ function updateChart() {
       const v = instDateValues[inst][d];
       return v !== undefined ? +v.toFixed(4) : 0;
     });
+    const fl = anomalyFlags[inst] || {};
     return {
       label: inst,
       data,
-      backgroundColor: color + '99',
-      borderColor: color,
-      borderWidth: 1,
+      backgroundColor: (ctx) => {
+        const f = fl[dates[ctx.dataIndex]];
+        if (f) return f.type === 'high' ? 'rgba(239,68,68,0.85)' : 'rgba(34,197,94,0.85)';
+        return color + '99';
+      },
+      borderColor: (ctx) => {
+        const f = fl[dates[ctx.dataIndex]];
+        if (f) return f.type === 'high' ? '#b91c1c' : '#15803d';
+        return color;
+      },
+      borderWidth: (ctx) => (fl[dates[ctx.dataIndex]] ? 2 : 1),
       borderRadius: 2,
       barPercentage: 0.7,
       categoryPercentage: 0.9,
@@ -910,7 +1049,10 @@ function updateChart() {
           padding: 12,
           callbacks: {
             label: function(ctx) {
-              return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(2) + ' 亿';
+              let s = ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(2) + ' 亿';
+              const f = (anomalyFlags[ctx.dataset.label] || {})[dates[ctx.dataIndex]];
+              if (f) s += ' ｜ ' + (f.type === 'high' ? '买入' : '卖出') + '异动·60日分位' + f.pct.toFixed(0) + '%';
+              return s;
             },
           },
         },
@@ -980,6 +1122,9 @@ function updateChart() {
 
   // ── Render seasonal chart ──
   renderSeasonalChart();
+
+  // ── Render overlay chart (净买入 × 收益率) ──
+  renderOverlayChart();
 }
 
 function renderSeasonalChart() {
@@ -1079,6 +1224,139 @@ function renderSeasonalChart() {
   });
 }
 
+// ============================================
+// 「净买入×收益率」双轴叠加：期限档→收益率映射 + 渲染
+// ============================================
+// 期限档 → 代表收益率年限
+const MATURITY_TO_YEAR = {
+  '≤1年': 1, '1-3年': 3, '3-5年': 5, '5-7年': 7, '7-10年': 10,
+  '10-15年': 15, '15-20年': 20, '20-30年': 30, '>30年': 50, '合计': 10,
+};
+// 券种 → 收益率曲线后缀 + 可用年限 + 就近映射（缺口不强行近似，返回 null）
+const BOND_CURVE = {
+  '国债':   { suffix: '国债',   years: [1,2,3,4,5,6,7,8,9,10,20,30,50], approx: { 15: 10 } },
+  '政金债': { suffix: '国开',   years: [1,2,3,4,5,6,7,8,9,10] },
+  '地方债': { suffix: '地方债', years: [1,2,3,5,7,10,15,20,30] },
+};
+
+// 券种 + 期限档 → 收益率曲线 key；无法映射返回 null
+function resolveCurveKey(bond, maturity) {
+  const cfg = BOND_CURVE[bond];
+  if (!cfg) return null;
+  let yr = MATURITY_TO_YEAR[maturity];
+  if (yr === undefined) yr = 10;
+  if (cfg.approx && cfg.approx[yr]) yr = cfg.approx[yr];
+  if (cfg.years.indexOf(yr) < 0) return null;  // 缺口（如政金债>10年、地方债>30年）
+  return yr + '年' + cfg.suffix;
+}
+
+function renderOverlayChart() {
+  const noData = document.getElementById('no-data-overlay');
+  const noDataText = document.getElementById('no-data-overlay-text');
+  const canvas = document.getElementById('chart-overlay');
+  const hideWith = (msg) => {
+    noDataText.textContent = msg;
+    noData.style.display = 'flex';
+    canvas.style.display = 'none';
+    if (chartOverlay) { chartOverlay.destroy(); chartOverlay = null; }
+  };
+
+  // 条件1：单券种
+  if (selectedBondTypes.size !== 1) {
+    hideWith('叠加图仅支持单个券种（当前已选 ' + selectedBondTypes.size + ' 个），请只选 国债/政金债/地方债 之一');
+    return;
+  }
+  const bond = [...selectedBondTypes][0];
+  if (!BOND_CURVE[bond]) {
+    hideWith('「' + bond + '」暂无对应收益率曲线（仅 国债/政金债/地方债 支持叠加）');
+    return;
+  }
+  // 条件2：收益率数据就绪
+  if (!yieldCurveDates) { hideWith('收益率曲线加载中…'); return; }
+  // 期限（单选；未选视为「合计」→ 该券种10年）
+  const maturity = [...selectedMaturities][0] || '合计';
+  const curveKey = resolveCurveKey(bond, maturity);
+  if (!curveKey) { hideWith('「' + bond + ' · ' + maturity + '」无对应收益率曲线'); return; }
+  const curveMap = yieldCurveDates[curveKey];
+  if (!curveMap) { hideWith('收益率曲线「' + curveKey + '」不存在'); return; }
+
+  // 当前筛选下 跨机构合计的日度净买入（显示窗口内）
+  const startDate = document.getElementById('date-start').value;
+  const endDate = document.getElementById('date-end').value;
+  const dateSet = new Set();
+  const dayNet = {};
+  allData.detail.forEach(row => {
+    if (!selectedInstitutions.has(row.institution)) return;
+    if (row.bond_type !== bond) return;
+    if (!selectedMaturities.has(row.maturity)) return;
+    if (row.date < startDate || row.date > endDate) return;
+    dateSet.add(row.date);
+    dayNet[row.date] = (dayNet[row.date] || 0) + row.value;
+  });
+  const dates = [...dateSet].sort();
+  if (dates.length === 0) { hideWith('当前筛选无数据'); return; }
+
+  const netVals = dates.map(d => +(dayNet[d] || 0).toFixed(4));
+  const yVals = dates.map(d => {
+    const v = curveMap[d];
+    return (v === undefined || v === null) ? null : +(+v).toFixed(4);
+  });
+
+  noData.style.display = 'none';
+  canvas.style.display = 'block';
+  document.getElementById('overlay-label').textContent =
+    '净买入(左轴·亿元) × ' + curveKey + '(右轴·%) ｜ ' + bond + ' · ' + maturity;
+
+  if (chartOverlay) chartOverlay.destroy();
+  chartOverlay = new Chart(canvas, {
+    data: {
+      labels: dates,
+      datasets: [
+        {
+          type: 'bar', label: '净买入(亿元)', data: netVals, yAxisID: 'y', order: 2,
+          backgroundColor: (ctx) => ((ctx.raw || 0) >= 0 ? 'rgba(238,102,102,0.6)' : 'rgba(59,162,114,0.6)'),
+          borderColor: (ctx) => ((ctx.raw || 0) >= 0 ? '#ee6666' : '#3ba272'),
+          borderWidth: 1, borderRadius: 2, barPercentage: 0.7, categoryPercentage: 0.9,
+        },
+        {
+          type: 'line', label: curveKey + '(%)', data: yVals, yAxisID: 'y1', order: 1,
+          borderColor: '#5470c6', backgroundColor: 'transparent', borderWidth: 2,
+          pointRadius: 0, pointHoverRadius: 4, pointHoverBackgroundColor: '#5470c6',
+          tension: 0.15, spanGaps: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { usePointStyle: true, padding: 12, font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#2c3e50', bodyColor: '#2c3e50',
+          borderColor: '#e8ecf1', borderWidth: 1, cornerRadius: 6, padding: 12,
+          callbacks: {
+            label: function(ctx) {
+              if (ctx.dataset.yAxisID === 'y1') return ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? (+ctx.parsed.y).toFixed(3) + ' %' : '--');
+              return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(2) + ' 亿';
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 }, grid: { display: false } },
+        y: {
+          position: 'left', title: { display: true, text: '净买入(亿元)', font: { size: 10 } },
+          ticks: { font: { size: 10 } }, grid: { color: '#f0f0f0' },
+        },
+        y1: {
+          position: 'right', title: { display: true, text: curveKey + '(%)', font: { size: 10 } },
+          ticks: { font: { size: 10 }, callback: v => (+v).toFixed(2) }, grid: { drawOnChartArea: false },
+        },
+      },
+    },
+  });
+}
+
 // Zero-line plugin (reused by both charts)
 const zeroLinePlugin = {
   id: 'zeroLine',
@@ -1110,6 +1388,10 @@ function showNoData(msg) {
   document.getElementById('no-data-seasonal').querySelector('span:last-child').textContent = '请先选择筛选条件';
   document.getElementById('chart-seasonal').style.display = 'none';
   if (chartSeasonal) { chartSeasonal.destroy(); chartSeasonal = null; }
+  document.getElementById('no-data-overlay').style.display = 'flex';
+  document.getElementById('no-data-overlay-text').textContent = '请先选择筛选条件';
+  document.getElementById('chart-overlay').style.display = 'none';
+  if (chartOverlay) { chartOverlay.destroy(); chartOverlay = null; }
   document.getElementById('chart-title').textContent = '各类型机构债券净买入走势';
   document.getElementById('chart-desc').textContent = '请选择机构和筛选条件后查看';
   ['kpi-total', 'kpi-avg', 'kpi-days'].forEach(id => {
