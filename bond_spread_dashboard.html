@@ -1102,32 +1102,40 @@ function toast(msg) {
   _toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
-// 从云端拉取看板
+// 从云端拉取看板（优先 GitHub API，国内比 raw.githubusercontent.com 稳；无 token 则 fallback raw）
 async function pullWatchlist(showToast) {
   const cfg = getWatchSyncConfig();
   const statusEl = document.getElementById('watchlist-status');
-  const raw = `https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/${cfg.path}?t=${Date.now()}`;
-  try {
-    const r = await fetch(raw);
-    if (!r.ok) {
-      if (r.status === 404) {
-        watchlist = [];
-        renderWatchlist();
-        if (statusEl) statusEl.textContent = '云端暂无（保存后自动创建）';
-        if (showToast) toast('云端暂无看板，保存一对即自动创建');
-        return;
-      }
-      throw new Error('HTTP ' + r.status);
+  let remote = null, err1 = null;
+  if (cfg.token) {
+    try {
+      const r = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path}?ref=${encodeURIComponent(cfg.branch)}`, { headers: { Authorization: 'token ' + cfg.token, Accept: 'application/vnd.github+json' } });
+      if (r.status === 404) { remote = { pairs: [] }; }
+      else if (r.ok) { const j = await r.json(); remote = JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,''))))); }
+      else throw new Error('API HTTP ' + r.status);
+    } catch(e) { err1 = e; }
+  }
+  if (remote === null) {
+    try {
+      const r = await fetch(`https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/${cfg.path}?t=${Date.now()}`);
+      if (r.status === 404) { remote = { pairs: [] }; }
+      else if (r.ok) { remote = await r.json(); }
+      else throw new Error('raw HTTP ' + r.status);
+    } catch(e) {
+      if (statusEl) statusEl.textContent = '云端拉取失败';
+      if (showToast) toast('拉取失败：' + (err1 ? err1.message + ' / ' : '') + e.message);
+      renderWatchlist();
+      return;
     }
-    const remote = await r.json();
-    watchlist = Array.isArray(remote) ? remote : (remote.pairs || []);
-    renderWatchlist();
+  }
+  watchlist = Array.isArray(remote) ? remote : (remote.pairs || []);
+  renderWatchlist();
+  if (watchlist.length === 0) {
+    if (statusEl) statusEl.textContent = '云端暂无（保存后自动创建）';
+    if (showToast) toast('云端暂无看板，保存一对即自动创建');
+  } else {
     if (statusEl) statusEl.textContent = `云端已同步（${watchlist.length} 对）`;
     if (showToast) toast(`✅ 已从云端拉取 ${watchlist.length} 对利差`);
-  } catch(err) {
-    if (statusEl) statusEl.textContent = '云端拉取失败';
-    if (showToast) toast('拉取失败：' + err.message);
-    renderWatchlist();
   }
 }
 
