@@ -1132,7 +1132,9 @@ async function pullWatchlist(showToast) {
 }
 
 // 上传看板到云端
-async function pushWatchlist() {
+// merge=true（默认）: 先合并云端已有配对再上传，防止本地内存不全时覆盖云端丢失数据（用于新增）
+// merge=false: 直接用当前 watchlist 全量覆盖（用于删除，调用前须已 pull 云端最新）
+async function pushWatchlist(merge) {
   const cfg = getWatchSyncConfig();
   const statusEl = document.getElementById('watchlist-status');
   if (!cfg.token) {
@@ -1144,17 +1146,28 @@ async function pushWatchlist() {
   try {
     const api = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path}`;
     let sha = null;
+    let finalPairs = watchlist;
     try {
       const r = await fetch(api + '?ref=' + encodeURIComponent(cfg.branch), { headers: { Authorization: 'token ' + cfg.token, Accept: 'application/vnd.github+json' } });
-      if (r.ok) { const j = await r.json(); sha = j.sha; }
+      if (r.ok) {
+        const j = await r.json(); sha = j.sha;
+        if (merge === true) {
+          // 合并云端已有配对，防止本地内存不全导致覆盖丢失（按 a/b 去重，顺序无关）
+          let remotePairs = [];
+          try { const remote = JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,''))))); remotePairs = Array.isArray(remote) ? remote : (remote.pairs || []); } catch(e) {}
+          const merged = remotePairs.slice();
+          watchlist.forEach(p => { const dup = merged.some(m => (m.a===p.a&&m.b===p.b)||(m.a===p.b&&m.b===p.a)); if (!dup) merged.push(p); });
+          watchlist = merged; finalPairs = merged; renderWatchlist();
+        }
+      }
     } catch(e) {}
-    const payload = { meta: { updated: new Date().toISOString(), note: '个券利差看板' }, pairs: watchlist };
+    const payload = { meta: { updated: new Date().toISOString(), note: '个券利差看板' }, pairs: finalPairs };
     const body = { message: 'chore: 同步利差看板 ' + new Date().toISOString().slice(0,16).replace('T',' '), content: b64encode(JSON.stringify(payload, null, 2)), branch: cfg.branch };
     if (sha) body.sha = sha;
     const r2 = await fetch(api, { method: 'PUT', headers: { Authorization: 'token ' + cfg.token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r2.ok) { const e = await r2.json().catch(()=>({})); throw new Error(e.message || r2.status); }
-    if (statusEl) statusEl.textContent = `已上云（${watchlist.length} 对）`;
-    toast(`✅ 看板已同步到云（${watchlist.length} 对）`);
+    if (statusEl) statusEl.textContent = `已上云（${finalPairs.length} 对）`;
+    toast(`✅ 看板已同步到云（${finalPairs.length} 对）`);
   } catch(err) {
     if (statusEl) statusEl.textContent = '上传失败';
     toast('上传失败：' + err.message);
@@ -1256,17 +1269,20 @@ function saveCurrentPair() {
   if (dup) { toast('该配对已在看板中'); return; }
   watchlist.push({ a: slotA, b: slotB, note: '', added: new Date().toISOString().slice(0,10) });
   renderWatchlist();
-  pushWatchlist();
+  pushWatchlist(true);  // 合并云端防覆盖（pullWatchlist 失败时也不会丢旧模板）
 }
 
-// 删除配对
-function removePair(idx) {
+// 删除配对（先拉云端最新，确保基于最新状态删除，避免本地内存不全导致删错/覆盖）
+async function removePair(idx) {
   const p = watchlist[idx];
   if (!p) return;
   if (!confirm(`删除看板配对：${labelOf(p.a)} − ${labelOf(p.b)} ？`)) return;
-  watchlist.splice(idx, 1);
+  await pullWatchlist(false);
+  const realIdx = watchlist.findIndex(q => q.a===p.a && q.b===p.b);
+  if (realIdx < 0) { toast('该配对在云端已不存在'); renderWatchlist(); return; }
+  watchlist.splice(realIdx, 1);
   renderWatchlist();
-  pushWatchlist();
+  pushWatchlist(false);
 }
 
 // 载入配对到 A/B 槽
