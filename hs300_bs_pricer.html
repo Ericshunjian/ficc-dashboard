@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>沪深300股指期权(MO) Black-Scholes 定价器 · 卖Put版</title>
+<script src="vendor/chart.umd.min.js"></script>
+<style>
+  :root{ --bg:#0f1115; --panel:#171a21; --txt:#e6e6e6; --sub:#9aa4b2; --grid:#262b33; --blue:#4da3ff; --red:#ff5c5c; --orange:#ffa94d; --green:#51cf66; }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,'Segoe UI',Roboto,'Microsoft YaHei',sans-serif;padding:24px;}
+  h1{font-size:21px;margin:0 0 4px;}
+  .sub{color:var(--sub);font-size:13px;margin-bottom:18px;line-height:1.7;}
+  .panel{background:var(--panel);border:1px solid #20242c;border-radius:10px;padding:18px;margin-bottom:22px;}
+  .panel h2{font-size:16px;margin:0 0 14px;font-weight:600;}
+  .chart-box{position:relative;height:320px;}
+  .inp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;}
+  .inp{background:#11141a;border:1px solid #262b33;border-radius:8px;padding:10px 12px;}
+  .inp label{display:block;font-size:12px;color:var(--sub);margin-bottom:6px;}
+  .inp input{width:100%;background:#1b1f27;border:1px solid #2c323c;border-radius:6px;color:var(--txt);font-size:14px;padding:6px 8px;}
+  .hv-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .hv-btn{background:#20242c;color:var(--sub);border:1px solid #2c323c;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;}
+  .hv-btn:hover{background:var(--blue);color:#06243f;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--grid);white-space:nowrap;}
+  th{color:var(--sub);cursor:pointer;user-select:none;position:sticky;top:0;background:var(--panel);}
+  th:first-child,td:first-child{text-align:left;}
+  tr:hover td{background:#1b1f27;}
+  .itm{color:var(--red);} .otm{color:var(--green);} .atm{color:var(--orange);}
+  .neg{color:var(--red);}
+  .note{font-size:12px;color:var(--sub);line-height:1.7;margin-top:10px;}
+  .kpi{display:inline-block;background:#11141a;border:1px solid #262b33;border-radius:8px;padding:8px 14px;margin:0 8px 8px 0;font-size:13px;}
+  .kpi b{color:var(--blue);font-size:15px;}
+  .topnav{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:6px;background:#0b0d11;border:1px solid #20242c;border-radius:10px;padding:9px 14px;margin-bottom:20px;flex-wrap:wrap;}
+  .nav-brand{font-weight:700;color:var(--blue);margin-right:12px;font-size:15px;white-space:nowrap;}
+  .navtab{color:var(--sub);text-decoration:none;padding:7px 14px;border-radius:7px;font-size:14px;border:1px solid transparent;transition:.15s;white-space:nowrap;}
+  .navtab:hover{background:#20242c;color:var(--txt);}
+  .navtab.active{background:var(--blue);color:#06243f;font-weight:600;}
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="nav-brand">沪深300 研究工具</span>
+  <a href="hs300_rolling_mdd.html" class="navtab">回撤·滚动MDD</a>
+  <a href="hs300_put_extra_dd.html" class="navtab">回撤·卖Put条件分布</a>
+  <a href="hs300_bs_pricer.html" class="navtab">期权·BS定价</a>
+</nav>
+<script>
+(function(){var pg=location.pathname.split('/').pop();document.querySelectorAll('.navtab').forEach(function(a){if(a.getAttribute('href')===pg)a.classList.add('active');});})();
+</script>
+<h1>沪深300股指期权（MO · 中金所）Black-Scholes 定价器 · 卖Put版</h1>
+<div class="sub">
+  标的：沪深300指数（000300.SH）｜ 欧式、现金交割 → <b>BS 为精确定价</b>｜ 合约乘数 <b>¥100/点</b>（权利金按"点"报价，×100 得每张人民币）。<br/>
+  数据默认：最新收盘 S = <b>4651.31</b>（2026-08-07），历史波动率 30日 26.13% / 60日 24.27% / 90日 22.11%（年化，取自你的风险平价.xlsx）。<br/>
+  <b>本页只算"合约卖多少钱（权利金）"</b>，不涉及保证金/资金占用（你说保证金够，不必看）。<br/>
+  <b style="color:var(--red);">⚠️ 两个最容易算错的点：① T 用「今天/到期日」自动算，别手填错天数；② σ 必须填<b>该行权价对应的隐含波动率（含偏度）</b>，不要用 ATM/指数 IV——虚值 put 的 IV 通常高 2~3 个 vol 点，差这点就能让价格差上千元。</b>
+</div>
+
+<div class="panel">
+  <h2>① 输入参数（实时计算，改完即出结果）</h2>
+  <div class="inp-grid">
+    <div class="inp"><label>标的价格 S（指数点）</label><input id="S" type="number" step="1" value="4651.31"/></div>
+    <div class="inp" style="grid-column:1/-1;"><label>无风险利率 r / 股息率 q（默认锁定，与IO定价一致，无需修改）</label><span style="font-size:15px;color:var(--blue);">r = 1.7%（10Y国债）｜ q = 2.5%（沪深300股息率）</span></div>
+    <div class="inp"><label>今天日期</label><input id="today" type="date" value="2026-08-07"/></div>
+    <div class="inp"><label>到期日</label><input id="expiry" type="date" value="2026-09-18"/></div>
+    <div class="inp"><label>到期天数 T（自动算）</label><span id="Tdisp" style="font-size:18px;color:var(--blue);font-weight:600;"></span></div>
+    <div class="inp"><label>波动率 σ（%/年，建议用IV）</label><input id="sigma" type="number" step="0.5" value="24.27"/></div>
+    <div class="inp"><label>行权价下限 K_min</label><input id="kmin" type="number" step="50" value="4050"/></div>
+    <div class="inp"><label>行权价上限 K_max</label><input id="kmax" type="number" step="50" value="4750"/></div>
+  </div>
+  <div class="hv-row">
+    <span style="font-size:12px;color:var(--sub);align-self:center;">快速填入σ：</span>
+    <button class="hv-btn" data-hv="26.13">30日 26.13%</button>
+    <button class="hv-btn" data-hv="24.27">60日 24.27%</button>
+    <button class="hv-btn" data-hv="22.11">90日 22.11%</button>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>② 图形：行权价 vs 合约价 / 被行权概率</h2>
+  <div class="chart-box"><canvas id="c1"></canvas></div>
+</div>
+
+<div class="panel">
+  <h2>③ 各行权价卖Put合约价明细（点表头排序）</h2>
+  <div style="overflow-x:auto;">
+  <table id="tbl">
+    <thead><tr>
+      <th data-k="K">行权价K</th><th data-k="money">虚/实值</th>
+      <th data-k="intr">内在价值(点)</th><th data-k="tv">时间价值(点)</th>
+      <th data-k="price">理论价(点)</th><th data-k="priceRMB">合约价(¥)</th>
+      <th data-k="delta">Delta</th><th data-k="theta">Theta/日(点)</th>
+      <th data-k="vega">Vega(1%·点)</th><th data-k="gamma">Gamma</th>
+      <th data-k="pitm">P(被行权)</th>
+    </tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  </div>
+  <div class="note">
+    · <b>合约价(¥)</b> = 理论价(点) × 100（合约乘数），即你卖出 1 张该行权价 put 收到的权利金。<br/>
+    · <b>内在价值</b> = max(K−S, 0)；<b>时间价值</b> = 理论价 − 内在价值（纯时间损耗部分）。<br/>
+    · <b>Delta</b>（负）：卖方视角，绝对值≈到期被指派(ITM)的近似概率；<b>P(被行权)</b>=N(−d2) 为风险中性到期ITM概率。<br/>
+    · <b>σ 必须用对应行权价的隐含波动率（含偏度）</b>：你读的 18.35% 多为 ATM/指数 IV；而 K=4400（约6%虚值）的 put 实际 IV 约 21%，差 ~2.5 vol 点即让合约价从 2275 元升到 3360 元（T=42日实测）。拿不准就用 Wind 里该合约的"隐含波动率"字段，别用指数 IV。
+    · <b>Theta/日</b>=每天时间价值衰减（点）；<b>Vega</b>=波动率每升1%理论价的变动（点）。<br/>
+    · 实值(ITM)行标红、虚值(OTM)行标绿。卖Put通常选 OTM（K&lt;S），在"权利金多少"与"被行权概率"间权衡。
+  </div>
+</div>
+
+<script>
+const D = {"S": 4651.31, "r": 1.7, "q": 2.5, "sigma": 24.27, "mult": 100, "today": "2026-08-07", "expiry": "2026-09-18", "kmin": 4050, "kmax": 4750, "hv30": 26.13, "hv60": 24.27, "hv90": 22.11, "last_date": "2026-08-07"};
+const C = {txt:'#e6e6e6', sub:'#9aa4b2', grid:'#262b33'};
+
+// 标准正态 CDF / PDF
+function N(x){
+  const t=1/(1+0.2316419*Math.abs(x));
+  const d=0.3989422804014327*Math.exp(-0.5*x*x);
+  let p=d*t*(0.319381530+t*(-0.356563782+t*(1.781477937+t*(-1.821255978+t*1.330274429))));
+  return x>0?1-p:p;
+}
+function npdf(x){ return Math.exp(-0.5*x*x)/Math.sqrt(2*Math.PI); }
+
+// BS 卖Put(欧式)
+function bsPut(S,K,T,r,q,sig){
+  if(T<=0) return {price:Math.max(K-S,0),delta:-1,theta:0,vega:0,gamma:0,pitm:1};
+  const sqrtT=Math.sqrt(T), d1=(Math.log(S/K)+(r-q+0.5*sig*sig)*T)/(sig*sqrtT), d2=d1-sig*sqrtT;
+  const Nd1=N(d1), Nd2=N(d2);
+  const price=K*Math.exp(-r*T)*N(-d2)-S*Math.exp(-q*T)*N(-d1);
+  const delta=-Math.exp(-q*T)*N(-d1);
+  const gamma=Math.exp(-q*T)*npdf(d1)/(S*sig*sqrtT);
+  const vega=S*Math.exp(-q*T)*npdf(d1)*sqrtT/100;            // per 1% vol
+  const theta=(-S*Math.exp(-q*T)*npdf(d1)*sig/(2*sqrtT)+r*K*Math.exp(-r*T)*N(-d2)-q*S*Math.exp(-q*T)*N(-d1))/365; // per calendar day
+  const pitm=N(-d2);
+  return {price,delta,gamma,vega,theta,pitm};
+}
+
+let rows=[], sortKey='K', sortAsc=true;
+function compute(){
+  const S=+I('S'), r=D.r/100, q=D.q/100, sig=(+I('sigma'))/100;
+  const today=I('today'), expiry=I('expiry');
+  const Tdays = (today && expiry) ? Math.round((new Date(expiry)-new Date(today))/86400000) : 30;
+  const T = Math.max(0, Tdays)/365;
+  document.getElementById('Tdisp').textContent = Tdays + ' 天';
+  const kmin=+I('kmin'), kmax=+I('kmax'), kstep=50;   // 步长固定50
+  rows=[];
+  for(let K=kmin;K<=kmax+1e-9;K+=kstep){
+    const b=bsPut(S,K,T,r,q,sig);
+    const intr=Math.max(K-S,0), tv=b.price-intr;
+    let mny, cls;
+    if(Math.abs(K/S-1)<=0.01){mny='ATM';cls='atm';} else if(K>S){mny='ITM';cls='itm';} else {mny='OTM';cls='otm';}
+    rows.push({K,mny,cls,intr,tv,price:b.price,priceRMB:b.price*100,delta:b.delta,
+      theta:b.theta,vega:b.vega,gamma:b.gamma,pitm:b.pitm});
+  }
+  rows.sort((a,b)=> sortAsc? a[sortKey]-b[sortKey] : b[sortKey]-a[sortKey]);
+  drawTable(); drawChart();
+}
+function I(id){return document.getElementById(id).value;}
+function fmt(x,d=2){return (x>=0?'':'')+x.toFixed(d);}
+
+let chart;
+function drawChart(){
+  const Ks=rows.map(r=>r.K);
+  const ds=[
+    {label:'合约价(¥)', data:rows.map(r=>r.priceRMB), borderColor:'#4da3ff', yAxisID:'y', pointRadius:0, borderWidth:2},
+    {label:'|Delta|(被行权概率近似)', data:rows.map(r=>Math.abs(r.delta)*100), borderColor:'#ffa94d', yAxisID:'y1', pointRadius:0, borderWidth:2, borderDash:[4,3]},
+    {label:'P(被行权)%', data:rows.map(r=>r.pitm*100), borderColor:'#ff5c5c', yAxisID:'y1', pointRadius:0, borderWidth:2},
+  ];
+  const ctx=document.getElementById('c1');
+  if(chart) chart.destroy();
+  chart=new Chart(ctx,{type:'line',data:{labels:Ks,datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:C.sub}},tooltip:{mode:'index',intersect:false}},
+      scales:{
+        x:{ticks:{color:C.sub},grid:{color:C.grid},title:{display:true,text:'行权价 K',color:C.sub}},
+        y:{position:'left',ticks:{color:C.sub},grid:{color:C.grid},title:{display:true,text:'合约价 ¥',color:C.sub}},
+        y1:{position:'right',ticks:{color:C.sub},grid:{drawOnChartArea:false},title:{display:true,text:'概率 %',color:C.sub}}
+      }}});
+}
+
+function drawTable(){
+  const tb=document.getElementById('tbody');
+  tb.innerHTML=rows.map(r=>{
+    return `<tr>
+      <td>${r.K.toFixed(0)}</td>
+      <td class="${r.cls}">${r.mny}</td>
+      <td>${fmt(r.intr)}</td><td>${fmt(r.tv)}</td>
+      <td><b>${fmt(r.price)}</b></td><td><b>${fmt(r.priceRMB,0)}</b></td>
+      <td class="neg">${fmt(r.delta)}</td><td>${fmt(r.theta)}</td>
+      <td>${fmt(r.vega)}</td><td>${fmt(r.gamma,4)}</td>
+      <td>${(r.pitm*100).toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+}
+
+document.querySelectorAll('input').forEach(el=>el.addEventListener('input',compute));
+// 今天/到期日 变动 → 自动重算（T 在 compute 内从日期算出）
+document.getElementById('today').addEventListener('change',compute);
+document.getElementById('expiry').addEventListener('change',compute);
+document.querySelectorAll('.hv-btn').forEach(b=>b.onclick=()=>{document.getElementById('sigma').value=b.dataset.hv;compute();});
+document.querySelectorAll('th[data-k]').forEach(th=>th.onclick=()=>{
+  const k=th.dataset.k; if(sortKey===k)sortAsc=!sortAsc; else{sortKey=k;sortAsc=true;} compute();
+});
+compute();
+</script>
+</body>
+</html>
