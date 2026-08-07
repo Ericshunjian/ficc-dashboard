@@ -40,23 +40,23 @@
 <script>
 (function(){var pg=location.pathname.split('/').pop();document.querySelectorAll('.navtab').forEach(function(a){if(a.getAttribute('href')===pg)a.classList.add('active');});})();
 </script>
-<h1>沪深300 滚动21交易日最大回撤分析</h1>
+<h1>沪深300 滚动21日最大回撤</h1>
 <div class="sub" id="sub"></div>
 
 <div class="kpis" id="kpis"></div>
 
 <div class="panel">
-  <h2>① 沪深300 净值走势（起点归一=100，背景参照）</h2>
+  <h2>① 净值走势（归一=100）</h2>
   <div class="chart-box"><canvas id="c1"></canvas></div>
 </div>
 
 <div class="panel">
-  <h2>② 每日滚动21交易日最大回撤时间序列（%）</h2>
+  <h2>② 滚动21日最大回撤(%)</h2>
   <div class="chart-box"><canvas id="c2"></canvas></div>
 </div>
 
 <div class="panel">
-  <h2>③ 回撤幅度分布直方图（频次）</h2>
+  <h2>③ 回撤分布（频次）</h2>
   <div class="chart-box"><canvas id="c3"></canvas></div>
 </div>
 

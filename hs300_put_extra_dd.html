@@ -44,11 +44,11 @@
 <script>
 (function(){var pg=location.pathname.split('/').pop();document.querySelectorAll('.navtab').forEach(function(a){if(a.getAttribute('href')===pg)a.classList.add('active');});})();
 </script>
-<h1>沪深300 卖Put情景：21日滚动回撤后 额外跌幅条件分布（可调）</h1>
+<h1>卖Put情景：回撤后额外跌幅分布（可调）</h1>
 <div class="sub" id="sub"></div>
 
 <div class="panel">
-  <h2>参数设置（实时调整，无需重跑脚本）</h2>
+  <h2>参数（实时调整）</h2>
   <div class="ctrl">
     <div class="ctrl-item">
       <label>回撤触发阈值（%）</label>
@@ -65,17 +65,17 @@
 <div class="kpis" id="kpis"></div>
 
 <div class="panel">
-  <h2>① 沪深300 净值 + 触发点（红点=首次进入21日回撤&gt;阈值%）</h2>
+  <h2>① 净值 + 触发点（红点=触发日）</h2>
   <div class="chart-box"><canvas id="c1"></canvas></div>
 </div>
 
 <div class="panel">
-  <h2>② 额外回撤条件分布（分档直方图，按上方前瞻天数）</h2>
+  <h2>② 额外回撤分布（按上方前瞻天数）</h2>
   <div class="chart-box"><canvas id="c2"></canvas></div>
 </div>
 
 <div class="panel">
-  <h2>③ 统计表（按上方参数）</h2>
+  <h2>③ 统计（按上方参数）</h2>
   <table id="stat"></table>
 </div>
 
