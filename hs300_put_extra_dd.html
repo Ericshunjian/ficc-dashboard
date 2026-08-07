@@ -172,21 +172,27 @@ function recompute(){
     chart1.update();
   }
 
-  // 图2 直方图
+  // 图2 直方图（原地刷新，避免每键销毁重建导致闪烁）
   const counts=new Array(edgeLabels.length).fill(0);
   for(const x of arr){
     for(let i=0;i<edges.length-1;i++){ if(x>edges[i] && x<=edges[i+1]){counts[i]++;break;} }
   }
-  if(histChart) histChart.destroy();
-  histChart = new Chart(document.getElementById('c2'), {
-    type:'bar',
-    data:{ labels:edgeLabels, datasets:[{ label:`额外回撤分布 (前瞻${K}日, n=${n})`, data:counts,
-      backgroundColor: edgeLabels.map(l=> (l.startsWith('+')||l.startsWith('0')) ? '#51cf66'
-        : (l.startsWith('≤-20')||l.startsWith('-20')) ? '#ff5c5c' : '#ffa94d') }]},
-    options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{labels:{color:C.sub}}, tooltip:{callbacks:{label:c=>'频数 '+c.parsed.y}} },
-      scales:{ x:{ticks:{color:C.sub},grid:{color:C.grid}}, y:{ticks:{color:C.sub},grid:{color:C.grid},title:{display:true,text:'事件数',color:C.sub}} } }
-  });
+  const barColor = edgeLabels.map(l=> (l.startsWith('+')||l.startsWith('0')) ? '#51cf66'
+        : (l.startsWith('≤-20')||l.startsWith('-20')) ? '#ff5c5c' : '#ffa94d');
+  if(histChart){
+    histChart.data.datasets[0].data = counts;
+    histChart.data.datasets[0].label = `额外回撤分布 (前瞻${K}日, n=${n})`;
+    histChart.update('none');
+  } else {
+    histChart = new Chart(document.getElementById('c2'), {
+      type:'bar',
+      data:{ labels:edgeLabels, datasets:[{ label:`额外回撤分布 (前瞻${K}日, n=${n})`, data:counts,
+        backgroundColor: barColor }]},
+      options:{ responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{labels:{color:C.sub}}, tooltip:{callbacks:{label:c=>'频数 '+c.parsed.y}} },
+        scales:{ x:{ticks:{color:C.sub},grid:{color:C.grid}}, y:{ticks:{color:C.sub},grid:{color:C.grid},title:{display:true,text:'事件数',color:C.sub}} } }
+    });
+  }
 
   // 表3
   const rows=[
@@ -205,8 +211,11 @@ function recompute(){
     rows.map(r=>`<tr><td>${r[0]}</td><td class="neg">${ r[2]? r[1].toFixed(2)+'%' : r[1] }</td></tr>`).join('');
 }
 
-document.getElementById('threshInput').addEventListener('input', recompute);
-document.getElementById('kInput').addEventListener('input', recompute);
+// 输入防抖：打字停顿(120ms)后再重算，避免每敲一个字符就闪图/重算
+let _tmr;
+function recomputeD(){ clearTimeout(_tmr); _tmr=setTimeout(recompute,120); }
+document.getElementById('threshInput').addEventListener('input', recomputeD);
+document.getElementById('kInput').addEventListener('input', recomputeD);
 recompute();
 </script>
 </body>

@@ -165,15 +165,18 @@ function drawChart(){
     {label:'P(被行权)%', data:rows.map(r=>r.pitm*100), borderColor:'#ff5c5c', yAxisID:'y1', pointRadius:0, borderWidth:2},
   ];
   const ctx=document.getElementById('c1');
-  if(chart) chart.destroy();
-  chart=new Chart(ctx,{type:'line',data:{labels:Ks,datasets:ds},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:C.sub}},tooltip:{mode:'index',intersect:false}},
-      scales:{
-        x:{ticks:{color:C.sub},grid:{color:C.grid},title:{display:true,text:'行权价 K',color:C.sub}},
-        y:{position:'left',ticks:{color:C.sub},grid:{color:C.grid},title:{display:true,text:'合约价 ¥',color:C.sub}},
-        y1:{position:'right',ticks:{color:C.sub},grid:{drawOnChartArea:false},title:{display:true,text:'概率 %',color:C.sub}}
-      }}});
+  if(chart){            // 原地刷新，避免每次按键销毁重建导致闪烁
+    chart.data.labels=Ks; chart.data.datasets=ds; chart.update('none');
+  } else {
+    chart=new Chart(ctx,{type:'line',data:{labels:Ks,datasets:ds},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{labels:{color:C.sub}},tooltip:{mode:'index',intersect:false}},
+        scales:{
+          x:{ticks:{color:C.sub},grid:{color:C.grid},title:{display:true,text:'行权价 K',color:C.sub}},
+          y:{position:'left',ticks:{color:C.sub},grid:{color:C.grid},title:{display:true,text:'合约价 ¥',color:C.sub}},
+          y1:{position:'right',ticks:{color:C.sub},grid:{drawOnChartArea:false},title:{display:true,text:'概率 %',color:C.sub}}
+        }}});
+  }
 }
 
 function drawTable(){
@@ -191,7 +194,10 @@ function drawTable(){
   }).join('');
 }
 
-document.querySelectorAll('input').forEach(el=>el.addEventListener('input',compute));
+// 输入防抖：打字停顿(120ms)后再重算，避免每敲一个字符就闪图/重算
+let _tmr;
+function computeD(){ clearTimeout(_tmr); _tmr=setTimeout(compute,120); }
+document.querySelectorAll('input').forEach(el=>el.addEventListener('input',computeD));
 // 今天/到期日 变动 → 自动重算（T 在 compute 内从日期算出）
 document.getElementById('today').addEventListener('change',compute);
 document.getElementById('expiry').addEventListener('change',compute);
