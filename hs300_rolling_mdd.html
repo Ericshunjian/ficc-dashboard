@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>沪深300 滚动21交易日最大回撤分析</title>
+<title>沪深300 滚动21日最大回撤</title>
 <script src="vendor/chart.umd.min.js"></script>
 <style>
   :root{ --bg:#0f1115; --panel:#171a21; --txt:#e6e6e6; --sub:#9aa4b2; --grid:#262b33; --blue:#4da3ff; --red:#ff5c5c; --orange:#ffa94d; }
@@ -119,8 +119,8 @@ const rows = [
   ['平均回撤', st.mean+'%'],
   ['中位数', st.median+'%'],
   ['标准差', st.std+'%'],
-  ['最小(最深)回撤', st.min_mdd+'%'],
-  ['最大(最浅)回撤', st.max_mdd+'%'],
+  ['最深回撤', st.min_mdd+'%'],
+  ['最浅回撤', st.max_mdd+'%'],
   ['P5', st.p5+'%'],
   ['P25', st.p25+'%'],
   ['P50', st.p50+'%'],

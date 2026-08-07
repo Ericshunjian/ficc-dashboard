@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>沪深300股指期权(MO) Black-Scholes 定价器 · 卖Put版</title>
+<title>沪深300股指期权(MO) 卖Put · BS定价器</title>
 <script src="vendor/chart.umd.min.js"></script>
 <style>
   :root{ --bg:#0f1115; --panel:#171a21; --txt:#e6e6e6; --sub:#9aa4b2; --grid:#262b33; --blue:#4da3ff; --red:#ff5c5c; --orange:#ffa94d; --green:#51cf66; }
@@ -50,16 +50,16 @@
 </script>
 <h1>沪深300股指期权(MO) 卖Put · BS定价器</h1>
 <div class="sub">
-  标的：沪深300(000300.SH)，欧式+现金交割 → BS 精确定价 ｜ 乘数 <b>¥100/点</b>（报价按点，×100=每张¥）。<br/>
+  标的：沪深300(000300.SH)，欧式+现金交割 → BS 定价 ｜ 乘数 <b>¥100/点</b>（报价按点，×100=每张¥）。<br/>
   默认 S=<b>4651.31</b>(2026-08-07) ｜ HV 30日26.13% / 60日24.27% / 90日22.11%(年化，取自风险平价.xlsx)。<br/>
-  只算"卖1张put收多少权利金"，不含保证金。⚠️ T 由日期自动算；σ 须填<b>该行权价IV</b>（见下方说明）。
+  只算权利金（卖1张），不含保证金。⚠️ T 由日期自动算；σ 须填<b>该行权价IV</b>（见下方说明）。
 </div>
 
 <div class="panel">
-  <h2>① 输入参数（实时计算，改完即出结果）</h2>
+  <h2>① 输入参数</h2>
   <div class="inp-grid">
     <div class="inp"><label>标的价格 S（指数点）</label><input id="S" type="number" step="1" value="4651.31"/></div>
-    <div class="inp" style="grid-column:1/-1;"><label>无风险利率 r / 股息率 q（默认锁定，与IO定价一致，无需修改）</label><span style="font-size:15px;color:var(--blue);">r = 1.7%（10Y国债）｜ q = 2.5%（沪深300股息率）</span></div>
+    <div class="inp" style="grid-column:1/-1;"><label>无风险利率 r / 股息率 q（锁定，同IO）</label><span style="font-size:15px;color:var(--blue);">r = 1.7%（10Y国债）｜ q = 2.5%（沪深300股息率）</span></div>
     <div class="inp"><label>今天日期</label><input id="today" type="date" value="2026-08-07"/></div>
     <div class="inp"><label>到期日</label><input id="expiry" type="date" value="2026-09-18"/></div>
     <div class="inp"><label>到期天数 T（自动算）</label><span id="Tdisp" style="font-size:18px;color:var(--blue);font-weight:600;"></span></div>
@@ -76,12 +76,12 @@
 </div>
 
 <div class="panel">
-  <h2>② 图形：行权价 vs 合约价 / 被行权概率</h2>
+  <h2>② 行权价 vs 合约价 / 被行权概率</h2>
   <div class="chart-box"><canvas id="c1"></canvas></div>
 </div>
 
 <div class="panel">
-  <h2>③ 各行权价卖Put合约价明细（点表头排序）</h2>
+  <h2>③ 合约价明细（点表头排序）</h2>
   <div style="overflow-x:auto;">
   <table id="tbl">
     <thead><tr>
@@ -96,12 +96,12 @@
   </table>
   </div>
   <div class="note">
-    · 合约价(¥)=理论价(点)×100，即卖1张put收的权利金。<br/>
+    · 合约价(¥)=理论价(点)×100（卖1张收的权利金）。<br/>
     · 内在价值=max(K−S,0)；时间价值=理论价−内在价值。<br/>
-    · Delta(负)：绝对值≈到期被指派概率；P(被行权)=N(−d2)为风险中性到期ITM概率。<br/>
+    · Delta(负)：|Δ|≈被指派概率；P(被行权)=N(−d2)。<br/>
     · <b>σ 须填该行权价隐含波动率（含偏度）</b>：例 K=4400(约6%虚值)的IV≈21%，而ATM/指数IV仅≈18.35%，差2.5vol点使合约价从≈2275元升至3360元(T=42日)。拿不准用Wind该合约"隐含波动率"字段。<br/>
     · Theta/日=每日时间价值衰减(点)；Vega=波动率每升1%理论价变动(点)。<br/>
-    · 实值(ITM)标红、虚值(OTM)标绿；卖Put通常选OTM(K&lt;S)，权衡权利金与被行权概率。
+    · 实值(ITM)标红、虚值(OTM)标绿；卖Put多选OTM(K&lt;S)。
   </div>
 </div>
 
