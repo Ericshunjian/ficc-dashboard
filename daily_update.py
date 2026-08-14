@@ -1088,7 +1088,7 @@ def main():
              f"因子={'成功' if ok5 else '失败'}, "
              f"偏离度={'成功' if ok6 else '失败'}")
 
-    # push 到 Gitee + GitCode + GitHub
+    # push 到 GitHub（唯一远程；gitee/gitcode 已于 2026-08-06 废弃，不再同步）
     if ok1 or ok2 or ok3 or ok5:
         try:
             log.info("推送数据到远程仓库...")
@@ -1100,7 +1100,7 @@ def main():
 
 
 def git_push_data():
-    """commit 并 push 更新的 JSON 数据 + HTML 网页到 Gitee + GitCode + GitHub"""
+    """commit 并 push 更新的 JSON 数据 + HTML 网页到 GitHub（唯一远程；gitee/gitcode 已废弃）"""
     repo_dir = Path(SCRIPT_DIR)
     today_str = datetime.now().strftime("%Y-%m-%d")
 
