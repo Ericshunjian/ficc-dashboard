@@ -8,6 +8,8 @@
 <meta http-equiv="Expires" content="0">
 <title>个券相对价值：曲线偏离度</title>
 <script src="vendor/chart.umd.min.js"></script>
+<script src="vendor/hammer.min.js"></script>
+<script src="vendor/chartjs-plugin-zoom.min.js"></script>
 <style>
   :root {
     --bg: #f5f6fa;
@@ -103,6 +105,7 @@
 
   <div class="panel">
     <div id="mainChartWrap"><div class="loading">数据加载中…</div></div>
+    <div class="legend-note" style="margin-top:8px;">操作：滚轮缩放横轴 · 拖拽框选放大 · 双击重置（聚焦 10 年以内：拖拽框选 0~10 年区间，或滚轮放大）</div>
   </div>
 
   <div class="panel">
@@ -211,6 +214,16 @@ function render(ds) {
       interaction: { mode: 'point', intersect: true },
       plugins: {
         legend: { labels: { filter: it => it.text.includes('曲线') } },
+        zoom: {
+          zoom: {
+            wheel: { enabled: true, speed: 0.1 },
+            pinch: { enabled: true },
+            drag: { enabled: true, backgroundColor: 'rgba(84,112,198,0.15)', borderColor: 'rgba(84,112,198,0.6)' },
+            mode: 'x',
+            onDoubleClick: function(c) { c.resetZoom(); return false; },
+          },
+          limits: { x: { min: 0, max: 30 } },
+        },
         tooltip: {
           filter: it => it.dataset.type === 'scatter',
           callbacks: {
