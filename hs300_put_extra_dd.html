@@ -34,8 +34,9 @@
     <div class="input-card"><label>观察期 H（交易日）</label><input id="horizon" type="number" value="30" min="1" max="500" step="1"><small>约等于期权剩余交易日</small></div>
     <div class="input-card"><label>关注“再跌” X（%）</label><input id="extraDrop" type="number" value="5" min="0.1" max="50" step="0.5"><small>用于观察期内触碰与到期比较</small></div>
     <div class="section-label">卖 Put 到期盈亏映射</div>
-    <div class="input-card"><label>行权价虚值幅度（%）</label><input id="otm" type="number" value="4" min="0" max="50" step="0.5"><small>K = 触发日指数 × (1 − 虚值%)</small></div>
-    <div class="input-card"><label>权利金 / 触发日指数（%）</label><input id="premiumPct" type="number" value="1" min="0" max="20" step="0.1"><small>到期盈亏平衡跌幅 = 虚值 + 权利金</small></div>
+    <div class="input-card"><label>卖 Put 当天沪深300指数 S</label><input id="putSpot" type="number" value="4600" min="1" step="0.01"><small>使用实际卖出时的指数点位</small></div>
+    <div class="input-card"><label>Put 行权价 K</label><input id="putStrike" type="number" value="4400" min="1" step="50"><small id="putStrikeHint">自动计算虚值幅度</small></div>
+    <div class="input-card"><label>实际卖出权利金 C（点）</label><input id="putPremium" type="number" value="50" min="0" step="0.2"><small id="putPremiumHint">填期权报价点数，不填人民币</small></div>
   </div>
   <div class="formula" id="formula"></div>
 </section>

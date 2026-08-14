@@ -95,8 +95,17 @@
     const cooldown = clampInt(read('cooldown'),0,500);
     const horizon = clampInt(read('horizon'),1,500);
     const extraDrop = Math.max(.001,read('extraDrop')/100);
-    const otm = Math.max(0,read('otm')/100);
-    const premium = Math.max(0,read('premiumPct')/100);
+    const putSpot = read('putSpot');
+    const putStrike = read('putStrike');
+    const putPremium = read('putPremium');
+    if (!(putSpot > 0 && putStrike > 0 && putPremium >= 0)) {
+      const status = byId('sampleStatus');
+      status.textContent = '请检查卖 Put 的 S、K 和权利金';
+      status.className = 'status bad';
+      return;
+    }
+    const otm = 1 - putStrike/putSpot;
+    const premium = putPremium/putSpot;
     const putLossLevel = otm + premium;
     const dd = rollingHighDrawdown(lookback);
     const events = buildEvents(dd,triggerLevel,horizon,cooldown,extraDrop,putLossLevel);
@@ -108,7 +117,13 @@
     const worsts = events.map(e=>e.worstReturn);
 
     byId('dataRange').textContent = `${D.date0} — ${D.date1} · ${values.length.toLocaleString()}个交易日`;
-    byId('formula').innerHTML = `<b>P（未来 ${horizon} 日内较触发价再跌 ≥ ${num(extraDrop*100,1)}%｜当前价较过去 ${lookback} 日高点首次回撤 ≥ ${num(triggerLevel*100,1)}%）</b><br>卖 Put 历史映射：虚值 ${num(otm*100,1)}% + 权利金 ${num(premium*100,1)}% → 到期盈亏平衡跌幅约 ${num(putLossLevel*100,1)}%。`;
+    const breakEven = putStrike - putPremium;
+    byId('putStrikeHint').textContent = `相对指数${otm >= 0 ? '虚值' : '实值'} ${num(Math.abs(otm)*100,2)}%`;
+    byId('putPremiumHint').textContent = `权利金 / 指数 = ${num(premium*100,2)}%`;
+    const bufferParts = otm >= 0
+      ? `虚值 ${num(otm*100,2)}% + 权利金 ${num(premium*100,2)}%`
+      : `权利金 ${num(premium*100,2)}% − 实值 ${num(Math.abs(otm)*100,2)}%`;
+    byId('formula').innerHTML = `<b>P（未来 ${horizon} 日内较触发价再跌 ≥ ${num(extraDrop*100,1)}%｜当前价较过去 ${lookback} 日高点首次回撤 ≥ ${num(triggerLevel*100,1)}%）</b><br>卖 Put：S=${num(putSpot,2)}，K=${num(putStrike,2)}，权利金=${num(putPremium,2)}点 → 盈亏平衡点 <b>${num(breakEven,2)}</b>；相对卖出日可承受下跌 <b>${num(putLossLevel*100,2)}%</b>（${bufferParts}）。`;
     const status = byId('sampleStatus');
     status.textContent = n < 10 ? `有效样本 ${n} 个 · 样本很少` : n < 20 ? `有效样本 ${n} 个 · 区间较宽` : `有效样本 ${n} 个`;
     status.className = `status ${n<10?'bad':n<20?'warn':''}`;
