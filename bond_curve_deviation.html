@@ -121,7 +121,10 @@
 
   <div class="panel">
     <div id="mainChartWrap"><div class="loading">数据加载中…</div></div>
-    <div class="legend-note" style="margin-top:8px;">操作：滚轮缩放横轴 · 拖拽框选放大 · 双击重置（聚焦 10 年以内：拖拽框选 0~10 年区间，或滚轮放大）</div>
+    <div class="legend-note" style="margin-top:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <button id="resetZoomBtn" type="button" style="font-size:12px; padding:4px 12px; border:1px solid var(--border); border-radius:5px; background:var(--panel-bg); color:var(--text); cursor:pointer;">↺ 重置视图</button>
+      <span>操作：<b>拖拽=平移</b> · 滚轮=以鼠标为中心缩放 · Shift+拖拽=框选放大 · 双击=重置（想看 10 年以内：直接滚轮放大，或框选 0~10 区间）</span>
+    </div>
   </div>
 
   <div class="panel">
@@ -199,6 +202,7 @@ async function init() {
     localStorage.setItem('vatRate', String(vatRate));
     rerenderAll();
   };
+  document.getElementById('resetZoomBtn').onclick = () => { if (mainChart) mainChart.resetZoom(); };
   updateMethodNote();
   render(sel.value);
 }
@@ -287,9 +291,12 @@ function render(ds) {
           zoom: {
             wheel: { enabled: true, speed: 0.1 },
             pinch: { enabled: true },
-            drag: { enabled: true, backgroundColor: 'rgba(84,112,198,0.15)', borderColor: 'rgba(84,112,198,0.6)' },
+            drag: { enabled: true, modifierKey: 'shift', backgroundColor: 'rgba(84,112,198,0.15)', borderColor: 'rgba(84,112,198,0.6)' },
             mode: 'x',
             onDoubleClick: function(c) { c.resetZoom(); return false; },
+          },
+          pan: {
+            enabled: true, mode: 'x', threshold: 3,
           },
           limits: { x: { min: 0, max: 30 } },
         },
