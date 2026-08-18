@@ -112,10 +112,12 @@
       <label>日期</label>
       <select id="dateSelect"></select>
       <label class="tax-toggle" id="taxToggleWrap">
-        <input type="checkbox" id="taxAdj"> 税后可比
-        <input type="number" id="vatRate" min="0" max="25" step="0.5" value="6" title="税率%，可自行调整"> % 税率
+        <input type="checkbox" id="taxAdj"> 税后可比 税率:
+        国债<input type="number" id="rateGB" min="0" max="25" step="0.5" value="6" title="国债含税券税率%">%·
+        国开<input type="number" id="rateCDB" min="0" max="25" step="0.5" value="6" title="国开含税券税率%">%·
+        地方债<input type="number" id="rateLGB" min="0" max="25" step="0.5" value="6" title="地方债含税券税率%">%
       </label>
-      <span class="legend-note">实线=中债曲线（节点连线即插值口径）；散点=个券。散点在曲线上方 → 收益率偏高 → 价格偏便宜。倒三角=国债含税券（按当前税率调整为税后口径）。50 年券（剩余期限&gt;30Y）不在图中，见下方排名表</span>
+      <span class="legend-note">实线=中债曲线（节点连线即插值口径）；散点=个券。散点在曲线上方 → 收益率偏高 → 价格偏便宜。倒三角=含税券（按所属曲线当前税率调整为税后口径）。50 年券（剩余期限&gt;30Y）不在图中，见下方排名表</span>
     </div>
   </div>
 
@@ -154,20 +156,30 @@
 <script>
 const CURVE_COLORS = { '国债': '#5470c6', '国开': '#22a06b', '地方债': '#8e44ad' };
 const CURVE_TAG = { '国债': 'tag-treasury', '国开': 'tag-policy', '地方债': 'tag-local' };
-// 税后可比：价内税严格口径，税后YTM = YTM / 1.06（扣税额 = YTM × 6/106，用YTM近似票息）
-// 仅调整国债曲线上的含税券（tax_free=false，即2025-08-08起新发）；国开/地方债税率口径不同，不调整
-// 税后可比：价内税严格口径，税后YTM = YTM / (1 + 税率)，扣税额 = YTM × t/(100+t)
-// 仅调整国债曲线上的含税券（tax_free=false，即2025-08-08起新发）；国开/地方债税率口径不同，不调整
+// 税后可比：价内税严格口径，税后YTM = YTM / (1 + t)，扣税额 = YTM × t/(100+t)，以YTM近似票息
+// 三条曲线（国债/国开/地方债）税率各自独立设置，各自调整本曲线上的含税券（tax_free=false，即2025-08-08起新发）
 const clampRate = v => (isFinite(v) && v >= 0 && v <= 25) ? v : 6;
+const CURVES = ['国债', '国开', '地方债'];
+const RATE_INPUTS = { '国债': 'rateGB', '国开': 'rateCDB', '地方债': 'rateLGB' };
 let DATA = null, mainChart = null, histChart = null;
 let taxAdjOn = localStorage.getItem('taxAdj') !== '0'; // 默认开启
-let vatRate = clampRate(parseFloat(localStorage.getItem('vatRate')));
-const vatDiv = () => 1 + vatRate / 100;
+let vatRates = { '国债': 6, '国开': 6, '地方债': 6 };
+try {
+  const saved = JSON.parse(localStorage.getItem('vatRates') || 'null');
+  if (saved) for (const c of CURVES) if (saved[c] != null) vatRates[c] = clampRate(parseFloat(saved[c]));
+  else {
+    // 迁移旧版单税率设置（作为国债税率）
+    const old = parseFloat(localStorage.getItem('vatRate'));
+    if (isFinite(old)) vatRates['国债'] = clampRate(old);
+  }
+} catch (e) {}
+const rateOf = curve => vatRates[curve] || 0;
+const vatDivOf = curve => 1 + rateOf(curve) / 100;
 
-const isTaxedGB = b => b.curve === '国债' && !b.tax_free;
-const adjYield = (y, b) => (taxAdjOn && isTaxedGB(b)) ? y / vatDiv() : y;
+const isTaxed = b => !b.tax_free && rateOf(b.curve) > 0;   // 含税券且该曲线税率>0
+const adjYield = (y, b) => (taxAdjOn && isTaxed(b)) ? y / vatDivOf(b.curve) : y;
 // 偏离度/利差调整：dev_adj = dev - (y - y/(1+t))*100
-const adjDev = (dev, y, b) => (dev == null || !taxAdjOn || !isTaxedGB(b)) ? dev : dev - (y - y / vatDiv()) * 100;
+const adjDev = (dev, y, b) => (dev == null || !taxAdjOn || !isTaxed(b)) ? dev : dev - (y - y / vatDivOf(b.curve)) * 100;
 
 async function init() {
   const res = await fetch('curve_deviation.json?t=' + Date.now(), { cache: 'no-cache' });
@@ -179,10 +191,8 @@ async function init() {
   sel.onchange = () => render(sel.value);
   const cb = document.getElementById('taxAdj');
   const wrap = document.getElementById('taxToggleWrap');
-  const ri = document.getElementById('vatRate');
   cb.checked = taxAdjOn;
   wrap.classList.toggle('on', taxAdjOn);
-  ri.value = vatRate;
   const rerenderAll = () => {
     render(sel.value);
     if (document.getElementById('histChartWrap').style.display === 'block' && window._lastHistCode) {
@@ -196,26 +206,32 @@ async function init() {
     wrap.classList.toggle('on', taxAdjOn);
     rerenderAll();
   };
-  ri.onchange = () => {
-    vatRate = clampRate(parseFloat(ri.value));
-    ri.value = vatRate;
-    localStorage.setItem('vatRate', String(vatRate));
-    rerenderAll();
-  };
+  for (const c of CURVES) {
+    const inp = document.getElementById(RATE_INPUTS[c]);
+    inp.value = vatRates[c];
+    inp.onchange = () => {
+      vatRates[c] = clampRate(parseFloat(inp.value));
+      inp.value = vatRates[c];
+      localStorage.setItem('vatRates', JSON.stringify(vatRates));
+      rerenderAll();
+    };
+  }
   document.getElementById('resetZoomBtn').onclick = () => { if (mainChart) mainChart.resetZoom(); };
   updateMethodNote();
   render(sel.value);
 }
 
 function updateMethodNote() {
-  const t = vatRate;
-  const eff = t > 0 ? (t / (100 + t) * 100).toFixed(2) : '0';
+  const parts = CURVES.map(c => {
+    const t = rateOf(c);
+    return c + ' ' + t + '%（≈YTM×' + (t > 0 ? (t / (100 + t) * 100).toFixed(2) : '0') + '%）';
+  }).join(' · ');
   document.getElementById('methodNote').innerHTML =
     '口径说明：' + DATA.meta.dev_definition + '<br>' +
     '① ' + DATA.meta.note_interp + '<br>② ' + DATA.meta.note_50y + '<br>③ ' + DATA.meta.note_short +
     (DATA.meta.note_tax ? '<br>④ ' + DATA.meta.note_tax : '') +
-    '<br>⑤ 税后可比（当前：' + (taxAdjOn ? '开启，税率 ' + t + '%（价内税口径，扣税额 = YTM × ' + t + '/' + (100 + t) + ' ≈ YTM × ' + eff + '%，以YTM近似票息）' : '关闭（显示原始口径）') +
-    '）：调整对象仅限国债曲线上的含税券，散点、偏离度排名与历史走势联动；税率可在上方输入框自行修改（0~25），国开/地方债税率口径与国债不同，暂不调整';
+    '<br>⑤ 税后可比（当前：' + (taxAdjOn ? '开启 ' + parts : '关闭（显示原始口径）') +
+    '）：价内税口径，税后YTM = YTM ÷ (1+税率)，以YTM近似票息；调整对象为各曲线上的含税券（该曲线税率填 0 即不调整），散点、偏离度排名与历史走势联动；三条曲线税率可在上方输入框各自修改（0~25）';
 }
 
 function interpY(nodes, vals, x) {
@@ -253,9 +269,9 @@ function render(ds) {
     if (i < 0) continue;
     const rem = b.rem[i], yRaw = b.yields[i];
     const devRaw = b.dev_bp[i], s30Raw = b.spread30_bp[i];
-    const applied = taxAdjOn && isTaxedGB(b);
+    const applied = taxAdjOn && isTaxed(b);
     const y = adjYield(yRaw, b);                 // 散点显示值（税后可比时=税后YTM）
-    const taxCut = yRaw - yRaw / vatDiv();        // 扣税额（百分点，按当前税率）
+    const taxCut = yRaw - yRaw / vatDivOf(b.curve); // 扣税额（百分点，按该曲线当前税率）
     const dev = adjDev(devRaw, yRaw, b);
     const s30 = adjDev(s30Raw, yRaw, b);
     const c = DATA.curves[b.curve];
@@ -313,7 +329,7 @@ function render(ds) {
               const lines = [];
               if (m.applied) {
                 lines.push('YTM(原始): ' + m.yRaw.toFixed(4) + '%   剩余: ' + m.rem.toFixed(2) + 'Y');
-                lines.push('扣税(' + vatRate + '%价内): -' + (m.taxCut * 100).toFixed(2) + ' bp');
+                lines.push('扣税(' + rateOf(m.curve) + '%价内): -' + (m.taxCut * 100).toFixed(2) + ' bp');
                 lines.push('YTM(税后): ' + m.y.toFixed(4) + '%');
               } else {
                 lines.push('YTM: ' + m.y.toFixed(4) + '%   剩余: ' + m.rem.toFixed(2) + 'Y');
@@ -375,10 +391,10 @@ function renderTable(rows) {
 function showHistory(code) {
   const b = DATA.bonds[code];
   const useS30 = b.dev_bp.every(v => v == null);
-  const adj = taxAdjOn && isTaxedGB(b);
-  // 税后口径：dev_adj = dev - (y - y/1.06)*100，逐日计算
+  const adj = taxAdjOn && isTaxed(b);
+  // 税后口径：dev_adj = dev - (y - y/(1+t))*100，逐日计算
   const vals = (useS30 ? b.spread30_bp : b.dev_bp).map((v, i) =>
-    v == null ? null : (adj ? v - (b.yields[i] - b.yields[i] / vatDiv()) * 100 : v));
+    v == null ? null : (adj ? v - (b.yields[i] - b.yields[i] / vatDivOf(b.curve)) * 100 : v));
   const pts = b.dates.map((d, i) => ({ x: d, y: vals[i] })).filter(p => p.y != null);
   window._lastHistCode = code;
   document.getElementById('histTitle').textContent =
