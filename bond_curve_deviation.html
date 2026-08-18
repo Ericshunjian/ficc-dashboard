@@ -55,6 +55,13 @@
     font-size: 13px; padding: 6px 10px; border: 1px solid var(--border);
     border-radius: 6px; background: var(--panel-bg); color: var(--text);
   }
+  .tax-toggle {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+    font-size: 13px; font-weight: 600; color: var(--text);
+    padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-bg);
+  }
+  .tax-toggle input { accent-color: #e67e22; width: 15px; height: 15px; cursor: pointer; }
+  .tax-toggle.on { border-color: #e67e22; background: #fdf3e7; color: #b35900; }
   .legend-note { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
   #mainChartWrap { position: relative; height: 460px; }
   #histChartWrap { position: relative; height: 240px; display: none; }
@@ -99,6 +106,9 @@
     <div class="controls">
       <label>日期</label>
       <select id="dateSelect"></select>
+      <label class="tax-toggle" id="taxToggleWrap">
+        <input type="checkbox" id="taxAdj"> 税后可比（国债含税券扣增值税）
+      </label>
       <span class="legend-note">实线=中债曲线（节点连线即插值口径）；散点=个券。散点在曲线上方 → 收益率偏高 → 价格偏便宜。50 年券（剩余期限&gt;30Y）不在图中，见下方排名表</span>
     </div>
   </div>
@@ -135,20 +145,43 @@
 <script>
 const CURVE_COLORS = { '国债': '#5470c6', '国开': '#22a06b', '地方债': '#8e44ad' };
 const CURVE_TAG = { '国债': 'tag-treasury', '国开': 'tag-policy', '地方债': 'tag-local' };
+// 税后可比：价内税严格口径，税后YTM = YTM / 1.06（扣税额 = YTM × 6/106，用YTM近似票息）
+// 仅调整国债曲线上的含税券（tax_free=false，即2025-08-08起新发）；国开/地方债税率口径不同，不调整
+const VAT_DIVISOR = 1.06;
 let DATA = null, mainChart = null, histChart = null;
+let taxAdjOn = localStorage.getItem('taxAdj') !== '0'; // 默认开启
+
+const isTaxedGB = b => b.curve === '国债' && !b.tax_free;
+const adjYield = (y, b) => (taxAdjOn && isTaxedGB(b)) ? y / VAT_DIVISOR : y;
+// 偏离度/利差调整：dev_adj = dev - (y - y/1.06)*100
+const adjDev = (dev, y, b) => (dev == null || !taxAdjOn || !isTaxedGB(b)) ? dev : dev - (y - y / VAT_DIVISOR) * 100;
 
 async function init() {
-  const res = await fetch('curve_deviation.json', { cache: 'no-cache' });
+  const res = await fetch('curve_deviation.json?t=' + Date.now(), { cache: 'no-cache' });
   DATA = await res.json();
   const dates = DATA.curves['国债'].dates;
   const sel = document.getElementById('dateSelect');
   sel.innerHTML = dates.map(d => `<option value="${d}">${d}</option>`).join('');
   sel.value = dates[dates.length - 1];
   sel.onchange = () => render(sel.value);
+  const cb = document.getElementById('taxAdj');
+  const wrap = document.getElementById('taxToggleWrap');
+  cb.checked = taxAdjOn;
+  wrap.classList.toggle('on', taxAdjOn);
+  cb.onchange = () => {
+    taxAdjOn = cb.checked;
+    localStorage.setItem('taxAdj', taxAdjOn ? '1' : '0');
+    wrap.classList.toggle('on', taxAdjOn);
+    render(sel.value);
+    if (document.getElementById('histChartWrap').style.display === 'block' && window._lastHistCode) {
+      showHistory(window._lastHistCode);
+    }
+  };
   document.getElementById('methodNote').innerHTML =
     '口径说明：' + DATA.meta.dev_definition + '<br>' +
     '① ' + DATA.meta.note_interp + '<br>② ' + DATA.meta.note_50y + '<br>③ ' + DATA.meta.note_short +
-    (DATA.meta.note_tax ? '<br>④ ' + DATA.meta.note_tax : '');
+    (DATA.meta.note_tax ? '<br>④ ' + DATA.meta.note_tax : '') +
+    '<br>⑤ 税后可比（开关默认开启）：国债曲线上的含税券，按价内税口径扣税后与曲线比较，税后YTM = YTM ÷ 1.06（扣税额 = YTM × 6/106 ≈ YTM × 5.66%，以YTM近似票息），散点、偏离度排名与历史走势联动调整；国开/地方债税率口径与国债不同，暂不调整';
   render(sel.value);
 }
 
@@ -185,8 +218,13 @@ function render(ds) {
     const b = DATA.bonds[code];
     const i = b.dates.indexOf(ds);
     if (i < 0) continue;
-    const rem = b.rem[i], y = b.yields[i];
-    const dev = b.dev_bp[i], s30 = b.spread30_bp[i];
+    const rem = b.rem[i], yRaw = b.yields[i];
+    const devRaw = b.dev_bp[i], s30Raw = b.spread30_bp[i];
+    const applied = taxAdjOn && isTaxedGB(b);
+    const y = adjYield(yRaw, b);                 // 散点显示值（税后可比时=税后YTM）
+    const taxCut = yRaw - yRaw / VAT_DIVISOR;    // 扣税额（百分点）
+    const dev = adjDev(devRaw, yRaw, b);
+    const s30 = adjDev(s30Raw, yRaw, b);
     const c = DATA.curves[b.curve];
     const cidx = c.dates.indexOf(ds);
     const cy = cidx >= 0 ? interpY(c.nodes, c.values[cidx], rem) : null;
@@ -196,10 +234,12 @@ function render(ds) {
         backgroundColor: CURVE_COLORS[b.curve], borderColor: '#fff', borderWidth: 1,
         pointRadius: 6, pointHoverRadius: 6, order: 10,
         showInLegend: false,
-        meta: { code, category: b.category, curve: b.curve, rem, y, cy, dev, s30, tax_free: b.tax_free },
+        pointStyle: applied ? 'triangle' : 'circle',
+        rotation: applied ? 180 : 0,
+        meta: { code, category: b.category, curve: b.curve, rem, y, yRaw, taxCut, applied, cy, dev, s30, tax_free: b.tax_free },
       });
     }
-    tableRows.push({ code, category: b.category, curve: b.curve, rem, y, cy, dev, s30, tax_free: b.tax_free });
+    tableRows.push({ code, category: b.category, curve: b.curve, rem, y, yRaw, taxCut, applied, cy, dev, s30, tax_free: b.tax_free });
   }
 
   const wrap = document.getElementById('mainChartWrap');
@@ -229,17 +269,22 @@ function render(ds) {
           callbacks: {
             title: items => {
               const m = items[0].dataset.meta;
-              const tax = m.tax_free ? ' · 免税' : ' · 含税';
+              const tax = m.tax_free ? ' · 免税' : (m.applied ? ' · 含税·已扣税' : ' · 含税');
               return m.code + '（' + m.category + tax + '）';
             },
             label: it => {
               const m = it.dataset.meta;
-              const lines = [
-                'YTM: ' + m.y.toFixed(4) + '%   剩余: ' + m.rem.toFixed(2) + 'Y',
-                '曲线(' + m.curve + '): ' + (m.cy == null ? 'N/A' : m.cy.toFixed(4) + '%'),
-              ];
-              if (m.dev != null) lines.push('偏离度: ' + (m.dev > 0 ? '+' : '') + m.dev.toFixed(2) + ' bp');
-              else if (m.s30 != null) lines.push('对30Y利差: +' + m.s30.toFixed(2) + ' bp');
+              const lines = [];
+              if (m.applied) {
+                lines.push('YTM(原始): ' + m.yRaw.toFixed(4) + '%   剩余: ' + m.rem.toFixed(2) + 'Y');
+                lines.push('增值税扣减: -' + (m.taxCut * 100).toFixed(2) + ' bp');
+                lines.push('YTM(税后): ' + m.y.toFixed(4) + '%');
+              } else {
+                lines.push('YTM: ' + m.y.toFixed(4) + '%   剩余: ' + m.rem.toFixed(2) + 'Y');
+              }
+              lines.push('曲线(' + m.curve + '): ' + (m.cy == null ? 'N/A' : m.cy.toFixed(4) + '%'));
+              if (m.dev != null) lines.push('偏离度' + (m.applied ? '(税后)' : '') + ': ' + (m.dev > 0 ? '+' : '') + m.dev.toFixed(2) + ' bp');
+              else if (m.s30 != null) lines.push('对30Y利差' + (m.applied ? '(税后)' : '') + ': +' + m.s30.toFixed(2) + ' bp');
               else lines.push('偏离度: N/A（期限<1Y）');
               return lines;
             },
@@ -266,11 +311,15 @@ function renderTable(rows) {
     const cls = devVal == null ? 'dev-na' : devVal > 0 ? 'dev-pos' : 'dev-neg';
     const read = devVal == null ? '—' : devVal > 3 ? '明显便宜' : devVal > 0.5 ? '略便宜' : devVal >= -0.5 ? '贴合曲线' : devVal >= -3 ? '略贵' : '明显贵';
     const taxTag = r.tax_free ? ' <span style="color:#8e44ad;font-size:10px;font-weight:600;">(免税)</span>' : '';
+    const adjTag = r.applied ? ' <span style="color:#e67e22;font-size:10px;font-weight:600;">(税后)</span>' : '';
+    const ytmCell = r.applied
+      ? `<td>${r.y.toFixed(4)}<span style="color:#e67e22;font-size:10px;">←${r.yRaw.toFixed(4)}</span></td>`
+      : `<td>${r.y.toFixed(4)}</td>`;
     return `<tr data-code="${r.code}">
-      <td>${r.code.replace('.IB','')}${taxTag}</td>
+      <td>${r.code.replace('.IB','')}${taxTag}${adjTag}</td>
       <td><span class="tag ${CURVE_TAG[r.curve]}">${r.category}</span></td>
       <td>${r.rem.toFixed(2)}Y</td>
-      <td>${r.y.toFixed(4)}</td>
+      ${ytmCell}
       <td>${r.cy == null ? '—' : r.cy.toFixed(4)}</td>
       <td class="${cls}">${devVal == null ? 'N/A' : fmt(devVal) + (star || '')}</td>
       <td>${read}</td>
@@ -290,10 +339,14 @@ function renderTable(rows) {
 function showHistory(code) {
   const b = DATA.bonds[code];
   const useS30 = b.dev_bp.every(v => v == null);
-  const vals = useS30 ? b.spread30_bp : b.dev_bp;
+  const adj = taxAdjOn && isTaxedGB(b);
+  // 税后口径：dev_adj = dev - (y - y/1.06)*100，逐日计算
+  const vals = (useS30 ? b.spread30_bp : b.dev_bp).map((v, i) =>
+    v == null ? null : (adj ? v - (b.yields[i] - b.yields[i] / VAT_DIVISOR) * 100 : v));
   const pts = b.dates.map((d, i) => ({ x: d, y: vals[i] })).filter(p => p.y != null);
+  window._lastHistCode = code;
   document.getElementById('histTitle').textContent =
-    code + '（' + b.category + '）偏离度历史' + (useS30 ? '（对30Y利差，bp）' : '（bp）');
+    code + '（' + b.category + '）偏离度历史' + (useS30 ? '（对30Y利差，bp）' : '（bp）') + (adj ? ' · 税后口径' : '');
   document.getElementById('histChartWrap').style.display = 'block';
   if (histChart) histChart.destroy();
   histChart = new Chart(document.getElementById('histCanvas'), {
