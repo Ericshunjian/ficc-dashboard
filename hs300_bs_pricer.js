@@ -22,37 +22,36 @@
     if(!a||!b)return NaN;
     return Math.round((Date.parse(`${b}T00:00:00Z`)-Date.parse(`${a}T00:00:00Z`))/86400000);
   }
-  function bsPut(S,K,T,r,q,sigma){
+  function blackPut(F,K,T,r,sigma){
     if(T<=0){
-      const itm=K>S?1:K<S?0:.5;
-      return{price:Math.max(K-S,0),delta:K>S?-1:K<S?0:-.5,gamma:0,vega:0,theta:0,d1:NaN,d2:NaN,pitm:itm};
+      const itm=K>F?1:K<F?0:.5;
+      return{price:Math.max(K-F,0),delta:K>F?-1:K<F?0:-.5,vega:0,d1:NaN,d2:NaN,pitm:itm};
     }
     const root=Math.sqrt(T);
-    const d1=(Math.log(S/K)+(r-q+.5*sigma*sigma)*T)/(sigma*root);
+    const d1=(Math.log(F/K)+.5*sigma*sigma*T)/(sigma*root);
     const d2=d1-sigma*root;
+    const discount=Math.exp(-r*T);
     return{
-      price:K*Math.exp(-r*T)*normalCdf(-d2)-S*Math.exp(-q*T)*normalCdf(-d1),
-      delta:-Math.exp(-q*T)*normalCdf(-d1),
-      gamma:Math.exp(-q*T)*normalPdf(d1)/(S*sigma*root),
-      vega:S*Math.exp(-q*T)*normalPdf(d1)*root/100,
-      theta:(-S*Math.exp(-q*T)*normalPdf(d1)*sigma/(2*root)+q*S*Math.exp(-q*T)*normalCdf(-d1)-r*K*Math.exp(-r*T)*normalCdf(-d2))/365,
+      price:discount*(K*normalCdf(-d2)-F*normalCdf(-d1)),
+      delta:-discount*normalCdf(-d1),
+      vega:discount*F*normalPdf(d1)*root/100,
       d1,d2,pitm:normalCdf(-d2)
     };
   }
-  function probabilityBelow(level,S,T,drift,sigma){
+  function probabilityBelow(level,F,T,sigma){
     if(level<=0)return 0;
-    if(T<=0)return S<level?1:S>level?0:.5;
-    return normalCdf((Math.log(level/S)-(drift-.5*sigma*sigma)*T)/(sigma*Math.sqrt(T)));
+    if(T<=0)return F<level?1:F>level?0:.5;
+    return normalCdf((Math.log(level/F)+.5*sigma*sigma*T)/(sigma*Math.sqrt(T)));
   }
-  function impliedVol(target,S,K,T,r,q){
-    if(!(target>=0&&S>0&&K>0&&T>0))return NaN;
+  function impliedVol(target,F,K,T,r){
+    if(!(target>=0&&F>0&&K>0&&T>0))return NaN;
     let lo=.0001,hi=3;
-    const min=bsPut(S,K,T,r,q,lo).price;
-    const max=bsPut(S,K,T,r,q,hi).price;
+    const min=blackPut(F,K,T,r,lo).price;
+    const max=blackPut(F,K,T,r,hi).price;
     if(target<min-1e-8||target>max+1e-8)return NaN;
     for(let i=0;i<100;i++){
       const mid=(lo+hi)/2;
-      if(bsPut(S,K,T,r,q,mid).price<target)lo=mid;else hi=mid;
+      if(blackPut(F,K,T,r,mid).price<target)lo=mid;else hi=mid;
     }
     return (lo+hi)/2;
   }
@@ -64,10 +63,11 @@
   }
   function inputs(){
     const days=dayCount(raw('today'),raw('expiry'));
-    return{S:val('S'),K:val('K'),premium:val('premium'),mult:val('mult'),days,T:days/365,sigma:val('sigma')/100,r:val('r')/100,q:val('q')/100,kmin:val('kmin'),kmax:val('kmax'),kstep:val('kstep')};
+    const enteredForward=raw('F').trim()===''?NaN:val('F');
+    return{S:val('S'),enteredForward,K:val('K'),premium:val('premium'),mult:val('mult'),days,T:days/365,sigma:val('sigma')/100,r:val('r')/100,q:val('q')/100,kmin:val('kmin'),kmax:val('kmax'),kstep:val('kstep')};
   }
   function valid(p){
-    return p.S>0&&p.K>0&&p.premium>=0&&p.mult>0&&p.days>0&&p.sigma>0&&p.kstep>0&&p.kmax>=p.kmin;
+    return p.S>0&&(!Number.isFinite(p.enteredForward)||p.enteredForward>0)&&p.K>0&&p.premium>=0&&p.mult>0&&p.days>0&&p.sigma>0&&p.kstep>0&&p.kmax>=p.kmin;
   }
 
   function compute(){
@@ -84,31 +84,34 @@
       return;
     }
 
-    const fair=bsPut(p.S,p.K,p.T,p.r,p.q,p.sigma);
-    const marketIv=impliedVol(p.premium,p.S,p.K,p.T,p.r,p.q);
+    const usesMarketForward=Number.isFinite(p.enteredForward);
+    const F=usesMarketForward?p.enteredForward:p.S*Math.exp((p.r-p.q)*p.T);
+    const forwardSource=usesMarketForward?'同到期IF市场远期':'现货、利率和股息率估算远期';
+    const fair=blackPut(F,p.K,p.T,p.r,p.sigma);
+    const marketIv=impliedVol(p.premium,F,p.K,p.T,p.r);
     const ivOk=Number.isFinite(marketIv);
     const breakEven=Math.max(0,p.K-p.premium);
     const priceDiff=p.premium-fair.price;
     const priceDiffPct=fair.price>1e-10?priceDiff/fair.price:NaN;
-    const qDrift=p.r-p.q;
-    const exerciseProb=ivOk?probabilityBelow(p.K,p.S,p.T,qDrift,marketIv):NaN;
-    const lossProb=ivOk?probabilityBelow(breakEven,p.S,p.T,qDrift,marketIv):NaN;
+    const exerciseProb=ivOk?probabilityBelow(p.K,F,p.T,marketIv):NaN;
+    const lossProb=ivOk?probabilityBelow(breakEven,F,p.T,marketIv):NaN;
     const partialProfitProb=ivOk?Math.max(0,exerciseProb-lossProb):NaN;
     const fullPremiumProb=ivOk?Math.max(0,1-exerciseProb):NaN;
     const profitProb=ivOk?Math.max(0,1-lossProb):NaN;
     const maxLoss=Math.max(0,(p.K-p.premium)*p.mult);
     const richer=priceDiff>=0;
-    const comparison=richer?'市场价高于你的 BS 参考价，权利金相对更厚':'市场价低于你的 BS 参考价，权利金相对偏薄';
+    const comparison=richer?'市场价高于你的模型参考价，权利金相对更厚':'市场价低于你的模型参考价，权利金相对偏薄';
 
-    status.textContent=ivOk?'市场IV已由权利金自动反推':'市场权利金超出BS可反推范围';
-    status.className=ivOk?'status':'status bad';
-    byId('contractFormula').innerHTML=`${comparison}：市场价 <b>${fmt(p.premium,2)}点</b>，参考价 <b>${fmt(fair.price,2)}点</b>，相差 <b>${signed(priceDiff)}点（${signedPct(priceDiffPct)}）</b>。这只是相对你输入波动率的模型比较，不等于无风险套利。`;
+    if(!ivOk){status.textContent='权利金超出当前远期口径的可反推范围';status.className='status bad';}
+    else if(usesMarketForward){status.textContent=`使用IF市场远期 F=${fmt(F,2)}`;status.className='status';}
+    else{status.textContent=`未填IF，使用估算远期 F=${fmt(F,2)}`;status.className='status warn';}
+    byId('contractFormula').innerHTML=`当前采用<b>${forwardSource} F=${fmt(F,2)}</b>。${comparison}：市场价 <b>${fmt(p.premium,2)}点</b>，参考价 <b>${fmt(fair.price,2)}点</b>，相差 <b>${signed(priceDiff)}点（${signedPct(priceDiffPct)}）</b>。`;
 
     byId('priceKpis').innerHTML=[
       kpi('市场权利金',`${fmt(p.premium,2)}点`,`${yuan(p.premium*p.mult)} / 张 · 你实际能收到的价格`,'blue'),
-      kpi('BS 参考价',`${fmt(fair.price,2)}点`,`${yuan(fair.price*p.mult)} / 张 · 按参考波动率 ${fmt(p.sigma*100,2)}%`,'orange'),
+      kpi('模型参考价',`${fmt(fair.price,2)}点`,`${yuan(fair.price*p.mult)} / 张 · ${forwardSource}`,'orange'),
       kpi('市场 − 参考价',`${signed(priceDiff)}点`,`${signedPct(priceDiffPct)} · ${richer?'卖方价格更厚':'卖方价格偏薄'}`,richer?'green':'red'),
-      kpi('市场隐含波动率',ivOk?`${fmt(marketIv*100,2)}%`:'无法反推',ivOk?`比参考波动率 ${signed((marketIv-p.sigma)*100,2)} 个波动率点；两者用途不同`:'检查权利金是否低于内在价值或高于理论上限',ivOk?'blue':'red')
+      kpi('市场隐含波动率',ivOk?`${fmt(marketIv*100,2)}%`:'无法反推',ivOk?`比参考波动率 ${signed((marketIv-p.sigma)*100,2)} 个波动率点`:'检查权利金、远期和日期是否同一时点',ivOk?'blue':'red')
     ].join('');
 
     byId('expiryZones').innerHTML=[
@@ -126,15 +129,15 @@
 
     const rows=[];
     for(let K=p.kmin,count=0;K<=p.kmax+1e-9&&count<201;K+=p.kstep,count++){
-      const b=bsPut(p.S,K,p.T,p.r,p.q,p.sigma);
+      const b=blackPut(F,K,p.T,p.r,p.sigma);
       const be=Math.max(0,K-b.price);
-      const rn=probabilityBelow(K,p.S,p.T,qDrift,p.sigma);
-      const loss=probabilityBelow(be,p.S,p.T,qDrift,p.sigma);
-      const ratio=K/p.S-1;
-      const mny=Math.abs(ratio)<=.01?'ATM':K<p.S?'OTM':'ITM';
+      const rn=probabilityBelow(K,F,p.T,p.sigma);
+      const loss=probabilityBelow(be,F,p.T,p.sigma);
+      const ratio=K/F-1;
+      const mny=Math.abs(ratio)<=.01?'ATM':K<F?'OTM':'ITM';
       rows.push({K,b,be,rn,loss,mny});
     }
-    byId('optionRows').innerHTML=rows.map(row=>`<tr data-k="${row.K}" class="${Math.abs(row.K-p.K)<1e-8?'selected':''}"><td>${fmt(row.K,0)}</td><td class="${row.mny==='ITM'?'hit':row.mny==='OTM'?'safe':'orange'}">${row.mny}</td><td><b>${fmt(row.b.price)}</b></td><td>${yuan(row.b.price*p.mult)}</td><td class="neg">${fmt(row.b.delta,3)}</td><td>${fmt(row.b.theta,3)}</td><td>${fmt(row.b.vega,2)}</td><td>${pct(row.rn)}</td><td>${fmt(row.be,2)}</td><td>${pct(row.loss)}</td></tr>`).join('');
+    byId('optionRows').innerHTML=rows.map(row=>`<tr data-k="${row.K}" class="${Math.abs(row.K-p.K)<1e-8?'selected':''}"><td>${fmt(row.K,0)}</td><td class="${row.mny==='ITM'?'hit':row.mny==='OTM'?'safe':'orange'}">${row.mny}</td><td><b>${fmt(row.b.price)}</b></td><td>${yuan(row.b.price*p.mult)}</td><td class="neg">${fmt(row.b.delta,3)}</td><td>${fmt(row.b.vega,2)}</td><td>${pct(row.rn)}</td><td>${fmt(row.be,2)}</td><td>${pct(row.loss)}</td></tr>`).join('');
     byId('optionRows').querySelectorAll('tr').forEach(tr=>tr.addEventListener('click',()=>{byId('K').value=tr.dataset.k;compute();window.scrollTo({top:0,behavior:'smooth'});}));
     lastRows=rows;
     lastMult=p.mult;
@@ -144,7 +147,7 @@
   function renderChart(rows,mult){
     if(!rows.length)return;
     const data={labels:rows.map(row=>row.K),datasets:[
-      {label:'BS参考合约价（元）',data:rows.map(row=>row.b.price*mult),borderColor:colors.blue,yAxisID:'y',pointRadius:0,borderWidth:2},
+      {label:'模型参考合约价（元）',data:rows.map(row=>row.b.price*mult),borderColor:colors.blue,yAxisID:'y',pointRadius:0,borderWidth:2},
       {label:'参考模型：到期实值概率',data:rows.map(row=>row.rn*100),borderColor:colors.orange,yAxisID:'y1',pointRadius:0,borderWidth:2},
       {label:'参考模型：卖方亏损概率',data:rows.map(row=>row.loss*100),borderColor:colors.red,yAxisID:'y1',pointRadius:0,borderWidth:2,borderDash:[5,4]}
     ]};

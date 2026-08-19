@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>沪深300股指期权（IO）· BS定价与概率</title>
+<title>沪深300股指期权（IO）· Put定价与概率</title>
 <script src="vendor/chart.umd.min.js"></script>
 <link rel="stylesheet" href="hs300_tools.css"/>
 <style>
@@ -26,7 +26,7 @@ details summary::-webkit-details-marker{display:none}details summary::before{con
   <span class="nav-brand">沪深300 研究工具</span>
   <a href="hs300_rolling_mdd.html" class="navtab">回撤·滚动MDD</a>
   <a href="hs300_put_extra_dd.html" class="navtab">回撤·卖Put条件分布</a>
-  <a href="hs300_bs_pricer.html" class="navtab">期权·BS定价</a>
+  <a href="hs300_bs_pricer.html" class="navtab">期权·定价</a>
 </nav>
 <script>
 (function(){var pg=location.pathname.split('/').pop();document.querySelectorAll('.navtab').forEach(function(a){if(a.getAttribute('href')===pg)a.classList.add('active');});})();
@@ -34,21 +34,22 @@ details summary::-webkit-details-marker{display:none}details summary::before{con
 <header class="hero"><div><div class="eyebrow">IO Put income tool</div><h1>卖 Put：价格与到期结果</h1><div class="sub">先看市场权利金相对你的参考价厚不厚，再看盈亏平衡点、到期履约概率和卖方亏损概率。</div></div><div class="date-pill">IO · 欧式 · 现金交割</div></header>
 
 <section class="panel">
-  <div class="panel-head"><div><h2>输入这张 Put</h2><div class="panel-desc">市场权利金用来反推市场隐波；参考波动率代表你自己的估值假设。</div></div><div id="bsStatus" class="status"></div></div>
+  <div class="panel-head"><div><h2>输入这张 Put</h2><div class="panel-desc">填同到期IF价格可对齐市场远期；IF只是定价参考，IO标的仍是沪深300指数。</div></div><div id="bsStatus" class="status"></div></div>
   <div class="input-grid compact">
     <div class="input-card"><label>卖出时沪深300指数 S</label><input id="S" type="number" step="1" value="4651.31"><small>指数点位</small></div>
+    <div class="input-card"><label>同到期IF价格 F（推荐）</label><input id="F" type="number" step="0.2" placeholder="例如 IF2609 最新价"><small>留空则用现货、利率和股息率估算</small></div>
     <div class="input-card"><label>行权价 K</label><input id="K" type="number" step="50" value="4400"><small>Put 的履约价格</small></div>
     <div class="input-card"><label>市场权利金 C（点）</label><input id="premium" type="number" step="0.1" value="50"><small>你的卖出价；1点 = 100元/张</small></div>
     <div class="input-card"><label>估值日</label><input id="today" type="date" value="2026-08-07"><small id="Tdisp"></small></div>
     <div class="input-card"><label>到期日</label><input id="expiry" type="date" value="2026-09-18"><small>按自然日 / 365</small></div>
-    <div class="input-card"><label>参考波动率（%）</label><input id="sigma" type="number" step="0.1" value="24.27"><small>用来算你的 BS 参考价，不是市场IV</small></div>
+    <div class="input-card"><label>参考波动率（%）</label><input id="sigma" type="number" step="0.1" value="24.27"><small>用来算模型参考价，不是市场IV</small></div>
   </div>
   <details class="advanced">
     <summary>高级参数：利率、股息率、乘数与行权价梯度</summary>
     <div class="advanced-body">
       <div class="input-grid">
         <div class="input-card"><label>无风险利率 r（%）</label><input id="r" type="number" step="0.1" value="1.7"><small>连续复利年化</small></div>
-        <div class="input-card"><label>连续股息率 q（%）</label><input id="q" type="number" step="0.1" value="2.5"><small>连续复利年化</small></div>
+        <div class="input-card"><label>连续股息率 q（%）</label><input id="q" type="number" step="0.1" value="2.5"><small>仅在IF价格留空时使用</small></div>
         <div class="input-card"><label>合约乘数（元/点）</label><input id="mult" type="number" step="1" value="100"><small>IO 当前为100元/点</small></div>
         <div class="input-card"><label>行权价下限</label><input id="kmin" type="number" step="50" value="4050"><small>仅用于下方梯度</small></div>
         <div class="input-card"><label>行权价上限</label><input id="kmax" type="number" step="50" value="4750"><small>仅用于下方梯度</small></div>
@@ -72,11 +73,11 @@ details summary::-webkit-details-marker{display:none}details summary::before{con
 <details class="analysis">
   <summary>展开行权价梯度、Greeks 与模型细节</summary>
   <div class="analysis-body">
-    <section class="panel"><div class="panel-head"><div><h2>不同行权价的参考价与概率</h2><div class="panel-desc">整条曲线统一使用你输入的参考波动率；实际市场通常有波动率偏斜。</div></div></div><div class="chart-box"><canvas id="priceChart"></canvas></div></section>
+    <section class="panel"><div class="panel-head"><div><h2>不同行权价的参考价与概率</h2><div class="panel-desc">整条曲线统一使用当前远期和参考波动率；实际市场通常有波动率偏斜。</div></div></div><div class="chart-box"><canvas id="priceChart"></canvas></div></section>
     <section class="panel">
       <div class="panel-head"><div><h2>行权价明细</h2><div class="panel-desc">点击一行，可把该行权价带回上方选定合约。</div></div></div>
-      <div class="table-wrap"><table><thead><tr><th>行权价</th><th>虚实值</th><th>BS参考价(点)</th><th>合约价(元)</th><th>Delta</th><th>Theta/日</th><th>Vega/1vol</th><th>参考模型：到期实值</th><th>理论盈亏平衡</th><th>参考模型：卖方亏损</th></tr></thead><tbody id="optionRows"></tbody></table></div>
-      <p class="footnote">BS 假设对数正态、常数波动率/利率/股息率，不含波动率偏度、跳跃、流动性、手续费、保证金和提前平仓。|Delta| 不是严格的履约概率；到期概率使用 d₂。市场隐波由权利金数值反推。</p>
+      <div class="table-wrap"><table><thead><tr><th>行权价</th><th>虚实值</th><th>模型参考价(点)</th><th>合约价(元)</th><th>远期Delta</th><th>Vega/1vol</th><th>参考模型：到期实值</th><th>理论盈亏平衡</th><th>参考模型：卖方亏损</th></tr></thead><tbody id="optionRows"></tbody></table></div>
+      <p class="footnote">采用Black-76远期定价；IF价格留空时，使用 S×exp[(r−q)T] 估算远期。模型假设对数正态、常数波动率和利率，不含偏度、跳跃、流动性、手续费、保证金和提前平仓。|Delta| 不是严格的履约概率；到期概率使用 d₂。</p>
     </section>
   </div>
 </details>
