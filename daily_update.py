@@ -1079,6 +1079,15 @@ def main():
         log.exception(f"曲线偏离度处理失败: {e}")
         ok6 = False
 
+    ok7 = True
+    try:
+        log.info("[7/7] 沪深300 HV20/40/60 波动率数据")
+        import update_hs300_volatility
+        ok7 = update_hs300_volatility.main()
+    except Exception as e:
+        log.warning(f"沪深300波动率更新失败，保留现有数据: {e}")
+        ok7 = False
+
     log.info("=" * 50)
     log.info(f"完成: 预处理={'成功' if ok0 else '失败'}, "
              f"机构行为={'成功' if ok1 else '失败'}, "
@@ -1086,10 +1095,11 @@ def main():
              f"曲线={'成功' if ok3 else '失败'}, "
              f"合并={'成功' if ok4 else '失败'}, "
              f"因子={'成功' if ok5 else '失败'}, "
-             f"偏离度={'成功' if ok6 else '失败'}")
+             f"偏离度={'成功' if ok6 else '失败'}, "
+             f"沪深300波动率={'成功' if ok7 else '保留旧数据'}")
 
     # push 到 GitHub（唯一远程；gitee/gitcode 已于 2026-08-06 废弃，不再同步）
-    if ok1 or ok2 or ok3 or ok5:
+    if ok1 or ok2 or ok3 or ok5 or ok7:
         try:
             log.info("推送数据到远程仓库...")
             git_push_data()
@@ -1133,6 +1143,7 @@ def git_push_data():
         'yield_curve_data.json',
         'factor_data.json',
         'curve_deviation.json',
+        'hs300_volatility_data.json',
     ]
     for f in json_files:
         run_git('add', f)
@@ -1146,6 +1157,11 @@ def git_push_data():
         'factor_dashboard.html',
         'backtest_dashboard.html',
         'bond_curve_deviation.html',
+        'hs300_rolling_mdd.html',
+        'hs300_put_extra_dd.html',
+        'hs300_bs_pricer.html',
+        'hs300_volatility_dist.html',
+        'hs300_volatility_dist.js',
     ]
     for f in html_files:
         if (repo_dir / f).exists():

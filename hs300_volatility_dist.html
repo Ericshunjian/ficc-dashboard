@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>沪深300 · 历史波动率分布</title>
+<script src="vendor/chart.umd.min.js"></script>
+<link rel="stylesheet" href="hs300_tools.css"/>
+<style>
+.distribution-box{height:390px}.series-box{height:310px}
+.legend-note{display:flex;gap:15px;flex-wrap:wrap;color:var(--sub);font-size:11px;margin-top:9px}
+.legend-note span::before{content:'';display:inline-block;width:13px;height:3px;border-radius:2px;background:currentColor;margin-right:6px;vertical-align:middle}
+.legend-note .hist{color:var(--blue)}.legend-note .kde{color:var(--green)}.legend-note .normal{color:var(--orange)}
+@media(max-width:850px){.distribution-box{height:330px}.series-box{height:270px}}
+</style>
+</head>
+<body><div class="wrap">
+<nav class="topnav">
+  <span class="nav-brand">沪深300 研究工具</span>
+  <a href="hs300_rolling_mdd.html" class="navtab">回撤·滚动MDD</a>
+  <a href="hs300_put_extra_dd.html" class="navtab">回撤·卖Put条件分布</a>
+  <a href="hs300_volatility_dist.html" class="navtab active">波动率·分布</a>
+  <a href="hs300_bs_pricer.html" class="navtab">期权·定价</a>
+</nav>
+
+<header class="hero"><div><div class="eyebrow">CSI 300 realized volatility</div><h1>沪深300历史波动率分布</h1><div class="sub">每日滚动计算HV20、HV40和HV60，查看波动率历史形状、当前分位以及不同时期的状态变化。</div></div><div class="date-pill" id="latestDate">数据加载中</div></header>
+
+<section class="panel">
+  <div class="panel-head"><div><h2>选择观察口径</h2><div class="panel-desc">年化基准√246；起止日期筛选的是滚动HV观测值。</div></div><div id="status" class="status" aria-live="polite"></div></div>
+  <div class="input-grid compact">
+    <div class="input-card"><label for="horizon">波动率窗口</label><select id="horizon"><option value="20">HV20</option><option value="40">HV40</option><option value="60">HV60</option></select><small>最近N个交易日收益率标准差</small></div>
+    <div class="input-card"><label for="startDate">统计开始日期</label><input id="startDate" type="date" value="2016-01-01"><small>可观察近年波动率是否系统性变化</small></div>
+    <div class="input-card"><label for="endDate">统计结束日期</label><input id="endDate" type="date"><small>默认使用最新收盘日</small></div>
+    <div class="input-card"><label for="atmIv">当前ATM IV（%，可选）</label><input id="atmIv" type="number" step="0.01" min="0" placeholder="例如 18.00"><small>在分布图上增加参考线</small></div>
+    <div class="input-card"><label for="putIv">目标Put IV（%，可选）</label><input id="putIv" type="number" step="0.01" min="0" placeholder="例如 20.32"><small>观察虚值Put IV所处分位</small></div>
+  </div>
+  <div class="formula" id="selectionSummary">正在读取沪深300数据……</div>
+</section>
+
+<div class="kpis" id="statsKpis" aria-live="polite"></div>
+
+<section class="panel">
+  <div class="panel-head"><div><h2 id="distributionTitle">HV20分布</h2><div class="panel-desc">柱形为历史密度，实线为KDE平滑密度，虚线为同均值、同标准差的正态分布对照。</div></div></div>
+  <div class="chart-box distribution-box"><canvas id="distributionChart" role="img" aria-label="沪深300历史波动率分布图"></canvas></div>
+  <div class="legend-note"><span class="hist">历史直方图</span><span class="kde">KDE实际形状</span><span class="normal">正态分布对照</span></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><div><h2 id="seriesTitle">HV20时间序列</h2><div class="panel-desc">观察波动率聚集、冲高和均值回归；水平线为所选区间的中位数与P90。</div></div></div>
+  <div class="chart-box series-box"><canvas id="seriesChart" role="img" aria-label="沪深300历史波动率时间序列图"></canvas></div>
+</section>
+
+<div class="callout"><strong>如何理解</strong><span>滚动窗口每天都会与前一天共享大部分样本，因此这些观测并不独立。分布适合描述“历史上市场处于哪些波动率状态”，不应直接当作独立事件概率。历史HV也不包含虚值Put的偏斜和尾部保险溢价。</span></div>
+<p class="footnote">数据：沪深300指数（000300.SH）日收盘价。HV使用日对数收益率滚动标准差并乘以√246；KDE为高斯核密度估计，正态曲线仅作形状比较。</p>
+
+<script src="hs300_volatility_dist.js"></script>
+</div></body>
+</html>
