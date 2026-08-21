@@ -1,7 +1,7 @@
 (() => {
   'use strict';
-  const colors={sub:'#91a5af',grid:'#20313d',blue:'#4dc4ff',red:'#ff6b7a',orange:'#ffb454'};
-  let chart,timer,lastRows=[],lastMult=100;
+  const colors={sub:'#91a5af',grid:'#20313d',blue:'#4dc4ff',red:'#ff6b7a',orange:'#ffb454',green:'#65d68a'};
+  let chart,thetaChart,timer,lastRows=[],lastMult=100;
   const byId=id=>document.getElementById(id);
   const raw=id=>byId(id).value;
   const val=id=>Number(raw(id));
@@ -25,16 +25,18 @@
   function blackPut(F,K,T,r,sigma){
     if(T<=0){
       const itm=K>F?1:K<F?0:.5;
-      return{price:Math.max(K-F,0),delta:K>F?-1:K<F?0:-.5,vega:0,d1:NaN,d2:NaN,pitm:itm};
+      return{price:Math.max(K-F,0),delta:K>F?-1:K<F?0:-.5,vega:0,theta:0,d1:NaN,d2:NaN,pitm:itm};
     }
     const root=Math.sqrt(T);
     const d1=(Math.log(F/K)+.5*sigma*sigma*T)/(sigma*root);
     const d2=d1-sigma*root;
     const discount=Math.exp(-r*T);
+    const price=discount*(K*normalCdf(-d2)-F*normalCdf(-d1));
     return{
-      price:discount*(K*normalCdf(-d2)-F*normalCdf(-d1)),
+      price,
       delta:-discount*normalCdf(-d1),
       vega:discount*F*normalPdf(d1)*root/100,
+      theta:(r*price-discount*F*normalPdf(d1)*sigma/(2*root))/365,
       d1,d2,pitm:normalCdf(-d2)
     };
   }
@@ -78,8 +80,10 @@
       status.textContent='请检查价格、日期与参数';
       status.className='status bad';
       byId('priceKpis').innerHTML='';
+      byId('thetaKpis').innerHTML='';
       byId('riskKpis').innerHTML='';
       byId('expiryZones').innerHTML='';
+      if(thetaChart){thetaChart.destroy();thetaChart=null;}
       byId('contractFormula').textContent='到期日应晚于估值日，指数、行权价、参考波动率和乘数应大于0。';
       return;
     }
@@ -113,6 +117,19 @@
       kpi('市场 − 参考价',`${signed(priceDiff)}点`,`${signedPct(priceDiffPct)} · ${richer?'卖方价格更厚':'卖方价格偏薄'}`,richer?'green':'red'),
       kpi('市场隐含波动率',ivOk?`${fmt(marketIv*100,2)}%`:'无法反推',ivOk?`比参考波动率 ${signed((marketIv-p.sigma)*100,2)} 个波动率点`:'检查权利金、远期和日期是否同一时点',ivOk?'blue':'red')
     ].join('');
+
+    const thetaSigma=ivOk?marketIv:p.sigma;
+    const thetaNow=blackPut(F,p.K,p.T,p.r,thetaSigma);
+    const thetaNext=blackPut(F,p.K,Math.max(0,(p.days-1)/365),p.r,thetaSigma);
+    const exactDecay=thetaNow.price-thetaNext.price;
+    const sellerDaily=-thetaNow.theta*p.mult;
+    byId('thetaKpis').innerHTML=[
+      kpi('买方 Theta',`${fmt(thetaNow.theta,2)}点/日`,`自然日口径；卖方符号相反`,'red'),
+      kpi('卖方理论日收入',yuan(sellerDaily),`每手；两手约 ${yuan(sellerDaily*2)}`,'green'),
+      kpi('明日理论价',`${fmt(thetaNext.price,2)}点`,`固定F/IV，有限差分减少 ${fmt(exactDecay,2)}点`,'blue'),
+      kpi('Theta 采用的 IV',`${fmt(thetaSigma*100,2)}%`,ivOk?'由当前市场权利金反推':'市场IV无效，暂用参考波动率','orange')
+    ].join('');
+    renderThetaChart(p,F,thetaSigma);
 
     byId('expiryZones').innerHTML=[
       zone('loss',`Sₜ < ${fmt(breakEven,2)}`,'卖方净亏损',lossProb),
@@ -153,6 +170,23 @@
     ]};
     const options={responsive:true,maintainAspectRatio:false,animation:{duration:180},interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:colors.sub}}},scales:{x:{ticks:{color:colors.sub},grid:{color:colors.grid},title:{display:true,text:'行权价 K',color:colors.sub}},y:{position:'left',ticks:{color:colors.sub},grid:{color:colors.grid},title:{display:true,text:'合约价（元）',color:colors.sub}},y1:{position:'right',min:0,max:100,ticks:{color:colors.sub,callback:v=>`${v}%`},grid:{drawOnChartArea:false},title:{display:true,text:'到期概率',color:colors.sub}}}};
     if(!chart)chart=new Chart(byId('priceChart'),{type:'line',data,options});else{chart.data=data;chart.update('none');chart.resize();}
+  }
+
+  function renderThetaChart(p,F,sigma){
+    const labels=[],income=[],prices=[];
+    for(let elapsed=0;elapsed<p.days;elapsed++){
+      const remaining=p.days-elapsed;
+      const b=blackPut(F,p.K,remaining/365,p.r,sigma);
+      labels.push(`${remaining}天`);
+      income.push(-b.theta*p.mult);
+      prices.push(b.price);
+    }
+    const data={labels,datasets:[
+      {label:'卖方理论日收入（元/手）',data:income,borderColor:colors.green,backgroundColor:'rgba(101,214,138,.10)',fill:true,yAxisID:'y',pointRadius:0,borderWidth:2},
+      {label:'期权理论价（点）',data:prices,borderColor:colors.orange,yAxisID:'y1',pointRadius:0,borderWidth:2,borderDash:[5,4]}
+    ]};
+    const options={responsive:true,maintainAspectRatio:false,animation:{duration:180},interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:colors.sub}},tooltip:{callbacks:{title:items=>`剩余 ${items[0].label}`}}},scales:{x:{ticks:{color:colors.sub,maxTicksLimit:10},grid:{color:colors.grid},title:{display:true,text:'时间向右推进：当前 → 到期前1天',color:colors.sub}},y:{position:'left',ticks:{color:colors.sub,callback:v=>`¥${v}`},grid:{color:colors.grid},title:{display:true,text:'卖方日Theta收入（元/手）',color:colors.sub}},y1:{position:'right',ticks:{color:colors.sub},grid:{drawOnChartArea:false},title:{display:true,text:'期权理论价（点）',color:colors.sub}}}};
+    if(!thetaChart)thetaChart=new Chart(byId('thetaChart'),{type:'line',data,options});else{thetaChart.data=data;thetaChart.update('none');thetaChart.resize();}
   }
 
   document.querySelectorAll('.hv-btn').forEach(button=>button.addEventListener('click',()=>{byId('sigma').value=button.dataset.hv;compute();}));

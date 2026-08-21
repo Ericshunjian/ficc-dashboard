@@ -18,7 +18,11 @@ details summary{cursor:pointer;padding:11px 13px;color:var(--sub);font-size:12px
 details summary::-webkit-details-marker{display:none}details summary::before{content:'＋';color:var(--blue);margin-right:7px}details[open] summary::before{content:'−'}
 .advanced-body{padding:0 12px 12px}.analysis-body{padding:0 12px 12px}.analysis-body .panel{box-shadow:none;margin-top:0}
 .plain-note{font-size:11px;color:#78909a;margin:9px 0 0;line-height:1.65}
-@media(max-width:850px){.expiry-zones{grid-template-columns:1fr}.expiry-zone{display:grid;grid-template-columns:1fr auto;align-items:center}.expiry-zone .prob{margin:0}.decision-title{margin-top:2px}}
+.theta-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(240px,.7fr);gap:14px;align-items:stretch}
+.theta-layout>*{min-width:0}
+.theta-factors{display:grid;gap:8px}.theta-factor{background:#09141c;border:1px solid var(--line);border-radius:11px;padding:10px 12px;font-size:11px;color:var(--sub)}
+.theta-factor b{display:block;color:var(--txt);font-size:12px;margin-bottom:3px}
+@media(max-width:850px){.expiry-zones{grid-template-columns:1fr}.expiry-zone{display:grid;grid-template-columns:1fr auto;align-items:center}.expiry-zone .prob{margin:0}.decision-title{margin-top:2px}.theta-layout{grid-template-columns:minmax(0,1fr)}}
 </style>
 </head>
 <body><div class="wrap">
@@ -64,7 +68,22 @@ details summary::-webkit-details-marker{display:none}details summary::before{con
 <div class="result-group"><div class="decision-title">① 市场价相对你的参考价</div><div class="kpis" id="priceKpis"></div></div>
 
 <section class="panel">
-  <div class="panel-head"><div><h2>② 到期结果分成三段</h2><div class="panel-desc">基于市场权利金反推的隐含波动率；概率为风险中性定价概率，不是历史胜率。</div></div></div>
+  <div class="panel-head"><div><h2>② Theta：每天理论收租</h2><div class="panel-desc">固定IF价格和IV，只让剩余期限减少；Theta按自然日计算。</div></div></div>
+  <div class="kpis" id="thetaKpis"></div>
+  <div class="theta-layout">
+    <div class="chart-box"><canvas id="thetaChart"></canvas></div>
+    <div class="theta-factors">
+      <div class="theta-factor"><b>剩余期限</b>临近到期且接近平值时，|Theta|通常加快；深度虚值时则可能逐渐归零。</div>
+      <div class="theta-factor"><b>虚实值 F / K</b>平值附近时间价值最大，Theta绝对值通常也最大。</div>
+      <div class="theta-factor"><b>隐含波动率 IV</b>IV越高，时间价值一般越厚，Theta曲线也会变化。</div>
+      <div class="theta-factor"><b>利率与合约乘数</b>利率影响折现；乘数不改变Theta点数，只把点数换算成每手人民币。</div>
+    </div>
+  </div>
+  <div class="callout"><strong>不是实际日收益</strong><span>图中排除了IF涨跌和IV变化。实际卖方盈亏还会受到Delta、Gamma和Vega影响；Theta只是“其他条件不变”的时间损耗。</span></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><div><h2>③ 到期结果分成三段</h2><div class="panel-desc">基于市场权利金反推的隐含波动率；概率为风险中性定价概率，不是历史胜率。</div></div></div>
   <div class="expiry-zones" id="expiryZones"></div>
   <div class="kpis" id="riskKpis"></div>
   <div class="callout"><strong>履约不等于亏损</strong><span>到期指数低于 K，Put 有内在价值并现金结算；但只要指数不低于 <b>K − 权利金</b>，卖方计入权利金后仍然盈利。页面暂不计手续费、资金利息与提前平仓。</span></div>
