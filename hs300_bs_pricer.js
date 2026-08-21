@@ -156,8 +156,8 @@
     const spotAdjustedDelta=thetaNow.delta*F/p.S;
     byId('thetaKpis').innerHTML=[
       kpi('买方 Theta（Wind口径）',`${fmt(thetaNow.theta,4)}点/交易日`,`固定IF和IV；卖方符号相反`,'red'),
-      kpi('卖方理论日收入',yuan(sellerDaily),`每手；下一交易日理论价 ${fmt(thetaNext.price,2)}点`,'green'),
-      kpi('一日有限差分',`${fmt(exactDecay,4)}点`,`比瞬时Theta更接近整日理论损耗`,'blue'),
+      kpi('卖方理论日收入',yuan(sellerDaily),`每手；按交易日口径，不是自然日固定收入`,'green'),
+      kpi('一日有限差分',`${fmt(exactDecay,4)}点`,`模型价 ${fmt(thetaNow.price,2)} → ${fmt(thetaNext.price,2)}点`,'blue'),
       kpi('采用的 IV',`${fmt(thetaSigma*100,2)}%`,`现货折算Delta ${fmt(spotAdjustedDelta,4)} · Vega ${fmt(thetaNow.vega,4)}`,'orange')
     ].join('');
     renderThetaChart(p,F,thetaSigma);
