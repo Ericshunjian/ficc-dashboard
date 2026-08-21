@@ -40,6 +40,25 @@
       d1,d2,pitm:normalCdf(-d2)
     };
   }
+  function spotPut(S,K,T,r,q,sigma){
+    if(T<=0){
+      const itm=K>S?1:K<S?0:.5;
+      return{price:Math.max(K-S,0),delta:K>S?-1:K<S?0:-.5,vega:0,theta:0,d1:NaN,d2:NaN,pitm:itm};
+    }
+    const root=Math.sqrt(T);
+    const d1=(Math.log(S/K)+(r-q+.5*sigma*sigma)*T)/(sigma*root);
+    const d2=d1-sigma*root;
+    const discountR=Math.exp(-r*T);
+    const discountQ=Math.exp(-q*T);
+    const price=K*discountR*normalCdf(-d2)-S*discountQ*normalCdf(-d1);
+    return{
+      price,
+      delta:-discountQ*normalCdf(-d1),
+      vega:S*discountQ*normalPdf(d1)*root/100,
+      theta:(-S*discountQ*normalPdf(d1)*sigma/(2*root)+r*K*discountR*normalCdf(-d2)-q*S*discountQ*normalCdf(-d1))/365,
+      d1,d2,pitm:normalCdf(-d2)
+    };
+  }
   function probabilityBelow(level,F,T,sigma){
     if(level<=0)return 0;
     if(T<=0)return F<level?1:F>level?0:.5;
@@ -57,6 +76,16 @@
     }
     return (lo+hi)/2;
   }
+  function impliedCarry(target,S,K,T,r,sigma){
+    if(!(target>=0&&S>0&&K>0&&T>0&&sigma>0))return NaN;
+    let lo=-1,hi=3;
+    if(target<spotPut(S,K,T,r,lo,sigma).price-1e-8||target>spotPut(S,K,T,r,hi,sigma).price+1e-8)return NaN;
+    for(let i=0;i<100;i++){
+      const mid=(lo+hi)/2;
+      if(spotPut(S,K,T,r,mid,sigma).price<target)lo=mid;else hi=mid;
+    }
+    return (lo+hi)/2;
+  }
   function kpi(label,value,detail,cls='blue'){
     return `<div class="kpi"><div class="l">${label}</div><div class="v ${cls}">${value}</div><div class="d">${detail}</div></div>`;
   }
@@ -66,10 +95,11 @@
   function inputs(){
     const days=dayCount(raw('today'),raw('expiry'));
     const enteredForward=raw('F').trim()===''?NaN:val('F');
-    return{S:val('S'),enteredForward,K:val('K'),premium:val('premium'),mult:val('mult'),days,T:days/365,sigma:val('sigma')/100,r:val('r')/100,q:val('q')/100,kmin:val('kmin'),kmax:val('kmax'),kstep:val('kstep')};
+    const enteredMarketIv=raw('marketIv').trim()===''?NaN:val('marketIv')/100;
+    return{S:val('S'),enteredForward,enteredMarketIv,K:val('K'),premium:val('premium'),mult:val('mult'),days,T:days/365,sigma:val('sigma')/100,r:val('r')/100,q:val('q')/100,kmin:val('kmin'),kmax:val('kmax'),kstep:val('kstep')};
   }
   function valid(p){
-    return p.S>0&&(!Number.isFinite(p.enteredForward)||p.enteredForward>0)&&p.K>0&&p.premium>=0&&p.mult>0&&p.days>0&&p.sigma>0&&p.kstep>0&&p.kmax>=p.kmin;
+    return p.S>0&&(!Number.isFinite(p.enteredForward)||p.enteredForward>0)&&(!Number.isFinite(p.enteredMarketIv)||p.enteredMarketIv>0)&&p.K>0&&p.premium>=0&&p.mult>0&&p.days>0&&p.sigma>0&&p.kstep>0&&p.kmax>=p.kmin;
   }
 
   function compute(){
@@ -92,13 +122,13 @@
     const F=usesMarketForward?p.enteredForward:p.S*Math.exp((p.r-p.q)*p.T);
     const forwardSource=usesMarketForward?'同到期IF市场远期':'现货、利率和股息率估算远期';
     const fair=blackPut(F,p.K,p.T,p.r,p.sigma);
-    const marketIv=impliedVol(p.premium,F,p.K,p.T,p.r);
-    const ivOk=Number.isFinite(marketIv);
+    const forwardIv=impliedVol(p.premium,F,p.K,p.T,p.r);
+    const ivOk=Number.isFinite(forwardIv);
     const breakEven=Math.max(0,p.K-p.premium);
     const priceDiff=p.premium-fair.price;
     const priceDiffPct=fair.price>1e-10?priceDiff/fair.price:NaN;
-    const exerciseProb=ivOk?probabilityBelow(p.K,F,p.T,marketIv):NaN;
-    const lossProb=ivOk?probabilityBelow(breakEven,F,p.T,marketIv):NaN;
+    const exerciseProb=ivOk?probabilityBelow(p.K,F,p.T,forwardIv):NaN;
+    const lossProb=ivOk?probabilityBelow(breakEven,F,p.T,forwardIv):NaN;
     const partialProfitProb=ivOk?Math.max(0,exerciseProb-lossProb):NaN;
     const fullPremiumProb=ivOk?Math.max(0,1-exerciseProb):NaN;
     const profitProb=ivOk?Math.max(0,1-lossProb):NaN;
@@ -115,21 +145,27 @@
       kpi('市场权利金',`${fmt(p.premium,2)}点`,`${yuan(p.premium*p.mult)} / 张 · 你实际能收到的价格`,'blue'),
       kpi('模型参考价',`${fmt(fair.price,2)}点`,`${yuan(fair.price*p.mult)} / 张 · ${forwardSource}`,'orange'),
       kpi('市场 − 参考价',`${signed(priceDiff)}点`,`${signedPct(priceDiffPct)} · ${richer?'卖方价格更厚':'卖方价格偏薄'}`,richer?'green':'red'),
-      kpi('市场隐含波动率',ivOk?`${fmt(marketIv*100,2)}%`:'无法反推',ivOk?`比参考波动率 ${signed((marketIv-p.sigma)*100,2)} 个波动率点`:'检查权利金、远期和日期是否同一时点',ivOk?'blue':'red')
+      kpi('IF口径反推IV',ivOk?`${fmt(forwardIv*100,2)}%`:'无法反推',ivOk?`比参考波动率 ${signed((forwardIv-p.sigma)*100,2)} 个波动率点`:'检查权利金、远期和日期是否同一时点',ivOk?'blue':'red')
     ].join('');
 
-    const thetaSigma=ivOk?marketIv:p.sigma;
-    const thetaNow=blackPut(F,p.K,p.T,p.r,thetaSigma);
-    const thetaNext=blackPut(F,p.K,Math.max(0,(p.days-1)/365),p.r,thetaSigma);
+    const manualIvOk=Number.isFinite(p.enteredMarketIv);
+    const thetaSigma=manualIvOk?p.enteredMarketIv:ivOk?forwardIv:p.sigma;
+    const marketImpliedQ=manualIvOk?impliedCarry(p.premium,p.S,p.K,p.T,p.r,thetaSigma):NaN;
+    const forwardImpliedQ=p.r-Math.log(F/p.S)/p.T;
+    const thetaQ=Number.isFinite(marketImpliedQ)?marketImpliedQ:forwardImpliedQ;
+    const thetaNow=spotPut(p.S,p.K,p.T,p.r,thetaQ,thetaSigma);
+    const thetaNext=spotPut(p.S,p.K,Math.max(0,(p.days-1)/365),p.r,thetaQ,thetaSigma);
+    const fixedForwardTheta=blackPut(F,p.K,p.T,p.r,thetaSigma).theta;
     const exactDecay=thetaNow.price-thetaNext.price;
     const sellerDaily=-thetaNow.theta*p.mult;
+    const thetaBasis=Number.isFinite(marketImpliedQ)?`成交价+成交IV反推分红/持有收益q ${(thetaQ*100).toFixed(2)}%`:`由IF反推分红/持有收益q ${(thetaQ*100).toFixed(2)}%`;
     byId('thetaKpis').innerHTML=[
-      kpi('买方 Theta',`${fmt(thetaNow.theta,2)}点/日`,`自然日口径；卖方符号相反`,'red'),
-      kpi('卖方理论日收入',yuan(sellerDaily),`每手；两手约 ${yuan(sellerDaily*2)}`,'green'),
-      kpi('明日理论价',`${fmt(thetaNext.price,2)}点`,`固定F/IV，有限差分减少 ${fmt(exactDecay,2)}点`,'blue'),
-      kpi('Theta 采用的 IV',`${fmt(thetaSigma*100,2)}%`,ivOk?'由当前市场权利金反推':'市场IV无效，暂用参考波动率','orange')
+      kpi('买方 Theta（Wind近似）',`${fmt(thetaNow.theta,2)}点/日`,`Wind一位小数约 ${fmt(thetaNow.theta,1)}；${thetaBasis}`,'red'),
+      kpi('卖方理论日收入',yuan(sellerDaily),`每手；明日理论价 ${fmt(thetaNext.price,2)}点，有限差分 ${fmt(exactDecay,2)}点`,'green'),
+      kpi('固定IF Theta',`${fmt(fixedForwardTheta,2)}点/日`,`原网页Black-76口径，供对照`,'blue'),
+      kpi('Theta 采用的 IV',`${fmt(thetaSigma*100,2)}%`,manualIvOk?'采用手工输入的市场成交IV':ivOk?'由当前市场权利金反推':'暂用参考波动率','orange')
     ].join('');
-    renderThetaChart(p,F,thetaSigma);
+    renderThetaChart(p,thetaQ,thetaSigma);
 
     byId('expiryZones').innerHTML=[
       zone('loss',`Sₜ < ${fmt(breakEven,2)}`,'卖方净亏损',lossProb),
@@ -172,11 +208,11 @@
     if(!chart)chart=new Chart(byId('priceChart'),{type:'line',data,options});else{chart.data=data;chart.update('none');chart.resize();}
   }
 
-  function renderThetaChart(p,F,sigma){
+  function renderThetaChart(p,q,sigma){
     const labels=[],income=[],prices=[];
     for(let elapsed=0;elapsed<p.days;elapsed++){
       const remaining=p.days-elapsed;
-      const b=blackPut(F,p.K,remaining/365,p.r,sigma);
+      const b=spotPut(p.S,p.K,remaining/365,p.r,q,sigma);
       labels.push(`${remaining}天`);
       income.push(-b.theta*p.mult);
       prices.push(b.price);
@@ -189,6 +225,11 @@
     if(!thetaChart)thetaChart=new Chart(byId('thetaChart'),{type:'line',data,options});else{thetaChart.data=data;thetaChart.update('none');thetaChart.resize();}
   }
 
+  function localIsoDate(){
+    const now=new Date();
+    return new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  }
+  byId('today').value=localIsoDate();
   document.querySelectorAll('.hv-btn').forEach(button=>button.addEventListener('click',()=>{byId('sigma').value=button.dataset.hv;compute();}));
   document.querySelectorAll('input').forEach(input=>input.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(compute,100);}));
   document.querySelector('details.analysis').addEventListener('toggle',event=>{if(event.currentTarget.open)requestAnimationFrame(()=>renderChart(lastRows,lastMult));});
