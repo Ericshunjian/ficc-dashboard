@@ -22,7 +22,7 @@
     if(!a||!b)return NaN;
     return Math.round((Date.parse(`${b}T00:00:00Z`)-Date.parse(`${a}T00:00:00Z`))/86400000);
   }
-  function blackPut(F,K,T,r,sigma){
+  function blackPut(F,K,T,r,sigma,thetaBasis=246){
     if(T<=0){
       const itm=K>F?1:K<F?0:.5;
       return{price:Math.max(K-F,0),delta:K>F?-1:K<F?0:-.5,vega:0,theta:0,d1:NaN,d2:NaN,pitm:itm};
@@ -36,26 +36,7 @@
       price,
       delta:-discount*normalCdf(-d1),
       vega:discount*F*normalPdf(d1)*root/100,
-      theta:(r*price-discount*F*normalPdf(d1)*sigma/(2*root))/365,
-      d1,d2,pitm:normalCdf(-d2)
-    };
-  }
-  function spotPut(S,K,T,r,q,sigma){
-    if(T<=0){
-      const itm=K>S?1:K<S?0:.5;
-      return{price:Math.max(K-S,0),delta:K>S?-1:K<S?0:-.5,vega:0,theta:0,d1:NaN,d2:NaN,pitm:itm};
-    }
-    const root=Math.sqrt(T);
-    const d1=(Math.log(S/K)+(r-q+.5*sigma*sigma)*T)/(sigma*root);
-    const d2=d1-sigma*root;
-    const discountR=Math.exp(-r*T);
-    const discountQ=Math.exp(-q*T);
-    const price=K*discountR*normalCdf(-d2)-S*discountQ*normalCdf(-d1);
-    return{
-      price,
-      delta:-discountQ*normalCdf(-d1),
-      vega:S*discountQ*normalPdf(d1)*root/100,
-      theta:(-S*discountQ*normalPdf(d1)*sigma/(2*root)+r*K*discountR*normalCdf(-d2)-q*S*discountQ*normalCdf(-d1))/365,
+      theta:(r*price-discount*F*normalPdf(d1)*sigma/(2*root))/thetaBasis,
       d1,d2,pitm:normalCdf(-d2)
     };
   }
@@ -76,15 +57,17 @@
     }
     return (lo+hi)/2;
   }
-  function impliedCarry(target,S,K,T,r,sigma){
-    if(!(target>=0&&S>0&&K>0&&T>0&&sigma>0))return NaN;
-    let lo=-1,hi=3;
-    if(target<spotPut(S,K,T,r,lo,sigma).price-1e-8||target>spotPut(S,K,T,r,hi,sigma).price+1e-8)return NaN;
-    for(let i=0;i<100;i++){
-      const mid=(lo+hi)/2;
-      if(spotPut(S,K,T,r,mid,sigma).price<target)lo=mid;else hi=mid;
+  function businessDayCount(a,b){
+    if(!a||!b)return NaN;
+    const start=new Date(`${a}T00:00:00Z`);
+    const end=new Date(`${b}T00:00:00Z`);
+    if(!(end>start))return NaN;
+    let count=0;
+    for(let d=new Date(start.getTime()+86400000);d<=end;d=new Date(d.getTime()+86400000)){
+      const weekday=d.getUTCDay();
+      if(weekday!==0&&weekday!==6)count++;
     }
-    return (lo+hi)/2;
+    return count;
   }
   function kpi(label,value,detail,cls='blue'){
     return `<div class="kpi"><div class="l">${label}</div><div class="v ${cls}">${value}</div><div class="d">${detail}</div></div>`;
@@ -93,21 +76,25 @@
     return `<div class="expiry-zone ${cls}"><div><div class="range">${range}</div><div class="meaning">${meaning}</div></div><div class="prob ${cls==='loss'?'red':cls==='partial'?'orange':'green'}">${pct(probability)}</div></div>`;
   }
   function inputs(){
-    const days=dayCount(raw('today'),raw('expiry'));
+    const naturalDays=dayCount(raw('today'),raw('expiry'));
+    const autoTradingDays=businessDayCount(raw('today'),raw('expiry'));
+    const tradingDaysInput=raw('tradingDays').trim();
+    const tradingDays=tradingDaysInput===''?autoTradingDays:Number(tradingDaysInput);
+    const tradingBasis=val('tradingBasis');
     const enteredForward=raw('F').trim()===''?NaN:val('F');
     const enteredMarketIv=raw('marketIv').trim()===''?NaN:val('marketIv')/100;
     const sigmaInput=raw('sigma').trim();
     const sigma=sigmaInput===''||Number(sigmaInput)===0?NaN:Number(sigmaInput)/100;
-    return{S:val('S'),enteredForward,enteredMarketIv,K:val('K'),premium:val('premium'),mult:val('mult'),days,T:days/365,sigma,r:val('r')/100,q:val('q')/100,kmin:val('kmin'),kmax:val('kmax'),kstep:val('kstep')};
+    return{S:val('S'),enteredForward,enteredMarketIv,K:val('K'),premium:val('premium'),mult:val('mult'),naturalDays,tradingDays,tradingBasis,T:tradingDays/tradingBasis,sigma,r:val('r')/100,q:val('q')/100,kmin:val('kmin'),kmax:val('kmax'),kstep:val('kstep')};
   }
   function valid(p){
-    return p.S>0&&(!Number.isFinite(p.enteredForward)||p.enteredForward>0)&&(!Number.isFinite(p.enteredMarketIv)||p.enteredMarketIv>0)&&(!Number.isFinite(p.sigma)||p.sigma>0)&&p.K>0&&p.premium>=0&&p.mult>0&&p.days>0&&p.kstep>0&&p.kmax>=p.kmin;
+    return p.S>0&&(!Number.isFinite(p.enteredForward)||p.enteredForward>0)&&(!Number.isFinite(p.enteredMarketIv)||p.enteredMarketIv>0)&&(!Number.isFinite(p.sigma)||p.sigma>0)&&p.K>0&&p.premium>=0&&p.mult>0&&p.naturalDays>0&&p.tradingDays>0&&p.tradingBasis>0&&p.kstep>0&&p.kmax>=p.kmin;
   }
 
   function compute(){
     const p=inputs();
     const status=byId('bsStatus');
-    byId('Tdisp').textContent=Number.isFinite(p.days)?`${p.days}个自然日，T=${fmt(p.T,4)}`:'日期无效';
+    byId('Tdisp').textContent=Number.isFinite(p.tradingDays)?`${p.naturalDays}个自然日 / ${fmt(p.tradingDays,1)}个交易日，T=${fmt(p.T,4)}`:'日期无效';
     if(!valid(p)){
       status.textContent='请检查价格、日期与参数';
       status.className='status bad';
@@ -126,7 +113,7 @@
     const forwardIv=impliedVol(p.premium,F,p.K,p.T,p.r);
     const ivOk=Number.isFinite(forwardIv);
     const hasReferenceSigma=Number.isFinite(p.sigma);
-    const fair=hasReferenceSigma?blackPut(F,p.K,p.T,p.r,p.sigma):null;
+    const fair=hasReferenceSigma?blackPut(F,p.K,p.T,p.r,p.sigma,p.tradingBasis):null;
     const breakEven=Math.max(0,p.K-p.premium);
     const priceDiff=hasReferenceSigma?p.premium-fair.price:NaN;
     const priceDiffPct=hasReferenceSigma&&fair.price>1e-10?priceDiff/fair.price:NaN;
@@ -162,22 +149,18 @@
 
     const manualIvOk=Number.isFinite(p.enteredMarketIv);
     const thetaSigma=manualIvOk?p.enteredMarketIv:ivOk?forwardIv:p.sigma;
-    const marketImpliedQ=manualIvOk?impliedCarry(p.premium,p.S,p.K,p.T,p.r,thetaSigma):NaN;
-    const forwardImpliedQ=p.r-Math.log(F/p.S)/p.T;
-    const thetaQ=Number.isFinite(marketImpliedQ)?marketImpliedQ:forwardImpliedQ;
-    const thetaNow=spotPut(p.S,p.K,p.T,p.r,thetaQ,thetaSigma);
-    const thetaNext=spotPut(p.S,p.K,Math.max(0,(p.days-1)/365),p.r,thetaQ,thetaSigma);
-    const fixedForwardTheta=blackPut(F,p.K,p.T,p.r,thetaSigma).theta;
+    const thetaNow=blackPut(F,p.K,p.T,p.r,thetaSigma,p.tradingBasis);
+    const thetaNext=blackPut(F,p.K,Math.max(0,(p.tradingDays-1)/p.tradingBasis),p.r,thetaSigma,p.tradingBasis);
     const exactDecay=thetaNow.price-thetaNext.price;
     const sellerDaily=-thetaNow.theta*p.mult;
-    const thetaBasis=Number.isFinite(marketImpliedQ)?`成交价+成交IV反推分红/持有收益q ${(thetaQ*100).toFixed(2)}%`:`由IF反推分红/持有收益q ${(thetaQ*100).toFixed(2)}%`;
+    const spotAdjustedDelta=thetaNow.delta*F/p.S;
     byId('thetaKpis').innerHTML=[
-      kpi('买方 Theta（Wind近似）',`${fmt(thetaNow.theta,2)}点/日`,`Wind一位小数约 ${fmt(thetaNow.theta,1)}；${thetaBasis}`,'red'),
-      kpi('卖方理论日收入',yuan(sellerDaily),`每手；明日理论价 ${fmt(thetaNext.price,2)}点，有限差分 ${fmt(exactDecay,2)}点`,'green'),
-      kpi('固定IF Theta',`${fmt(fixedForwardTheta,2)}点/日`,`原网页Black-76口径，供对照`,'blue'),
-      kpi('Theta 采用的 IV',`${fmt(thetaSigma*100,2)}%`,manualIvOk?'采用手工输入的市场成交IV':ivOk?'由当前市场权利金反推':'暂用参考波动率','orange')
+      kpi('买方 Theta（Wind口径）',`${fmt(thetaNow.theta,4)}点/交易日`,`固定IF和IV；卖方符号相反`,'red'),
+      kpi('卖方理论日收入',yuan(sellerDaily),`每手；下一交易日理论价 ${fmt(thetaNext.price,2)}点`,'green'),
+      kpi('一日有限差分',`${fmt(exactDecay,4)}点`,`比瞬时Theta更接近整日理论损耗`,'blue'),
+      kpi('采用的 IV',`${fmt(thetaSigma*100,2)}%`,`现货折算Delta ${fmt(spotAdjustedDelta,4)} · Vega ${fmt(thetaNow.vega,4)}`,'orange')
     ].join('');
-    renderThetaChart(p,thetaQ,thetaSigma);
+    renderThetaChart(p,F,thetaSigma);
 
     byId('expiryZones').innerHTML=[
       zone('loss',`Sₜ < ${fmt(breakEven,2)}`,'卖方净亏损',lossProb),
@@ -195,7 +178,7 @@
     const rows=[];
     for(let K=p.kmin,count=0;K<=p.kmax+1e-9&&count<201;K+=p.kstep,count++){
       const curveSigma=hasReferenceSigma?p.sigma:thetaSigma;
-      const b=blackPut(F,K,p.T,p.r,curveSigma);
+      const b=blackPut(F,K,p.T,p.r,curveSigma,p.tradingBasis);
       const be=Math.max(0,K-b.price);
       const rn=probabilityBelow(K,F,p.T,p.sigma);
       const loss=probabilityBelow(be,F,p.T,p.sigma);
@@ -221,12 +204,12 @@
     if(!chart)chart=new Chart(byId('priceChart'),{type:'line',data,options});else{chart.data=data;chart.update('none');chart.resize();}
   }
 
-  function renderThetaChart(p,q,sigma){
+  function renderThetaChart(p,F,sigma){
     const labels=[],income=[],prices=[];
-    for(let elapsed=0;elapsed<p.days;elapsed++){
-      const remaining=p.days-elapsed;
-      const b=spotPut(p.S,p.K,remaining/365,p.r,q,sigma);
-      labels.push(`${remaining}天`);
+    for(let elapsed=0;elapsed<p.tradingDays;elapsed++){
+      const remaining=p.tradingDays-elapsed;
+      const b=blackPut(F,p.K,remaining/p.tradingBasis,p.r,sigma,p.tradingBasis);
+      labels.push(`${fmt(remaining,1)}交易日`);
       income.push(-b.theta*p.mult);
       prices.push(b.price);
     }
@@ -234,7 +217,7 @@
       {label:'卖方理论日收入（元/手）',data:income,borderColor:colors.green,backgroundColor:'rgba(101,214,138,.10)',fill:true,yAxisID:'y',pointRadius:0,borderWidth:2},
       {label:'期权理论价（点）',data:prices,borderColor:colors.orange,yAxisID:'y1',pointRadius:0,borderWidth:2,borderDash:[5,4]}
     ]};
-    const options={responsive:true,maintainAspectRatio:false,animation:{duration:180},interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:colors.sub}},tooltip:{callbacks:{title:items=>`剩余 ${items[0].label}`}}},scales:{x:{ticks:{color:colors.sub,maxTicksLimit:10},grid:{color:colors.grid},title:{display:true,text:'时间向右推进：当前 → 到期前1天',color:colors.sub}},y:{position:'left',ticks:{color:colors.sub,callback:v=>`¥${v}`},grid:{color:colors.grid},title:{display:true,text:'卖方日Theta收入（元/手）',color:colors.sub}},y1:{position:'right',ticks:{color:colors.sub},grid:{drawOnChartArea:false},title:{display:true,text:'期权理论价（点）',color:colors.sub}}}};
+    const options={responsive:true,maintainAspectRatio:false,animation:{duration:180},interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:colors.sub}},tooltip:{callbacks:{title:items=>`剩余 ${items[0].label}`}}},scales:{x:{ticks:{color:colors.sub,maxTicksLimit:10},grid:{color:colors.grid},title:{display:true,text:'时间向右推进：当前 → 到期前1个交易日',color:colors.sub}},y:{position:'left',ticks:{color:colors.sub,callback:v=>`¥${v}`},grid:{color:colors.grid},title:{display:true,text:'卖方Theta收入（元/手/交易日）',color:colors.sub}},y1:{position:'right',ticks:{color:colors.sub},grid:{drawOnChartArea:false},title:{display:true,text:'期权理论价（点）',color:colors.sub}}}};
     if(!thetaChart)thetaChart=new Chart(byId('thetaChart'),{type:'line',data,options});else{thetaChart.data=data;thetaChart.update('none');thetaChart.resize();}
   }
 

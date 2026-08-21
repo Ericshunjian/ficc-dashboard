@@ -45,16 +45,18 @@ details summary::-webkit-details-marker{display:none}details summary::before{con
     <div class="input-card"><label>行权价 K</label><input id="K" type="number" step="50" value="4400"><small>Put 的履约价格</small></div>
     <div class="input-card"><label>市场权利金 C（点）</label><input id="premium" type="number" step="0.1" value="50"><small>你的卖出价；1点 = 100元/张</small></div>
     <div class="input-card"><label>估值日</label><input id="today" type="date" value="2026-08-21"><small id="Tdisp"></small></div>
-    <div class="input-card"><label>到期日</label><input id="expiry" type="date" value="2026-09-18"><small>按自然日 / 365</small></div>
+    <div class="input-card"><label>到期日</label><input id="expiry" type="date" value="2026-09-18"><small>自动换算剩余交易日 / 246</small></div>
     <div class="input-card"><label>市场成交IV（%）</label><input id="marketIv" type="number" step="0.01" placeholder="例如 20.32"><small>填Wind或行情软件显示的IV；Theta优先采用</small></div>
   </div>
   <details class="advanced">
-    <summary>高级参数：利率、股息率、乘数与行权价梯度</summary>
+    <summary>高级参数：利率、交易日口径、乘数与行权价梯度</summary>
     <div class="advanced-body">
       <div class="input-grid">
         <div class="input-card"><label>你预计的未来波动率（%，可选）</label><input id="sigma" type="number" step="0.1" placeholder="不填也可计算Theta"><small>仅用来判断权利金厚薄</small></div>
-        <div class="input-card"><label>无风险利率 r（%）</label><input id="r" type="number" step="0.1" value="1.7"><small>连续复利年化</small></div>
+        <div class="input-card"><label>无风险利率 r（%）</label><input id="r" type="number" step="0.1" value="1.2"><small>连续复利年化</small></div>
         <div class="input-card"><label>连续股息率 q（%）</label><input id="q" type="number" step="0.1" value="2.5"><small>仅在IF价格留空时使用</small></div>
+        <div class="input-card"><label>剩余交易日（可选）</label><input id="tradingDays" type="number" step="0.1" placeholder="自动排除周末"><small>法定假期导致不准时再覆盖</small></div>
+        <div class="input-card"><label>年交易日基准</label><input id="tradingBasis" type="number" step="1" value="246"><small>本组Wind Greeks对应约246</small></div>
         <div class="input-card"><label>合约乘数（元/点）</label><input id="mult" type="number" step="1" value="100"><small>IO 当前为100元/点</small></div>
         <div class="input-card"><label>行权价下限</label><input id="kmin" type="number" step="50" value="4050"><small>仅用于下方梯度</small></div>
         <div class="input-card"><label>行权价上限</label><input id="kmax" type="number" step="50" value="4750"><small>仅用于下方梯度</small></div>
@@ -69,13 +71,13 @@ details summary::-webkit-details-marker{display:none}details summary::before{con
 <div class="result-group"><div class="decision-title">① 市场价相对你的参考价</div><div class="kpis" id="priceKpis"></div></div>
 
 <section class="panel">
-  <div class="panel-head"><div><h2>② Theta：每天理论收租</h2><div class="panel-desc">主口径固定沪深300现货、IV和分红/持有收益q，接近Wind；Theta按自然日计算。</div></div></div>
+  <div class="panel-head"><div><h2>② Theta：每天理论收租</h2><div class="panel-desc">固定同到期IF和IV，按交易日时间计算；本组参数与Wind口径对齐。</div></div></div>
   <div class="kpis" id="thetaKpis"></div>
   <div class="theta-layout">
     <div class="chart-box"><canvas id="thetaChart"></canvas></div>
     <div class="theta-factors">
-      <div class="theta-factor"><b>剩余期限</b>临近到期且接近平值时，|Theta|通常加快；深度虚值时则可能逐渐归零。</div>
-      <div class="theta-factor"><b>虚实值 S / K</b>平值附近时间价值最大，Theta绝对值通常也最大。</div>
+      <div class="theta-factor"><b>剩余交易日</b>默认自动排除周末；遇到法定假期，可在高级参数覆盖。</div>
+      <div class="theta-factor"><b>虚实值 F / K</b>平值附近时间价值最大，Theta绝对值通常也最大。</div>
       <div class="theta-factor"><b>隐含波动率 IV</b>IV越高，时间价值一般越厚，Theta曲线也会变化。</div>
       <div class="theta-factor"><b>利率与合约乘数</b>利率影响折现；乘数不改变Theta点数，只把点数换算成每手人民币。</div>
     </div>
