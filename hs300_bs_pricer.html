@@ -47,12 +47,12 @@ details summary::-webkit-details-marker{display:none}details summary::before{con
     <div class="input-card"><label>估值日</label><input id="today" type="date" value="2026-08-21"><small id="Tdisp"></small></div>
     <div class="input-card"><label>到期日</label><input id="expiry" type="date" value="2026-09-18"><small>按自然日 / 365</small></div>
     <div class="input-card"><label>市场成交IV（%）</label><input id="marketIv" type="number" step="0.01" placeholder="例如 20.32"><small>填Wind或行情软件显示的IV；Theta优先采用</small></div>
-    <div class="input-card"><label>参考波动率（%）</label><input id="sigma" type="number" step="0.1" value="24.27"><small>用来算模型参考价，不是市场IV</small></div>
   </div>
   <details class="advanced">
     <summary>高级参数：利率、股息率、乘数与行权价梯度</summary>
     <div class="advanced-body">
       <div class="input-grid">
+        <div class="input-card"><label>你预计的未来波动率（%，可选）</label><input id="sigma" type="number" step="0.1" placeholder="不填也可计算Theta"><small>仅用来判断权利金厚薄</small></div>
         <div class="input-card"><label>无风险利率 r（%）</label><input id="r" type="number" step="0.1" value="1.7"><small>连续复利年化</small></div>
         <div class="input-card"><label>连续股息率 q（%）</label><input id="q" type="number" step="0.1" value="2.5"><small>仅在IF价格留空时使用</small></div>
         <div class="input-card"><label>合约乘数（元/点）</label><input id="mult" type="number" step="1" value="100"><small>IO 当前为100元/点</small></div>

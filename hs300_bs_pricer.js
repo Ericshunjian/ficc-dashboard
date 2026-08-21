@@ -96,10 +96,12 @@
     const days=dayCount(raw('today'),raw('expiry'));
     const enteredForward=raw('F').trim()===''?NaN:val('F');
     const enteredMarketIv=raw('marketIv').trim()===''?NaN:val('marketIv')/100;
-    return{S:val('S'),enteredForward,enteredMarketIv,K:val('K'),premium:val('premium'),mult:val('mult'),days,T:days/365,sigma:val('sigma')/100,r:val('r')/100,q:val('q')/100,kmin:val('kmin'),kmax:val('kmax'),kstep:val('kstep')};
+    const sigmaInput=raw('sigma').trim();
+    const sigma=sigmaInput===''||Number(sigmaInput)===0?NaN:Number(sigmaInput)/100;
+    return{S:val('S'),enteredForward,enteredMarketIv,K:val('K'),premium:val('premium'),mult:val('mult'),days,T:days/365,sigma,r:val('r')/100,q:val('q')/100,kmin:val('kmin'),kmax:val('kmax'),kstep:val('kstep')};
   }
   function valid(p){
-    return p.S>0&&(!Number.isFinite(p.enteredForward)||p.enteredForward>0)&&(!Number.isFinite(p.enteredMarketIv)||p.enteredMarketIv>0)&&p.K>0&&p.premium>=0&&p.mult>0&&p.days>0&&p.sigma>0&&p.kstep>0&&p.kmax>=p.kmin;
+    return p.S>0&&(!Number.isFinite(p.enteredForward)||p.enteredForward>0)&&(!Number.isFinite(p.enteredMarketIv)||p.enteredMarketIv>0)&&(!Number.isFinite(p.sigma)||p.sigma>0)&&p.K>0&&p.premium>=0&&p.mult>0&&p.days>0&&p.kstep>0&&p.kmax>=p.kmin;
   }
 
   function compute(){
@@ -114,39 +116,49 @@
       byId('riskKpis').innerHTML='';
       byId('expiryZones').innerHTML='';
       if(thetaChart){thetaChart.destroy();thetaChart=null;}
-      byId('contractFormula').textContent='到期日应晚于估值日，指数、行权价、参考波动率和乘数应大于0。';
+      byId('contractFormula').textContent='到期日应晚于估值日，指数、行权价和乘数应大于0；已填写的IV或未来波动率也应大于0。';
       return;
     }
 
     const usesMarketForward=Number.isFinite(p.enteredForward);
     const F=usesMarketForward?p.enteredForward:p.S*Math.exp((p.r-p.q)*p.T);
     const forwardSource=usesMarketForward?'同到期IF市场远期':'现货、利率和股息率估算远期';
-    const fair=blackPut(F,p.K,p.T,p.r,p.sigma);
     const forwardIv=impliedVol(p.premium,F,p.K,p.T,p.r);
     const ivOk=Number.isFinite(forwardIv);
+    const hasReferenceSigma=Number.isFinite(p.sigma);
+    const fair=hasReferenceSigma?blackPut(F,p.K,p.T,p.r,p.sigma):null;
     const breakEven=Math.max(0,p.K-p.premium);
-    const priceDiff=p.premium-fair.price;
-    const priceDiffPct=fair.price>1e-10?priceDiff/fair.price:NaN;
+    const priceDiff=hasReferenceSigma?p.premium-fair.price:NaN;
+    const priceDiffPct=hasReferenceSigma&&fair.price>1e-10?priceDiff/fair.price:NaN;
     const exerciseProb=ivOk?probabilityBelow(p.K,F,p.T,forwardIv):NaN;
     const lossProb=ivOk?probabilityBelow(breakEven,F,p.T,forwardIv):NaN;
     const partialProfitProb=ivOk?Math.max(0,exerciseProb-lossProb):NaN;
     const fullPremiumProb=ivOk?Math.max(0,1-exerciseProb):NaN;
     const profitProb=ivOk?Math.max(0,1-lossProb):NaN;
     const maxLoss=Math.max(0,(p.K-p.premium)*p.mult);
-    const richer=priceDiff>=0;
+    const richer=hasReferenceSigma&&priceDiff>=0;
     const comparison=richer?'市场价高于你的模型参考价，权利金相对更厚':'市场价低于你的模型参考价，权利金相对偏薄';
 
     if(!ivOk){status.textContent='权利金超出当前远期口径的可反推范围';status.className='status bad';}
     else if(usesMarketForward){status.textContent=`使用IF市场远期 F=${fmt(F,2)}`;status.className='status';}
     else{status.textContent=`未填IF，使用估算远期 F=${fmt(F,2)}`;status.className='status warn';}
-    byId('contractFormula').innerHTML=`当前采用<b>${forwardSource} F=${fmt(F,2)}</b>。${comparison}：市场价 <b>${fmt(p.premium,2)}点</b>，参考价 <b>${fmt(fair.price,2)}点</b>，相差 <b>${signed(priceDiff)}点（${signedPct(priceDiffPct)}）</b>。`;
-
-    byId('priceKpis').innerHTML=[
-      kpi('市场权利金',`${fmt(p.premium,2)}点`,`${yuan(p.premium*p.mult)} / 张 · 你实际能收到的价格`,'blue'),
-      kpi('模型参考价',`${fmt(fair.price,2)}点`,`${yuan(fair.price*p.mult)} / 张 · ${forwardSource}`,'orange'),
-      kpi('市场 − 参考价',`${signed(priceDiff)}点`,`${signedPct(priceDiffPct)} · ${richer?'卖方价格更厚':'卖方价格偏薄'}`,richer?'green':'red'),
-      kpi('IF口径反推IV',ivOk?`${fmt(forwardIv*100,2)}%`:'无法反推',ivOk?`比参考波动率 ${signed((forwardIv-p.sigma)*100,2)} 个波动率点`:'检查权利金、远期和日期是否同一时点',ivOk?'blue':'red')
-    ].join('');
+    if(hasReferenceSigma){
+      byId('contractFormula').innerHTML=`当前采用<b>${forwardSource} F=${fmt(F,2)}</b>。${comparison}：市场价 <b>${fmt(p.premium,2)}点</b>，参考价 <b>${fmt(fair.price,2)}点</b>，相差 <b>${signed(priceDiff)}点（${signedPct(priceDiffPct)}）</b>。`;
+      byId('priceKpis').innerHTML=[
+        kpi('市场权利金',`${fmt(p.premium,2)}点`,`${yuan(p.premium*p.mult)} / 张 · 你实际能收到的价格`,'blue'),
+        kpi('模型参考价',`${fmt(fair.price,2)}点`,`${yuan(fair.price*p.mult)} / 张 · ${forwardSource}`,'orange'),
+        kpi('市场 − 参考价',`${signed(priceDiff)}点`,`${signedPct(priceDiffPct)} · ${richer?'卖方价格更厚':'卖方价格偏薄'}`,richer?'green':'red'),
+        kpi('IF口径反推IV',ivOk?`${fmt(forwardIv*100,2)}%`:'无法反推',ivOk?`比你的预期 ${signed((forwardIv-p.sigma)*100,2)} 个波动率点`:'检查权利金、远期和日期是否同一时点',ivOk?'blue':'red')
+      ].join('');
+    }else{
+      byId('contractFormula').innerHTML=`当前采用<b>${forwardSource} F=${fmt(F,2)}</b>。未填写“你预计的未来波动率”，因此暂不判断权利金厚薄；<b>Theta和图表照常计算</b>。`;
+      byId('priceKpis').innerHTML=[
+        kpi('市场权利金',`${fmt(p.premium,2)}点`,`${yuan(p.premium*p.mult)} / 张 · 你实际能收到的价格`,'blue'),
+        kpi('市场成交IV',Number.isFinite(p.enteredMarketIv)?`${fmt(p.enteredMarketIv*100,2)}%`:'未填写','用于Wind近似Theta','orange'),
+        kpi('IF口径反推IV',ivOk?`${fmt(forwardIv*100,2)}%`:'无法反推','由权利金和IF价格反推，供核对','blue'),
+        kpi('权利金厚薄','暂不判断','如需判断，可在高级参数填写你的未来波动率','orange')
+      ].join('');
+    }
 
     const manualIvOk=Number.isFinite(p.enteredMarketIv);
     const thetaSigma=manualIvOk?p.enteredMarketIv:ivOk?forwardIv:p.sigma;
@@ -182,7 +194,8 @@
 
     const rows=[];
     for(let K=p.kmin,count=0;K<=p.kmax+1e-9&&count<201;K+=p.kstep,count++){
-      const b=blackPut(F,K,p.T,p.r,p.sigma);
+      const curveSigma=hasReferenceSigma?p.sigma:thetaSigma;
+      const b=blackPut(F,K,p.T,p.r,curveSigma);
       const be=Math.max(0,K-b.price);
       const rn=probabilityBelow(K,F,p.T,p.sigma);
       const loss=probabilityBelow(be,F,p.T,p.sigma);
