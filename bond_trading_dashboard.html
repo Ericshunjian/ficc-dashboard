@@ -8,6 +8,7 @@
   <meta http-equiv="Expires" content="0">
 <title>债券现券交易分析看板</title>
 <script src="vendor/chart.umd.min.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
 <style>
   :root {
     --bg: #f5f6fa;
@@ -371,6 +372,24 @@
   .anomaly-legend .lg { display: inline-flex; align-items: center; gap: 3px; }
   .anomaly-legend .box { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 
+  /* Excel 下载按钮（图标题栏右侧） */
+  .dl-btn {
+    font-size: 11px; line-height: 1;
+    color: var(--text-secondary);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 9px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px;
+    margin-left: auto;
+    white-space: nowrap;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .dl-btn:hover { color: var(--primary); border-color: var(--primary); background: var(--primary-light); }
+  .dl-btn:active { transform: scale(0.96); }
+
   .no-data {
     display: flex;
     align-items: center;
@@ -462,6 +481,7 @@
           <span class="lg"><span class="box" style="background:#ef4444cc"></span>买入异动(90日分位≥95%)</span>
           <span class="lg"><span class="box" style="background:#22c55ecc"></span>卖出异动(≤5%)</span>
         </span>
+        <button class="dl-btn" style="margin-left:0" onclick="exportDaily()" title="导出当前筛选下的日度净买入数据">⬇ Excel</button>
       </div>
       <div class="chart-wrap"><canvas id="chart-daily"></canvas></div>
       <div class="no-data" id="no-data-top" style="display:none">
@@ -472,7 +492,9 @@
 
     <!-- Bottom: Cumulative line chart -->
     <div class="chart-bottom" id="chart-bottom-container">
-      <div class="chart-label">累计净买入（亿元）</div>
+      <div class="chart-label">累计净买入（亿元）
+        <button class="dl-btn" onclick="exportCumulative()" title="导出当前筛选下的累计净买入数据">⬇ Excel</button>
+      </div>
       <div class="chart-wrap"><canvas id="chart-cumulative"></canvas></div>
       <div class="no-data" id="no-data-bottom" style="display:none">
         <span class="icon">📈</span>
@@ -482,7 +504,9 @@
 
     <!-- Seasonal: Yearly cumulative comparison -->
     <div class="chart-seasonal" id="chart-seasonal-container">
-      <div class="chart-label">季节性累计净买入（亿元，按年对比，22年起）</div>
+      <div class="chart-label">季节性累计净买入（亿元，按年对比，22年起）
+        <button class="dl-btn" onclick="exportSeasonal()" title="导出季节性累计数据">⬇ Excel</button>
+      </div>
       <div class="chart-wrap"><canvas id="chart-seasonal"></canvas></div>
       <div class="no-data" id="no-data-seasonal" style="display:none">
         <span class="icon">📅</span>
@@ -492,7 +516,9 @@
 
     <!-- Overlay: 净买入 × 收益率 双轴叠加 -->
     <div class="chart-overlay" id="chart-overlay-container">
-      <div class="chart-label" id="overlay-label">净买入 × 收益率叠加（单券种·限国债/政金债/地方债）</div>
+      <div class="chart-label" id="overlay-label"><span id="overlay-title">净买入 × 收益率叠加（单券种·限国债/政金债/地方债）</span>
+        <button class="dl-btn" onclick="exportOverlay()" title="导出叠加图数据">⬇ Excel</button>
+      </div>
       <div class="chart-wrap"><canvas id="chart-overlay"></canvas></div>
       <div class="no-data" id="no-data-overlay" style="display:none">
         <span class="icon">📉</span>
@@ -525,6 +551,7 @@ let chartSeasonal = null;
 let chartOverlay = null;
 let yieldCurveSeries = null;  // yield_curve_data.json 的原始 series（{曲线名:{dates,values}}）
 let yieldCurveDates = {};     // 懒建的 {曲线名: {date: value}} 缓存，用于「净买入×收益率」叠加
+let lastOverlayData = null;   // 叠加图最近一次成功渲染的数据缓存（供 Excel 导出）
 
 // ── 异动检测参数（历史百分位口径，非 Z-score）──
 const ANOMALY_WINDOW = 90;  // 历史 90 个交易日
@@ -607,7 +634,7 @@ function renderFromData() {
   document.getElementById('date-start').value = defaultStart;
   document.getElementById('date-end').value = meta.date_range[1];
   renderTagGroup('institution-tags', meta.institutions, selectedInstitutions, true);
-  renderTagGroup('bond-type-tags', meta.bond_types, selectedBondTypes, false, true);
+  renderTagGroup('bond-type-tags', meta.bond_types, selectedBondTypes, false);
   renderTagGroup('maturity-tags', meta.maturities, selectedMaturities, false);
   if (!dataRendered) {
     const largeIdx = meta.institutions.indexOf('大型银行');
@@ -738,8 +765,8 @@ function computeAnomalyFlags() {
   instList.forEach(i => { instHist[i] = {}; });
   allData.detail.forEach(row => {
     if (!selectedInstitutions.has(row.institution)) return;
-    if (!selectedBondTypes.has(row.bond_type)) return;
-    if (!selectedMaturities.has(row.maturity)) return;
+    if (selectedBondTypes.size > 0 && !selectedBondTypes.has(row.bond_type)) return;
+    if (selectedMaturities.size > 0 && !selectedMaturities.has(row.maturity)) return;
     instHist[row.institution][row.date] = (instHist[row.institution][row.date] || 0) + row.value;
   });
   const flags = {};
@@ -816,6 +843,7 @@ function refreshTagContainer(containerId, items, selectedSet) {
 
 // ============================================
 // Build data: filter + aggregate per institution
+// 注：券种/期限筛选集合为空 = 全部（避免默认打开时空集过滤导致整页无数据）
 // ============================================
 function buildSeries() {
   const startDate = document.getElementById('date-start').value;
@@ -830,8 +858,8 @@ function buildSeries() {
 
   allData.detail.forEach(row => {
     if (!selectedInstitutions.has(row.institution)) return;
-    if (!selectedBondTypes.has(row.bond_type)) return;
-    if (!selectedMaturities.has(row.maturity)) return;
+    if (selectedBondTypes.size > 0 && !selectedBondTypes.has(row.bond_type)) return;
+    if (selectedMaturities.size > 0 && !selectedMaturities.has(row.maturity)) return;
     if (row.date < startDate || row.date > endDate) return;
 
     const inst = row.institution;
@@ -863,7 +891,7 @@ function buildSeasonalSeries() {
   allData.detail.forEach(row => {
     if (row.institution !== inst) return;
     if (row.bond_type !== bond) return;
-    if (!selectedMaturities.has(row.maturity)) return;
+    if (selectedMaturities.size > 0 && !selectedMaturities.has(row.maturity)) return;
     const y = parseInt(row.date.slice(0, 4), 10);
     if (y < 2022) return;
     if (!yearBuckets[y]) yearBuckets[y] = {};
@@ -1320,7 +1348,7 @@ function renderOverlayChart(prefDates, prefNetByDate) {
     allData.detail.forEach(row => {
       if (!selectedInstitutions.has(row.institution)) return;
       if (row.bond_type !== bond) return;
-      if (!selectedMaturities.has(row.maturity)) return;
+      if (selectedMaturities.size > 0 && !selectedMaturities.has(row.maturity)) return;
       if (row.date < startDate || row.date > endDate) return;
       dateSet.add(row.date);
       dayNet[row.date] = (dayNet[row.date] || 0) + row.value;
@@ -1335,9 +1363,13 @@ function renderOverlayChart(prefDates, prefNetByDate) {
     return (v === undefined || v === null) ? null : +(+v).toFixed(4);
   });
 
+  // 缓存本次渲染数据（供 Excel 导出）
+  lastOverlayData = { bond, maturity, curveKey, dates, netVals, yVals };
+
   noData.style.display = 'none';
   canvas.style.display = 'block';
-  document.getElementById('overlay-label').textContent =
+  // 只改标题文字 span，避免 textContent 整体重写吞掉下载按钮
+  document.getElementById('overlay-title').textContent =
     '净买入(左轴·亿元) × ' + curveKey + '(右轴·%) ｜ ' + bond + ' · ' + maturity;
 
   if (chartOverlay) chartOverlay.destroy();
@@ -1448,8 +1480,154 @@ function resetFilters() {
 }
 
 // ============================================
-// Start
+// Excel 导出（SheetJS / vendor/xlsx.full.min.js）
+// 各图标题栏右侧「⬇ Excel」→ 导出当前筛选条件下该图的数据
 // ============================================
+
+// 按内容粗略估算列宽（中文字符按 2 个宽度计）
+function dlAutoCols(rows) {
+  let nCol = 0;
+  rows.forEach(r => { if (r.length > nCol) nCol = r.length; });
+  const cols = [];
+  for (let c = 0; c < nCol; c++) {
+    let w = 8;
+    rows.forEach(r => {
+      const v = r[c];
+      if (v === null || v === undefined) return;
+      let len = 0;
+      for (const ch of String(v)) len += ch.charCodeAt(0) > 255 ? 2 : 1;
+      if (len > w) w = len;
+    });
+    cols.push({ wch: Math.min(w + 2, 40) });
+  }
+  return cols;
+}
+
+function exportWorkbook(filename, sheets) {
+  if (typeof XLSX === 'undefined') { alert('Excel 导出组件未加载，请刷新页面后重试'); return; }
+  try {
+    const wb = XLSX.utils.book_new();
+    sheets.forEach(s => {
+      const ws = XLSX.utils.aoa_to_sheet(s.rows);
+      ws['!cols'] = dlAutoCols(s.rows);
+      XLSX.utils.book_append_sheet(wb, ws, s.name.slice(0, 31));
+    });
+    XLSX.writeFile(wb, filename);
+  } catch (e) {
+    console.error('Excel 导出失败', e);
+    alert('Excel 导出失败：' + (e && e.message ? e.message : e));
+  }
+}
+
+function dlRangeTag() {
+  const s = document.getElementById('date-start').value.replace(/-/g, '');
+  const e = document.getElementById('date-end').value.replace(/-/g, '');
+  return (s && e) ? s + '_' + e : '';
+}
+
+// 日度净买入：主表（行=日期×列=机构）+ 异动明细（与图上高亮口径一致：90日分位 ≥95%/≤5%）
+function exportDaily() {
+  const { dates, instList, instDateValues } = buildSeries();
+  if (!dates.length) { alert('当前筛选条件下无数据，无法导出'); return; }
+
+  const startDate = document.getElementById('date-start').value;
+  const endDate = document.getElementById('date-end').value;
+  const flags = computeAnomalyFlags();  // 有缓存，成本低
+
+  const main = [['日期', ...instList]];
+  dates.forEach(d => {
+    main.push([d, ...instList.map(inst => {
+      const v = instDateValues[inst][d];
+      return v !== undefined ? +(v.toFixed(4)) : 0;
+    })]);
+  });
+
+  const anomalies = [['日期', '机构', '方向', '当日净买入(亿元)', '90日历史分位']];
+  instList.forEach(inst => {
+    const fl = flags[inst] || {};
+    Object.keys(fl).sort().forEach(d => {
+      if (d < startDate || d > endDate) return;
+      const f = fl[d];
+      const v = instDateValues[inst][d];
+      anomalies.push([d, inst, f.type === 'high' ? '大幅买入' : '大幅卖出',
+        v !== undefined ? +(v.toFixed(4)) : '', +(f.pct.toFixed(1))]);
+    });
+  });
+
+  exportWorkbook('机构行为_日度净买入_' + dlRangeTag() + '.xlsx', [
+    { name: '日度净买入', rows: main },
+    { name: '异动明细', rows: anomalies },
+  ]);
+}
+
+// 累计净买入：行=日期×列=机构
+function exportCumulative() {
+  const { dates, instList, instDateValues } = buildSeries();
+  if (!dates.length) { alert('当前筛选条件下无数据，无法导出'); return; }
+
+  const cumVal = {};
+  instList.forEach(inst => {
+    let cum = 0;
+    const m = {};
+    dates.forEach(d => {
+      const v = instDateValues[inst][d];
+      if (v !== undefined) cum += v;
+      m[d] = +cum.toFixed(4);
+    });
+    cumVal[inst] = m;
+  });
+
+  const rows = [['日期', ...instList]];
+  dates.forEach(d => rows.push([d, ...instList.map(i => cumVal[i][d])]));
+
+  exportWorkbook('机构行为_累计净买入_' + dlRangeTag() + '.xlsx', [
+    { name: '累计净买入', rows },
+  ]);
+}
+
+// 季节性累计：行=月日（2024闰年模板对齐 1..366），列=各年；仅单机构×单券种可用
+function exportSeasonal() {
+  if (selectedInstitutions.size !== 1 || selectedBondTypes.size !== 1) {
+    alert('季节性数据需同时只选一个机构和券种（与图上规则一致）');
+    return;
+  }
+  const seasonal = buildSeasonalSeries();
+  if (!seasonal) { alert('2022 年起无数据，无法导出'); return; }
+
+  const rows = [['月日', ...seasonal.datasets.map(ds => ds.label)]];
+  seasonal.xs.forEach((doy, i) => {
+    const d = new Date(2024, 0, doy);  // 与图上相同的 2024 闰年模板
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    rows.push([mm + '-' + dd, ...seasonal.datasets.map(ds =>
+      (ds.data[i] === null || ds.data[i] === undefined) ? '' : ds.data[i]
+    )]);
+  });
+
+  exportWorkbook('机构行为_季节性_' + seasonal.inst + '_' + seasonal.bond + '.xlsx', [
+    { name: '季节性累计', rows },
+  ]);
+}
+
+// 净买入×收益率叠加：导出最近一次成功渲染的数据
+function exportOverlay() {
+  if (!lastOverlayData) {
+    alert('叠加图尚未渲染（需单选 国债/政金债/地方债 之一），暂无可导出数据');
+    return;
+  }
+  const o = lastOverlayData;
+  const rows = [['日期', '净买入(亿元)', o.curveKey + '(%)']];
+  o.dates.forEach((d, i) => {
+    const y = o.yVals[i];
+    rows.push([d, o.netVals[i], (y === null || y === undefined) ? '' : y]);
+  });
+
+  exportWorkbook('机构行为_净买入×收益率_' + o.bond + '_' + o.maturity + '_' + dlRangeTag() + '.xlsx', [
+    { name: '净买入×收益率', rows },
+  ]);
+}
+
+
 // 监听时间范围变化
 document.addEventListener('DOMContentLoaded', () => {
   const ds = document.getElementById('date-start');
