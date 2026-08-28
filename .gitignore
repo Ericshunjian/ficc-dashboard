@@ -21,3 +21,6 @@ bond_trading_data_merged.json
 
 # 因子演示脚本（一次性验证用）
 factor_demo.py
+
+# 因子数据备份（本地留档，不入库）
+factor_data_backup_*.json

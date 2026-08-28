@@ -3,9 +3,10 @@
 
 两大类因子：
   A. 机构行为因子（数据源：bond_trading_data_merged.json，2021-06 ~ 至今）
-     净买入 → MA10 → 100天百分位(min_periods=60) → MA10 = 因子
+     净买入 → MA10 → 100天百分位(min_periods=60) = 因子
+     （2026-08-28 起去掉末尾的再 MA10，详见 FINAL_MA 注释）
   B. 估值因子（数据源：yield_curve_data.json）
-     利差 → MA10 → 100天百分位(min_periods=60) → MA10 = 因子
+     利差 → MA10 → 100天百分位(min_periods=60) = 因子
      - 资金利差因子：10年国债 - DR001-MA10
      - 期限利差因子：10年国债 - SHIBOR3M
 """
@@ -29,7 +30,11 @@ log = logging.getLogger(__name__)
 MA_WINDOW = 10
 PERC_WINDOW = 100
 PERC_MIN_PERIODS = 60
-FINAL_MA = 10
+# FINAL_MA：百分位层之后的再平滑窗口。
+# 2026-08-28 改为 1（=不再平滑）。实测：百分位层 IC=-0.083(t=-2.83) 已是链路最强，
+# 再叠 MA10 后 IC 掉到 -0.030(t=-1.01) 且不显著——自相关从 0.928 升到 0.988，
+# 只增加滞后不增加信息，属重复平滑（百分位本身已含 100 日窗口平滑）。
+FINAL_MA = 1
 
 # ── 机构行为因子定义 ──
 FACTOR_DEFS = [
@@ -40,7 +45,7 @@ FACTOR_DEFS = [
         "institution": "基金公司及产品",
         "bond_type": "国债",
         "maturity": "20-30年",
-        "description": "基金公司及产品对20-30年国债净买入的MA10在过去100天的百分位（再MA10）",
+        "description": "基金公司及产品对20-30年国债净买入的MA10在过去100天的百分位",
     },
     {
         "name": "中小型银行·超长国债净买入因子",
@@ -49,7 +54,7 @@ FACTOR_DEFS = [
         "institution": "中小型银行",
         "bond_type": "国债",
         "maturity": "20-30年",
-        "description": "中小型银行对20-30年国债净买入的MA10在过去100天的百分位（再MA10）",
+        "description": "中小型银行对20-30年国债净买入的MA10在过去100天的百分位",
     },
     {
         "name": "基金公司及产品·7-10年国开债净买入因子",
@@ -58,7 +63,7 @@ FACTOR_DEFS = [
         "institution": "基金公司及产品",
         "bond_type": "政金债",
         "maturity": "7-10年",
-        "description": "基金公司及产品对7-10年政金债净买入的MA10在过去100天的百分位（再MA10）",
+        "description": "基金公司及产品对7-10年政金债净买入的MA10在过去100天的百分位",
     },
     {
         "name": "保险公司·超长国债净买入因子",
@@ -67,7 +72,7 @@ FACTOR_DEFS = [
         "institution": "保险公司",
         "bond_type": "国债",
         "maturity": "20-30年",
-        "description": "保险公司对20-30年国债净买入的MA10在过去100天的百分位（再MA10）",
+        "description": "保险公司对20-30年国债净买入的MA10在过去100天的百分位",
     },
     {
         "name": "中小型银行·7-10年国债净买入因子",
@@ -76,7 +81,7 @@ FACTOR_DEFS = [
         "institution": "中小型银行",
         "bond_type": "国债",
         "maturity": "7-10年",
-        "description": "中小型银行对7-10年国债净买入的MA10在过去100天的百分位（再MA10）",
+        "description": "中小型银行对7-10年国债净买入的MA10在过去100天的百分位",
     },
     {
         "name": "基金公司及产品·7-10年国债+国开债净买入合力因子",
@@ -85,7 +90,7 @@ FACTOR_DEFS = [
         "institution": "基金公司及产品",
         "bond_types": ["国债", "政金债"],  # 多券种求和
         "maturity": "7-10年",
-        "description": "基金公司及产品对7-10年国债+政金债净买入合计的MA10在过去100天的百分位（再MA10）",
+        "description": "基金公司及产品对7-10年国债+政金债净买入合计的MA10在过去100天的百分位",
     },
 ]
 
@@ -109,14 +114,14 @@ VALUATION_FACTOR_DEFS = [
         "short_name": "资金利差因子",
         "category": "估值因子",
         "spread_components": ["10年国债", "DR001-MA10"],
-        "description": "10年国债收益率与DR001-MA10之差的MA10在过去100天的百分位（再MA10），反映长债相对隔夜资金中枢的carry空间，百分位越高=长债相对资金面越便宜",
+        "description": "10年国债收益率与DR001-MA10之差的MA10在过去100天的百分位，反映长债相对隔夜资金中枢的carry空间，百分位越高=长债相对资金面越便宜",
     },
     {
         "name": "期限利差因子（10年国债-SHIBOR3M）",
         "short_name": "期限利差因子",
         "category": "估值因子",
         "spread_components": ["10年国债", "SHIBOR:3个月"],
-        "description": "10年国债收益率与SHIBOR3M之差的MA10在过去100天的百分位（再MA10），反映10Y-3M期限结构估值，百分位越高=期限利差处于历史高位",
+        "description": "10年国债收益率与SHIBOR3M之差的MA10在过去100天的百分位，反映10Y-3M期限结构估值，百分位越高=期限利差处于历史高位",
     },
 ]
 
@@ -176,7 +181,7 @@ def compute_factor(df_detail, factor_def):
 
 
 def compute_valuation_factors():
-    """从 yield_curve_data.json 计算估值因子（利差→MA10→100天百分位→再MA10）
+    """从 yield_curve_data.json 计算估值因子（利差→MA10→100天百分位）
     返回 (factors_dict, factor_defs_used)
     """
     if not os.path.exists(CURVE_PATH):
