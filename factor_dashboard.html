@@ -499,11 +499,22 @@
       </div>
       <div class="cfg-group">
         <span class="cfg-label">观察窗口</span>
-        <div style="display:flex;gap:4px">
-          <div class="win-btn active" data-w="1" onclick="setSigWindow(1)">1日</div>
-          <div class="win-btn" data-w="5" onclick="setSigWindow(5)">5日</div>
-          <div class="win-btn" data-w="10" onclick="setSigWindow(10)">10日</div>
-          <div class="win-btn" data-w="20" onclick="setSigWindow(20)">20日</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <div class="win-btn" data-w="1" onclick="setSigWindow(1)">1日</div>
+          <div class="win-btn" data-w="3" onclick="setSigWindow(3)">3日</div>
+          <div class="win-btn active" data-w="5" onclick="setSigWindow(5)">1周</div>
+          <div class="win-btn" data-w="10" onclick="setSigWindow(10)">2周</div>
+          <div class="win-btn" data-w="15" onclick="setSigWindow(15)">3周</div>
+          <div class="win-btn" data-w="20" onclick="setSigWindow(20)">4周</div>
+          <div class="win-btn" data-w="30" onclick="setSigWindow(30)">6周</div>
+          <div class="win-btn" data-w="60" onclick="setSigWindow(60)">12周</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+          <input type="number" id="sig-window-custom" min="1" max="250" step="1" placeholder="自定义"
+                 onchange="onCustomWindow()"
+                 style="width:62px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:var(--bg);outline:none"
+                 title="自定义观察窗口（交易日）">
+          <span style="font-size:10px;color:var(--text-secondary)">交易日（1周=5日）</span>
         </div>
       </div>
       <div class="cfg-group" id="cfg-pct" style="display:none">
@@ -1051,7 +1062,7 @@ function resetFilters() {
 // ============================================
 const PRICE_TARGETS = ['T主力','TF主力','TS主力','TL主力'];
 let sigDirection = 'down';
-let sigWindow = 1;
+let sigWindow = 5;   // 默认 1 周（低波环境下日度变化多为噪声）
 let sigChartFactor = null;
 let sigChartEvent = null;
 let sigChartNav = null;
@@ -1222,11 +1233,41 @@ function setSigDirection(d) {
   document.getElementById('sig-dir-up').classList.toggle('active', d === 'up');
 }
 
+// 观察窗口：默认 5 日（1 周）—— 低波环境下日度变化多为噪声，周度持仓周期更有意义
 function setSigWindow(n) {
+  n = parseInt(n) || 1;
+  if (n < 1) n = 1;
+  if (n > 250) n = 250;
   sigWindow = n;
   document.querySelectorAll('[data-w]').forEach(el => {
     el.classList.toggle('active', parseInt(el.dataset.w) === n);
   });
+  const ci = document.getElementById('sig-window-custom');
+  if (ci && document.activeElement !== ci) ci.value = '';
+}
+
+function onCustomWindow() {
+  const el = document.getElementById('sig-window-custom');
+  const v = parseInt(el.value);
+  if (isNaN(v)) return;
+  setSigWindow(v);
+}
+
+// 窗口显示文案：整周用「N周」，其余用「N日」
+function windowLabel(n) {
+  return (n % 5 === 0 && n >= 5) ? (n / 5) + '周' : n + '日';
+}
+
+// 年化口径说明：把单次持仓收益外推到全年，便于横向比较不同窗口
+// 价格类（元）= 相对基准价的百分比 → 可年化；收益率/利差类（bp）= 绝对变化，年化会放大失真，
+// 故仅给出「若每次触发都做、一年约能触发 244/sigWindow 次」的累计口径，并标注为粗略外推
+const TRADING_DAYS_YEAR = 244;
+function annualDesc(singleRet, winN, isPrice) {
+  if (!isFinite(singleRet) || winN <= 0) return '';
+  const times = TRADING_DAYS_YEAR / winN;
+  const total = singleRet * times;
+  const unit = isPrice ? '元' : 'bp';
+  return `年化外推 ${total >= 0 ? '+' : ''}${total.toFixed(0)} ${unit}（${times.toFixed(0)}次/年）`;
 }
 
 // 利差预测对象（由两条腿曲线动态合成，值 = a - b，单位 %）
@@ -1607,15 +1648,15 @@ function runSignalTest() {
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
       <div>
         <div style="font-size:14px;font-weight:700;margin-bottom:4px">${factorName} → ${targetName}</div>
-        <div style="font-size:11px;color:var(--text-secondary)">触发: ${triggerDesc}${factor2Desc} ｜ 去重: ${dedupDesc} ｜ 方向: ${dirDesc} ｜ 窗口: 未来${sigWindow}日 ｜ 样本: ${events[0].date} ~ ${lastTrigger.date}</div>
+        <div style="font-size:11px;color:var(--text-secondary)">触发: ${triggerDesc}${factor2Desc} ｜ 去重: ${dedupDesc} ｜ 方向: ${dirDesc} ｜ 窗口: 未来${windowLabel(sigWindow)}（${sigWindow}交易日）｜ 样本: ${events[0].date} ~ ${lastTrigger.date}</div>
       </div>
       <button class="sig-btn sig-btn-outline" onclick="saveAsConclusion()" title="把本次检验结果保存到研究结论库">💾 保存为研究结论</button>
     </div>
     <div class="kpi-grid">
       <div class="kpi-card ${winRate>=0.5?'win':'lose'}"><div class="kpi-label">触发次数</div><div class="kpi-value">${events.length}</div><div class="kpi-sub">原始${rawTriggerCount}次→去重后${triggers.length}次</div></div>
       <div class="kpi-card ${winRate>=0.5?'win':'lose'}"><div class="kpi-label">胜率</div><div class="kpi-value">${(winRate*100).toFixed(1)}%</div><div class="kpi-sub">${wins.length}胜 ${losses.length}负</div></div>
-      <div class="kpi-card"><div class="kpi-label">平均收益</div><div class="kpi-value">${retFmt(avgReturn)}</div></div>
-      <div class="kpi-card"><div class="kpi-label">中位数收益</div><div class="kpi-value">${retFmt(median)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">平均收益</div><div class="kpi-value">${retFmt(avgReturn)}</div><div class="kpi-sub">${annualDesc(avgReturn, sigWindow, targetSeries.isPrice)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">中位数收益</div><div class="kpi-value">${retFmt(median)}</div><div class="kpi-sub">${annualDesc(median, sigWindow, targetSeries.isPrice)}</div></div>
       <div class="kpi-card"><div class="kpi-label">平均最大有利波动</div><div class="kpi-value" style="color:var(--danger)">${retFmt(avgMFE)}</div></div>
       <div class="kpi-card"><div class="kpi-label">平均最大不利波动</div><div class="kpi-value" style="color:var(--success)">${retFmt(avgMAE)}</div></div>
       <div class="kpi-card"><div class="kpi-label">盈亏比</div><div class="kpi-value">${plRatio===Infinity?'∞':plRatio.toFixed(2)}</div><div class="kpi-sub">均胜${retFmt(avgWin)}/均亏${retFmt(avgLoss)}</div></div>
@@ -1706,12 +1747,12 @@ function saveAsConclusion() {
     `触发条件：${r.triggerDesc}${r.factor2Desc || ''}`,
     `触发去重：${r.dedupDesc || '复位后再触发'}（原始${r.rawTriggerCount}次→去重后${r.dedupedCount}次）`,
     `方向判定：${r.dirDesc}`,
-    `观察窗口：未来 ${r.sigWindow} 个交易日`,
+    `观察窗口：未来 ${windowLabel(r.sigWindow)}（${r.sigWindow} 个交易日，按周度持仓节奏设定）`,
     `回测区间：${r.sampleStart} ~ ${r.sampleEnd}`,
   ].join('\n');
 
   // 触发条件
-  const trigger = `${r.triggerDesc}${r.factor2Desc || ''}，观察未来 ${r.sigWindow} 日，方向判定：${r.dirDesc}。样本 ${r.stats.count} 次，胜率 ${pct(r.stats.winRate)}。`;
+  const trigger = `${r.triggerDesc}${r.factor2Desc || ''}，观察未来 ${windowLabel(r.sigWindow)}，方向判定：${r.dirDesc}。样本 ${r.stats.count} 次，胜率 ${pct(r.stats.winRate)}。`;
 
   // 历史验证结果（Markdown 表格）
   const s = r.stats;
