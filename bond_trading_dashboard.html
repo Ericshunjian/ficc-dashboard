@@ -1525,6 +1525,24 @@ function dlRangeTag() {
   return (s && e) ? s + '_' + e : '';
 }
 
+// 当前筛选条件标签（机构×券种×期限），用于导出文件名区分
+// 单项直接取名；多项取前 2 个 + "等N"；空集（=全部）记为 "全部"
+function dlFilterTag() {
+  const fmt = (set, suffix) => {
+    const arr = [...set];
+    if (arr.length === 0) return '全部' + suffix;
+    if (arr.length === 1) return arr[0];
+    if (arr.length === 2) return arr.join('+');
+    return arr.slice(0, 2).join('+') + '等' + arr.length + suffix;
+  };
+  return fmt(selectedInstitutions, '机构') + '_' + fmt(selectedBondTypes, '券种');
+}
+
+// 文件名安全化：去掉 Windows 非法字符，避免导出失败
+function dlSafeName(s) {
+  return String(s).replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '');
+}
+
 // 日度净买入：主表（行=日期×列=机构）+ 异动明细（与图上高亮口径一致：90日分位 ≥95%/≤5%）
 function exportDaily() {
   const { dates, instList, instDateValues } = buildSeries();
@@ -1554,7 +1572,7 @@ function exportDaily() {
     });
   });
 
-  exportWorkbook('机构行为_日度净买入_' + dlRangeTag() + '.xlsx', [
+  exportWorkbook(dlSafeName('机构行为_日度净买入_' + dlFilterTag() + '_' + dlRangeTag() + '.xlsx'), [
     { name: '日度净买入', rows: main },
     { name: '异动明细', rows: anomalies },
   ]);
@@ -1580,7 +1598,7 @@ function exportCumulative() {
   const rows = [['日期', ...instList]];
   dates.forEach(d => rows.push([d, ...instList.map(i => cumVal[i][d])]));
 
-  exportWorkbook('机构行为_累计净买入_' + dlRangeTag() + '.xlsx', [
+  exportWorkbook(dlSafeName('机构行为_累计净买入_' + dlFilterTag() + '_' + dlRangeTag() + '.xlsx'), [
     { name: '累计净买入', rows },
   ]);
 }
@@ -1604,7 +1622,7 @@ function exportSeasonal() {
     )]);
   });
 
-  exportWorkbook('机构行为_季节性_' + seasonal.inst + '_' + seasonal.bond + '.xlsx', [
+  exportWorkbook(dlSafeName('机构行为_季节性_' + seasonal.inst + '_' + seasonal.bond + '_' + dlRangeTag() + '.xlsx'), [
     { name: '季节性累计', rows },
   ]);
 }
@@ -1622,7 +1640,7 @@ function exportOverlay() {
     rows.push([d, o.netVals[i], (y === null || y === undefined) ? '' : y]);
   });
 
-  exportWorkbook('机构行为_净买入×收益率_' + o.bond + '_' + o.maturity + '_' + dlRangeTag() + '.xlsx', [
+  exportWorkbook(dlSafeName('机构行为_净买入×收益率_' + dlFilterTag() + '_' + o.bond + '_' + o.maturity + '_' + dlRangeTag() + '.xlsx'), [
     { name: '净买入×收益率', rows },
   ]);
 }

@@ -402,7 +402,7 @@
     <!-- 保存到看板 -->
     <div class="filter-group">
       <button class="btn btn-primary" id="btn-save-pair" onclick="saveCurrentPair()" style="width:100%">⭐ 保存当前配对到看板</button>
-      <p class="hint" id="save-pair-hint">A、B 都选「个券」后可保存为常用模板（云端同步）</p>
+      <p class="hint" id="save-pair-hint">A、B 任选 个券 / IRS / 期货隐含利率 两两组合均可保存（云端同步）</p>
     </div>
 
     <!-- 时间范围 -->
@@ -1069,9 +1069,11 @@ function resetFilters() {
 // ============================================
 // 利差看板（云端同步 · GitHub Contents API）
 // 复用研究结论库的 ficc_github_sync_config（token/owner/repo/branch）
-// 数据文件：spread_watchlist.json （仅存「个券 vs 个券」配对）
+// 数据文件：spread_watchlist.json
+// 支持任意两两组合：bond:CODE（个券YTM）/ curve:IRS-1Y|IRS-2Y|IRS-5Y / curve:N年期货隐含利率
+// 限制：仅「利率类」之间可相减（期货价格 T主力 等为点位，量纲不同，禁止与利率配对）
 // ============================================
-let watchlist = [];   // [{a:'bond:CODE', b:'bond:CODE', note:'', added:'YYYY-MM-DD'}]
+let watchlist = [];   // [{a:'bond:CODE'|'curve:NAME', b:同, note:'', added:'YYYY-MM-DD'}]
 const WATCH_PATH = 'spread_watchlist.json';
 
 function getWatchSyncConfig() {
@@ -1134,6 +1136,10 @@ async function pullWatchlist(showToast) {
     if (statusEl) statusEl.textContent = '云端暂无（保存后自动创建）';
     if (showToast) toast('云端暂无看板，保存一对即自动创建');
   } else {
+    // 看板含 IRS/期货标的时，曲线数据是懒加载的，需补载后重渲染，否则卡片显示"无共同数据"
+    const hadCurve = curveDataLoaded;
+    await ensureWatchlistData();
+    if (!hadCurve && curveDataLoaded) renderWatchlist();
     if (statusEl) statusEl.textContent = `云端已同步（${watchlist.length} 对）`;
     if (showToast) toast(`✅ 已从云端拉取 ${watchlist.length} 对利差`);
   }
@@ -1220,12 +1226,51 @@ function labelOf(item) {
   return i >= 0 ? item.slice(i + 1) : item;
 }
 
+// ── 标的量纲判定：'rate'(利率%) / 'price'(价格点) ──
+// 利率类之间可相减求利差；期货价格是点位，与利率量纲不同
+const PRICE_CURVES = ['T主力', 'TF主力', 'TS主力', 'TL主力'];
+function itemUnit(item) {
+  if (!item) return null;
+  const [type, ...rest] = item.split(':');
+  const key = rest.join(':');
+  if (type === 'bond') return 'rate';         // 个券 = YTM(%)
+  if (type === 'curve') {
+    return PRICE_CURVES.includes(key) ? 'price' : 'rate';  // IRS / 期货隐含利率 = %
+  }
+  return null;
+}
+
+// 带类型前缀的显示标签，便于区分同类不同源的标的（如 IRS-5Y vs 5年期货隐含利率）
+function typeLabelOf(item) {
+  if (!item) return '';
+  const [type, ...rest] = item.split(':');
+  const key = rest.join(':');
+  if (type === 'bond') return key;
+  if (type === 'curve') {
+    if (key.startsWith('IRS-')) return 'IRS ' + key.slice(4);
+    if (PRICE_CURVES.includes(key)) return key + '(价)';
+    return key;   // 期货隐含利率本身已含"隐含利率"
+  }
+  return key;
+}
+
+// 看板中若含曲线类标的（IRS/期货），需确保曲线数据已加载，否则卡片会显示"无共同数据"
+async function ensureWatchlistData() {
+  const needCurve = watchlist.some(p => p.a.startsWith('curve:') || p.b.startsWith('curve:'));
+  if (needCurve && !curveDataLoaded) {
+    const statusEl = document.getElementById('watchlist-status');
+    if (statusEl) statusEl.textContent = '曲线数据加载中…';
+    const ok = await ensureCurveData();
+    if (!ok && statusEl) statusEl.textContent = '曲线数据加载失败';
+  }
+}
+
 // 渲染看板卡片
 function renderWatchlist() {
   const box = document.getElementById('watchlist-cards');
   if (!box) return;
   if (!watchlist.length) {
-    box.innerHTML = '<div class="watchlist-empty">暂无保存的利差配对。把两只个券拖入 A、B 框，点左侧「⭐ 保存当前配对到看板」。</div>';
+    box.innerHTML = '<div class="watchlist-empty">暂无保存的利差配对。把任意两个标的（个券 / IRS / 期货隐含利率）拖入 A、B 框，点左侧「⭐ 保存当前配对到看板」。</div>';
     return;
   }
   box.innerHTML = '';
@@ -1234,7 +1279,7 @@ function renderWatchlist() {
     const card = document.createElement('div');
     card.className = 'wl-card';
     if (!r || r.spreads.length === 0) {
-      card.innerHTML = `<div class="wl-card-head"><span class="wl-pair">${labelOf(p.a)} − ${labelOf(p.b)}</span><button class="wl-del" title="删除">×</button></div><div class="watchlist-empty" style="padding:8px 0">无共同数据</div>`;
+      card.innerHTML = `<div class="wl-card-head"><span class="wl-pair">${typeLabelOf(p.a)} − ${typeLabelOf(p.b)}</span><button class="wl-del" title="删除">×</button></div><div class="watchlist-empty" style="padding:8px 0">无共同数据</div>`;
     } else {
       const N = 250;  // 近一年（约250个交易日）
       const spreads = r.spreads.slice(-N);
@@ -1266,12 +1311,14 @@ function renderWatchlist() {
   });
 }
 
-// 保存当前 A/B 配对（仅限个券对个券）
+// 保存当前 A/B 配对（支持 个券/IRS/期货隐含利率/期货价格 任意两两组合）
 function saveCurrentPair() {
-  if (!slotA || !slotB) { toast('请先把两只个券拖入 A、B 框'); return; }
-  if (slotA === slotB) { toast('A、B 是同一只券，无法保存'); return; }
-  if (!slotA.startsWith('bond:') || !slotB.startsWith('bond:')) {
-    toast('看板仅支持「个券 vs 个券」，请把 A、B 都选为个券'); return;
+  if (!slotA || !slotB) { toast('请先把两个标的拖入 A、B 框'); return; }
+  if (slotA === slotB) { toast('A、B 是同一个标的，无法保存'); return; }
+  // 期货价格（点）与利率（%）量纲不同，相减无意义
+  const unitA = itemUnit(slotA), unitB = itemUnit(slotB);
+  if (unitA !== unitB) {
+    toast(`量纲不同无法计算利差：${unitA} vs ${unitB}（利率%只能与利率%相减）`); return;
   }
   const dup = watchlist.some(p => (p.a === slotA && p.b === slotB) || (p.a === slotB && p.b === slotA));
   if (dup) { toast('该配对已在看板中'); return; }
@@ -1284,7 +1331,7 @@ function saveCurrentPair() {
 async function removePair(idx) {
   const p = watchlist[idx];
   if (!p) return;
-  if (!confirm(`删除看板配对：${labelOf(p.a)} − ${labelOf(p.b)} ？`)) return;
+  if (!confirm(`删除看板配对：${typeLabelOf(p.a)} − ${typeLabelOf(p.b)} ？`)) return;
   await pullWatchlist(false);
   const realIdx = watchlist.findIndex(q => q.a===p.a && q.b===p.b);
   if (realIdx < 0) { toast('该配对在云端已不存在'); renderWatchlist(); return; }
@@ -1293,14 +1340,24 @@ async function removePair(idx) {
   pushWatchlist(false);
 }
 
-// 载入配对到 A/B 槽
-function loadPair(idx) {
+// 载入配对到 A/B 槽（含IRS/期货时先确保曲线数据已加载）
+async function loadPair(idx) {
   const p = watchlist[idx];
   if (!p) return;
+  await ensureWatchlistDataFor(p);
   slotA = p.a; slotB = p.b;
   renderSlots();
   updateChart();
-  toast(`已载入：${labelOf(p.a)} − ${labelOf(p.b)}`);
+  toast(`已载入：${typeLabelOf(p.a)} − ${typeLabelOf(p.b)}`);
+}
+
+// 单配对的数据就绪保障（供 loadPair 用）
+async function ensureWatchlistDataFor(p) {
+  const need = (p && (p.a.startsWith('curve:') || p.b.startsWith('curve:')));
+  if (need && !curveDataLoaded) {
+    toast('曲线数据加载中…（约 2MB）');
+    await ensureCurveData();
+  }
 }
 
 // ============================================
