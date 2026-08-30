@@ -591,9 +591,16 @@ def update_yield_curve_data():
 FACTOR_BOND_TYPE = "国债"  # legacy, 实际 bond_type 在 FACTOR_DEFS 中定义
 FACTOR_MATURITY = "20-30年"  # legacy
 FACTOR_MA_WINDOW = 10
-FACTOR_PERC_WINDOW = 100
-FACTOR_PERC_MIN_PERIODS = 60
-FACTOR_FINAL_MA = 10
+# ★★ 以下三个参数必须与 prepare_factor_data.py 中的 PERC_WINDOW / PERC_MIN_PERIODS / FINAL_MA
+# 逐字保持一致。两处是各自独立的副本，每日自动更新走的是本文件这套逻辑。
+# 2026-08-28 两边同步改为 60 / 40 / 1（百分位窗口 100→60，去掉末尾的再 MA10）。
+# 实测依据（vs 未来5日30年国债）：60日百分位 IC=-0.116(t=-4.05)；
+# 旧口径 100日+再MA10 IC 仅 -0.030(t=-1.01) 不显著。
+# ⚠ 改参数时两边都要改！2026-08-29/30 因只改了 prepare_factor_data.py，
+#    本文件仍是旧值，每日更新把新口径静默覆盖回旧口径，线上因子页两天数据错误。
+FACTOR_PERC_WINDOW = 60
+FACTOR_PERC_MIN_PERIODS = 40
+FACTOR_FINAL_MA = 1
 FACTOR_MERGED_DATA = os.path.join(SCRIPT_DIR, "bond_trading_data_merged.json")
 
 # 因子定义（使用合并数据，5年历史）
