@@ -21,6 +21,8 @@ import sys
 import re
 import subprocess
 import logging
+import glob
+import time
 from datetime import datetime, date
 from pathlib import Path
 
@@ -40,6 +42,17 @@ LOG_PATH = os.path.join(SCRIPT_DIR, "daily_update.log")
 USER_PREPROCESS_SCRIPT = r"C:\Users\lihaoran\Documents\工作\现券交易\2026年交易\现券数据处理_2026.py"
 USER_PREPROCESS_CWD = r"C:\Users\lihaoran\Documents\工作\现券交易\2026年交易"
 PYTHON_EXE = r"C:\Users\lihaoran\AppData\Local\Programs\Python\Python313\python.exe"
+
+# ── 源文件写入稳定性等待（2026-08-31 新增）──
+# 自动化 9:15 触发，而用户下载日报 / 从 Wind 导出 FICC 两个 Excel 的时间在 9:00~9:25 之间
+# 波动。若脚本跑在源文件落盘完成之前，当天数据就进不去。实测 08-31 一天内踩两次：
+#   ① 日报 09:20 落盘、预处理 09:19:42 已跑完 → 机构行为少一天（只到 08-27）
+#   ② 曲线 Excel 09:25:41 落盘、脚本 09:24:59 判"不是今天下载的"跳过 → 曲线停在 08-27
+# 策略：跑更新前，对"刚被写过"的源文件轮询等待 mtime+size 稳定后再继续。
+STABLE_FRESH_WINDOW = 300   # 源文件在最近 N 秒内被修改过 → 认为可能还在写，需要等待
+STABLE_QUIET = 30           # mtime+size 连续 N 秒不变 → 认为写完了
+STABLE_TIMEOUT = 240        # 单个文件最长等待秒数，超时则按当前状态继续
+STABLE_POLL = 5             # 轮询间隔秒数
 
 logging.basicConfig(
     level=logging.INFO,
@@ -983,6 +996,71 @@ def update_factor_data():
     return True
 
 
+def _latest_daily_report():
+    """返回 USER_PREPROCESS_CWD 下最新的一份机构行为日报 xlsx，没有则 None"""
+    try:
+        files = [f for f in glob.glob(os.path.join(USER_PREPROCESS_CWD, "现券市场交易情况总结日报_*.xlsx"))
+                 if os.path.isfile(f)]
+        return max(files, key=os.path.getmtime) if files else None
+    except Exception:
+        return None
+
+
+def _wait_file_stable(tag, path):
+    """若文件刚被写过（可能仍在下载/导出中），等它 mtime+size 稳定后再返回。
+
+    只在文件"最近被修改过"时才等待；老文件直接放行，不影响正常路径耗时。
+    """
+    try:
+        age = time.time() - os.path.getmtime(path)
+    except OSError:
+        return
+    if age > STABLE_FRESH_WINDOW:
+        return
+
+    log.info(f"  {tag} 于 {age:.0f} 秒前被修改，可能仍在写入，等待其稳定…")
+    deadline = time.time() + STABLE_TIMEOUT
+    last_sig, stable_since = None, None
+    while time.time() < deadline:
+        try:
+            st = os.stat(path)
+            sig = (round(st.st_mtime, 3), st.st_size)
+        except OSError:
+            time.sleep(STABLE_POLL)
+            continue
+        now = time.time()
+        if sig == last_sig:
+            if stable_since is None:
+                stable_since = now
+            elif now - stable_since >= STABLE_QUIET:
+                log.info(f"  {tag} 已稳定 (大小 {st.st_size / 1024:.0f} KB)，继续")
+                return
+        else:
+            last_sig = sig
+            stable_since = now
+        time.sleep(STABLE_POLL)
+
+    log.warning(f"  {tag} 等待稳定超时 ({STABLE_TIMEOUT}s)，按当前状态继续")
+
+
+def wait_sources_stable():
+    """跑更新前统一等待三个源文件写完，规避"脚本跑在下载/导出完成之前"的竞态。"""
+    watch = []
+    report = _latest_daily_report()
+    if report:
+        watch.append(("机构行为日报", report))
+    if os.path.exists(FICC_EXCEL):
+        watch.append(("FICC现券Excel", FICC_EXCEL))
+    if os.path.exists(CURVE_EXCEL):
+        watch.append(("FICC曲线Excel", CURVE_EXCEL))
+
+    for tag, path in watch:
+        try:
+            _wait_file_stable(tag, path)
+        except Exception as e:
+            log.warning(f"  等待 {tag} 稳定时出错（忽略）: {e}")
+
+
 def run_user_preprocess():
     """运行用户的预处理脚本，从原始日报生成 bond_data.xlsx"""
     if not os.path.exists(USER_PREPROCESS_SCRIPT):
@@ -1028,6 +1106,12 @@ def run_user_preprocess():
 def main():
     log.info("=" * 50)
     log.info("每日数据更新任务启动")
+
+    # 先等源文件写完（自动化 9:15 触发，用户下载/导出时间有波动，见 STABLE_* 常量注释）
+    try:
+        wait_sources_stable()
+    except Exception as e:
+        log.warning(f"源文件稳定性等待异常（不阻断更新）: {e}")
 
     ok0 = True
     try:
