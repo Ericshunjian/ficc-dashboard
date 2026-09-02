@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -44,6 +45,17 @@ TX_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
 TX_PARAMS = {"param": "sh000300,day,,,800,qfq"}
 TX_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 TX_TIMEOUT = 40
+
+# A股 15:00 收盘，留 30 分钟缓冲确保行情落定。
+# 盘中运行时接口会返回当日的实时价当作「日线收盘价」，直接纳入会污染 HV，
+# 因此在收盘前一律丢弃当日数据（与期货序列「不引入未收盘占位行」同理）。
+MARKET_CLOSE = (15, 30)
+
+
+def _market_settled_today() -> bool:
+    """当前时间是否已过当日收盘缓冲点。"""
+    now = datetime.now()
+    return (now.hour, now.minute) >= MARKET_CLOSE
 
 
 def _load_existing() -> dict | None:
@@ -85,6 +97,14 @@ def _fetch_closes() -> dict[str, float]:
 
 def build_payload() -> dict:
     fetched = _fetch_closes()
+
+    # 盘中运行：丢弃当日未收盘数据，避免把实时价当成收盘价写进 HV
+    if not _market_settled_today():
+        today = datetime.now().strftime("%Y-%m-%d")
+        fetched = {d: c for d, c in fetched.items() if d < today}
+    if not fetched:
+        raise RuntimeError("剔除当日未收盘数据后无有效行情")
+
     fetched_last = max(fetched)
 
     existing = _load_existing()
