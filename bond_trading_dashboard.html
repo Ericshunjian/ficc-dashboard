@@ -946,6 +946,8 @@ function renderTagGroup(containerId, items, selectedSet, isMulti, singleByDefaul
 }
 
 function refreshAllTags() {
+  // 现券数据未就绪时（meta 空）跳过，避免 undefined.length 异常
+  if (!allData || !allData.meta || !allData.meta.institutions) return;
   const meta = allData.meta;
   refreshTagContainer('institution-tags', meta.institutions, selectedInstitutions);
   refreshTagContainer('bond-type-tags', meta.bond_types, selectedBondTypes);
@@ -1846,6 +1848,11 @@ function switchView(v) {
     const r = repoData.meta.date_range;
     ds.value = (r[0] < '2026-01-01') ? '2026-01-01' : r[0];
     de.value = r[1];
+  } else if (v === 'cash' && allData && allData.meta) {
+    // 首次切回现券且无保存状态（如曾回购视图自举过日期）→ 用现券数据区间兜底
+    const r = allData.meta.date_range;
+    ds.value = (r[0] < '2026-01-01') ? '2026-01-01' : r[0];
+    de.value = r[1];
   }
   if (v === 'repo') {
     loadRepoData().then(() => { if (currentView === 'repo') updateChart(); });
@@ -1963,7 +1970,32 @@ function buildRepoSeries() {
 }
 
 function updateRepoCharts() {
+  try {
   applyViewVisibility();
+  // ── 回购视图自举 ──
+  // 首次访问/CDN 慢时，现券数据（allData）可能尚未就绪：侧栏机构标签、
+  // 默认机构选择、日期区间均未初始化 → 用回购数据自身兜底，保证视图可独立渲染
+  if (repoData && repoData.inst) {
+    const avail = Object.keys(repoData.inst);
+    if (avail.length) {
+      const tagBox = document.getElementById('institution-tags');
+      if (tagBox && tagBox.children.length === 0) {
+        renderTagGroup('institution-tags', avail, selectedInstitutions, true);
+      }
+      if (selectedInstitutions.size === 0) {
+        selectedInstitutions.add(avail.includes('大型银行') ? '大型银行' : avail[0]);
+        // 注意：不用 refreshAllTags()——它依赖 allData.meta.institutions，现券未就绪时会抛异常
+        document.querySelectorAll('#institution-tags .tag').forEach(t =>
+          t.classList.toggle('active', selectedInstitutions.has(t.textContent)));
+      }
+      const ds = document.getElementById('date-start'), de = document.getElementById('date-end');
+      if (!ds.value || !de.value) {
+        const r = repoData.meta.date_range;
+        ds.value = (r[0] < '2026-01-01') ? '2026-01-01' : r[0];
+        de.value = r[1];
+      }
+    }
+  }
   const instList = [...selectedInstitutions];
   if (instList.length === 0) { repoShowNoData('请选择至少一个机构类型'); return; }
   if (!repoData || !repoData.dates || !repoData.dates.length) {
@@ -2116,6 +2148,11 @@ function updateRepoCharts() {
       return o;
     })(),
   });
+  } catch (e) {
+    console.error('updateRepoCharts error:', e);
+    window.__lastRepoErr = String(e && e.message ? e.message : e);  // 供 E2E 诊断
+    try { repoShowNoData('渲染出错：' + (e && e.message ? e.message : e)); } catch (_) {}
+  }
 }
 
 // ── 回购视图 Excel 导出 ──
