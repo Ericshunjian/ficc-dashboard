@@ -275,10 +275,12 @@ def build_output(records):
             rb, vb = r.get("repo_bal"), r.get("rev_bal")
             blk["repo_bal"].append(None if rb is None else round(rb, 2))
             blk["rev_bal"].append(None if vb is None else round(vb, 2))
-            if rb is None and vb is None:
-                blk["net"].append(None)
-            else:
-                blk["net"].append(round((vb or 0.0) - (rb or 0.0), 2))
+            # net 优先用已存储值（master 往返保真）；仅新解析日期（recs 无 net）才从余额重算。
+            # 若无条件重算：第一次从原始全精度、之后从 round 后余额算，.005 边界会漂移 0.01（2023-07-28 实测 3 处）
+            net = r.get("net")
+            if net is None and (rb is not None or vb is not None):
+                net = (vb or 0.0) - (rb or 0.0)
+            blk["net"].append(None if net is None else round(net, 2))
             for k in ("repo_amt", "rev_amt"):
                 v = r.get(k)
                 blk[k].append(None if v is None else round(v, 2))
@@ -318,6 +320,20 @@ def write_xlsx(dates, inst_blk):
         log.info(f"  已生成 {os.path.basename(REPO_XLSX_OUT)}（{len(dates)} 天 × {len(sheets)} sheet）")
     except Exception as e:
         log.warning(f"  生成 xlsx 失败（不影响 JSON）: {e}")
+
+
+def _payloads_equal(old_path, new_payload):
+    """比较新旧数据是否实质等价（忽略 last_updated 时间戳）"""
+    try:
+        with open(old_path, encoding="utf-8") as f:
+            old = json.load(f)
+    except Exception:
+        return False
+    if old.get("dates") != new_payload["dates"]:
+        return False
+    om = dict(old.get("meta") or {}); om.pop("last_updated", None)
+    nm = dict(new_payload["meta"]); nm.pop("last_updated", None)
+    return om == nm and old.get("inst") == new_payload["inst"]
 
 
 def main():
@@ -383,6 +399,14 @@ def main():
     }
 
     payload = {"meta": meta, "dates": dates, "inst": inst_blk}
+
+    # 幂等保护：无实质变化时不重写（保持 last_updated 不变 → 不产生虚假 commit，
+    # 前端 IndexedDB 也不会因时间戳变化而重新下载 1MB）
+    if os.path.exists(REPO_JSON_OUT) and _payloads_equal(REPO_JSON_OUT, payload):
+        log.info("  数据无变化，跳过重写 JSON / xlsx")
+        log.info("质押式回购数据更新完成（无变化）")
+        return True
+
     with open(REPO_JSON_OUT, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
     size_mb = os.path.getsize(REPO_JSON_OUT) / 1048576
