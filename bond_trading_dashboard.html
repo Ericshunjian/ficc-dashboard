@@ -390,6 +390,63 @@
   .dl-btn:hover { color: var(--primary); border-color: var(--primary); background: var(--primary-light); }
   .dl-btn:active { transform: scale(0.96); }
 
+  /* ── 质押式回购子视图图表卡片 ── */
+  .chart-repo {
+    flex: 0 0 auto;
+    height: 300px;
+    background: var(--panel-bg);
+    border-radius: var(--radius);
+    padding: 12px 20px 8px;
+    box-shadow: var(--shadow);
+    position: relative;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .chart-repo .chart-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chart-repo .chart-label::before {
+    content: '';
+    display: inline-block;
+    width: 8px; height: 8px;
+    background: var(--warning);
+    border-radius: 2px;
+  }
+  .chart-repo .chart-wrap { flex: 1; min-height: 0; position: relative; }
+  .chart-repo canvas { width: 100% !important; height: 100% !important; }
+
+  /* 图内迷你切换（正回购/逆回购） */
+  .mini-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-left: 6px;
+  }
+  .mini-toggle .mt-opt {
+    font-size: 10px;
+    padding: 2px 9px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    background: var(--bg);
+    user-select: none;
+    transition: all 0.15s;
+    line-height: 1.5;
+  }
+  .mini-toggle .mt-opt:hover { color: var(--primary); }
+  .mini-toggle .mt-opt.active { background: var(--primary); color: #fff; }
+
+  /* 侧栏数据视图切换 */
+  .view-tags { display: flex; gap: 6px; }
+  .view-tags .tag { flex: 1; text-align: center; }
+
   .no-data {
     display: flex;
     align-items: center;
@@ -423,22 +480,30 @@
 <aside class="sidebar">
   <div class="sidebar-header">
     <h2><span class="icon">🏦</span>筛选条件</h2>
-    <p class="subtitle">选择机构、券种、期限及时间范围</p>
+    <p class="subtitle">选择数据视图、机构及时间范围</p>
     <a href="index.html" class="back-home">← 返回首页</a>
   </div>
 
   <div class="filter-body">
     <div class="filter-group">
+      <label class="filter-label"><span class="dot"></span>数据视图</label>
+      <div class="view-tags" id="view-tags">
+        <div class="tag active" data-view="cash" onclick="switchView('cash')">现券交易</div>
+        <div class="tag" data-view="repo" onclick="switchView('repo')">质押式回购</div>
+      </div>
+    </div>
+
+    <div class="filter-group">
       <label class="filter-label"><span class="dot"></span>机构类型</label>
       <div class="tag-grid" id="institution-tags"></div>
     </div>
 
-    <div class="filter-group">
+    <div class="filter-group" id="bond-type-group">
       <label class="filter-label"><span class="dot"></span>债券类型</label>
       <div class="tag-grid" id="bond-type-tags"></div>
     </div>
 
-    <div class="filter-group">
+    <div class="filter-group" id="maturity-group">
       <label class="filter-label"><span class="dot"></span>期限</label>
       <div class="tag-grid" id="maturity-tags"></div>
     </div>
@@ -473,7 +538,7 @@
     </div>
   </div>
 
-  <div class="chart-area">
+  <div class="chart-area" id="cash-chart-area">
     <!-- Top: Daily bar chart -->
     <div class="chart-top" id="chart-top-container">
       <div class="chart-label">日度净买入（亿元）
@@ -527,7 +592,62 @@
     </div>
   </div>
 
-  <div class="source-note">
+  <!-- ── 质押式回购视图 ── -->
+  <div class="chart-area" id="repo-chart-area" style="display:none">
+    <div class="chart-repo">
+      <div class="chart-label">净融出走势（亿元 · 逆回购余额−正回购余额）
+        <button class="dl-btn" onclick="exportRepoNet()" title="导出当前筛选下的净融出数据">⬇ Excel</button>
+      </div>
+      <div class="chart-wrap"><canvas id="repo-chart-net"></canvas></div>
+      <div class="no-data" id="no-data-repo-net" style="display:none">
+        <span class="icon">📊</span>
+        <span>请选择机构类型查看数据</span>
+      </div>
+    </div>
+
+    <div class="chart-repo">
+      <div class="chart-label">正/逆回购余额（亿元 · 所选机构合计）
+        <button class="dl-btn" onclick="exportRepoBal()" title="导出正/逆回购余额数据">⬇ Excel</button>
+      </div>
+      <div class="chart-wrap"><canvas id="repo-chart-bal"></canvas></div>
+      <div class="no-data" id="no-data-repo-bal" style="display:none">
+        <span class="icon">📈</span>
+        <span>请选择机构类型查看数据</span>
+      </div>
+    </div>
+
+    <div class="chart-repo">
+      <div class="chart-label">押品结构 · 当日成交金额（亿元 · 所选机构合计）
+        <span class="mini-toggle" id="repo-coll-toggle">
+          <span class="mt-opt active" data-dir="repo" onclick="setRepoCollDir('repo')">正回购</span>
+          <span class="mt-opt" data-dir="rev" onclick="setRepoCollDir('rev')">逆回购</span>
+        </span>
+        <button class="dl-btn" onclick="exportRepoColl()" title="导出押品结构数据">⬇ Excel</button>
+      </div>
+      <div class="chart-wrap"><canvas id="repo-chart-coll"></canvas></div>
+      <div class="no-data" id="no-data-repo-coll" style="display:none">
+        <span class="icon">🧱</span>
+        <span>请选择机构类型查看数据</span>
+      </div>
+    </div>
+
+    <div class="chart-repo">
+      <div class="chart-label">回购加权利率（% · 按当日成交金额加权）
+        <span class="mini-toggle" id="repo-rate-toggle">
+          <span class="mt-opt active" data-dir="repo" onclick="setRepoRateDir('repo')">正回购</span>
+          <span class="mt-opt" data-dir="rev" onclick="setRepoRateDir('rev')">逆回购</span>
+        </span>
+        <button class="dl-btn" onclick="exportRepoRate()" title="导出加权利率数据">⬇ Excel</button>
+      </div>
+      <div class="chart-wrap"><canvas id="repo-chart-rate"></canvas></div>
+      <div class="no-data" id="no-data-repo-rate" style="display:none">
+        <span class="icon">💰</span>
+        <span>请选择机构类型查看数据</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="source-note" id="source-note">
     数据来源：bond_data.xlsx | 数据区间：2026-01-04 ~ 2026-06-16 | 净买入单位：亿元
   </div>
 </main>
@@ -630,9 +750,11 @@ function decompressData(raw) {
 // 从 allData 渲染 UI（首次设默认选择，后续更新保留用户选择）
 function renderFromData() {
   const meta = allData.meta;
-  const defaultStart = (meta.date_range[0] < '2026-01-01') ? '2026-01-01' : meta.date_range[0];
-  document.getElementById('date-start').value = defaultStart;
-  document.getElementById('date-end').value = meta.date_range[1];
+  if (currentView === 'cash') {   // 回购视图下不覆盖其日期区间
+    const defaultStart = (meta.date_range[0] < '2026-01-01') ? '2026-01-01' : meta.date_range[0];
+    document.getElementById('date-start').value = defaultStart;
+    document.getElementById('date-end').value = meta.date_range[1];
+  }
   renderTagGroup('institution-tags', meta.institutions, selectedInstitutions, true);
   renderTagGroup('bond-type-tags', meta.bond_types, selectedBondTypes, false);
   renderTagGroup('maturity-tags', meta.maturities, selectedMaturities, false);
@@ -960,6 +1082,7 @@ const YEAR_COLORS = ['#5470c6', '#22c55e', '#f59e0b', '#9a60b4', '#94a3b8', '#06
 // Update Charts
 // ============================================
 function updateChart() {
+  if (currentView === 'repo') { updateRepoCharts(); return; }
   if (selectedInstitutions.size === 0) {
     showNoData('请选择至少一个机构类型');
     return;
@@ -1465,6 +1588,18 @@ function showNoData(msg) {
 }
 
 function resetFilters() {
+  if (currentView === 'repo') {
+    selectedInstitutions.clear();
+    selectedInstitutions.add('大型银行');
+    if (repoData && repoData.meta) {
+      const r = repoData.meta.date_range;
+      document.getElementById('date-start').value = (r[0] < '2026-01-01') ? '2026-01-01' : r[0];
+      document.getElementById('date-end').value = r[1];
+    }
+    refreshAllTags();
+    updateChart();
+    return;
+  }
   const meta = allData.meta;
   selectedInstitutions.clear();
   selectedInstitutions.add(meta.institutions[0]);
@@ -1645,6 +1780,407 @@ function exportOverlay() {
   ]);
 }
 
+
+// ============================================
+// 质押式回购子视图（与现券交易并列，左侧「数据视图」切换）
+// 数据源：repo_trading_data.json（repo_data_update.py 生成）
+// ============================================
+const CACHE_KEY_REPO = 'repo_trading_data';
+const DATA_URL_REPO = 'repo_trading_data.json';
+let repoData = null;              // {meta, dates, inst}
+let repoLoadPromise = null;
+let currentView = 'cash';         // 'cash' | 'repo'
+let repoCollDir = 'repo';         // 押品结构图方向：repo=正回购成交 / rev=逆回购成交
+let repoRateDir = 'repo';         // 加权利率图方向
+let viewDateState = { cash: null, repo: null };   // 两视图各自记住的日期区间
+let chartRepoNet = null, chartRepoBal = null, chartRepoColl = null, chartRepoRate = null;
+const COLL_COLORS = { '利率债': '#5470c6', '信用债': '#fac858', '同业存单': '#91cc75' };
+const COLL_LIST = ['利率债', '信用债', '同业存单'];
+
+function refreshViewTags() {
+  document.querySelectorAll('#view-tags .tag').forEach(t => {
+    t.classList.toggle('active', t.dataset.view === currentView);
+  });
+}
+
+function applyViewVisibility() {
+  const isRepo = (currentView === 'repo');
+  document.getElementById('bond-type-group').style.display = isRepo ? 'none' : '';
+  document.getElementById('maturity-group').style.display = isRepo ? 'none' : '';
+  document.getElementById('cash-chart-area').style.display = isRepo ? 'none' : 'flex';
+  document.getElementById('repo-chart-area').style.display = isRepo ? 'flex' : 'none';
+  // KPI 标签随视图切换
+  document.querySelector('#kpi-total .kpi-label').textContent = isRepo ? '最新净融出（亿元）' : '累计净买入（亿元）';
+  document.querySelector('#kpi-avg .kpi-label').textContent = isRepo ? '最新正回购余额（亿元）' : '日均净买入（亿元）';
+  document.querySelector('#kpi-days .kpi-label').textContent = isRepo ? '最新逆回购余额（亿元）' : '交易天数';
+  document.getElementById('chart-title').textContent = isRepo ? '各机构质押式回购净融出走势' : '各类型机构债券净买入走势';
+  // 源-note 跟随视图
+  const note = document.getElementById('source-note');
+  if (isRepo && repoData && repoData.meta) {
+    note.textContent = '数据来源：质押式回购市场交易情况总结日报 | 区间：' +
+      repoData.meta.date_range[0] + ' ~ ' + repoData.meta.date_range[1] +
+      ' | 单位：亿元（利率%）';
+  } else if (!isRepo && allData && allData.meta) {
+    note.textContent = '数据来源：bond_data.xlsx | 数据区间：' +
+      allData.meta.date_range[0] + ' ~ ' + allData.meta.date_range[1] +
+      ' | 净买入单位：亿元';
+  }
+}
+
+function switchView(v) {
+  if (currentView === v) return;
+  // 保存当前视图的日期区间
+  viewDateState[currentView] = {
+    start: document.getElementById('date-start').value,
+    end: document.getElementById('date-end').value,
+  };
+  currentView = v;
+  refreshViewTags();
+  applyViewVisibility();
+  // 恢复目标视图的日期区间（首次进入用该视图默认值）
+  const st = viewDateState[v];
+  const ds = document.getElementById('date-start'), de = document.getElementById('date-end');
+  if (st && st.start) {
+    ds.value = st.start; de.value = st.end;
+  } else if (v === 'repo' && repoData && repoData.meta) {
+    const r = repoData.meta.date_range;
+    ds.value = (r[0] < '2026-01-01') ? '2026-01-01' : r[0];
+    de.value = r[1];
+  }
+  if (v === 'repo') {
+    loadRepoData().then(() => { if (currentView === 'repo') updateChart(); });
+  }
+  updateChart();
+}
+
+async function loadRepoData() {
+  if (repoData) return repoData;
+  if (repoLoadPromise) return repoLoadPromise;
+  repoLoadPromise = (async () => {
+    const cached = await idbGet(CACHE_KEY_REPO);
+    if (cached && cached.meta && cached.dates) repoData = cached;
+    try {
+      const resp = await fetch(DATA_URL_REPO, { cache: 'no-cache' });
+      const raw = await resp.json();
+      if (raw && raw.meta && raw.dates) {
+        const newUpd = raw.meta.last_updated;
+        const oldUpd = cached && cached.meta ? cached.meta.last_updated : null;
+        if (newUpd !== oldUpd) {
+          repoData = raw;
+          await idbSet(CACHE_KEY_REPO, raw);
+        }
+      }
+    } catch (e) {
+      console.warn('质押式回购数据加载失败', e);
+    }
+    return repoData;
+  })();
+  return repoLoadPromise;
+}
+
+function setRepoCollDir(dir) {
+  repoCollDir = dir;
+  document.querySelectorAll('#repo-coll-toggle .mt-opt').forEach(o =>
+    o.classList.toggle('active', o.dataset.dir === dir));
+  if (currentView === 'repo') updateChart();
+}
+
+function setRepoRateDir(dir) {
+  repoRateDir = dir;
+  document.querySelectorAll('#repo-rate-toggle .mt-opt').forEach(o =>
+    o.classList.toggle('active', o.dataset.dir === dir));
+  if (currentView === 'repo') updateChart();
+}
+
+function repoShowNoData(msg) {
+  ['net', 'bal', 'coll', 'rate'].forEach(k => {
+    document.getElementById('no-data-repo-' + k).style.display = 'flex';
+    document.getElementById('no-data-repo-' + k).querySelector('span:last-child').textContent = msg;
+    document.getElementById('repo-chart-' + k).style.display = 'none';
+  });
+  if (chartRepoNet) { chartRepoNet.destroy(); chartRepoNet = null; }
+  if (chartRepoBal) { chartRepoBal.destroy(); chartRepoBal = null; }
+  if (chartRepoColl) { chartRepoColl.destroy(); chartRepoColl = null; }
+  if (chartRepoRate) { chartRepoRate.destroy(); chartRepoRate = null; }
+  ['kpi-total', 'kpi-avg', 'kpi-days'].forEach(id => {
+    document.getElementById(id).querySelector('.kpi-value').textContent = '--';
+  });
+  document.getElementById('chart-title').textContent = '各机构质押式回购净融出走势';
+  document.getElementById('chart-desc').textContent = '请选择机构和筛选条件后查看';
+}
+
+// 构建回购视图的筛选后序列（各机构 + 合计）
+function buildRepoSeries() {
+  const startDate = document.getElementById('date-start').value;
+  const endDate = document.getElementById('date-end').value;
+  const dates = repoData.dates.filter(d => d >= startDate && d <= endDate);
+  const dateIdx = new Map(repoData.dates.map((d, i) => [d, i]));
+  const instList = [...selectedInstitutions];
+
+  const pick = (arr) => dates.map(d => {
+    const i = dateIdx.get(d);
+    const v = (arr && i !== undefined) ? arr[i] : null;
+    return (v === null || v === undefined) ? null : v;
+  });
+
+  const series = {};
+  instList.forEach(inst => {
+    const blk = (repoData.inst || {})[inst] || {};
+    series[inst] = {
+      net: pick(blk.net), repo_bal: pick(blk.repo_bal), rev_bal: pick(blk.rev_bal),
+      repo_rate: pick(blk.repo_rate), rev_rate: pick(blk.rev_rate),
+      coll: {},
+    };
+    COLL_LIST.forEach(c => {
+      const cb = (blk.coll || {})[c] || {};
+      series[inst].coll[c] = { repo: pick(cb.repo), rev: pick(cb.rev) };
+    });
+  });
+
+  // 所选机构合计（null 视为缺省跳过；全缺→null）
+  const agg = (key) => dates.map((d, i) => {
+    let s = null, has = false;
+    instList.forEach(inst => {
+      const v = series[inst][key][i];
+      if (v !== null) { s = (s === null ? 0 : s) + v; has = true; }
+    });
+    return has ? s : null;
+  });
+  const aggColl = (dir) => dates.map((d, i) => {
+    const out = {};
+    COLL_LIST.forEach(c => {
+      let s = 0;
+      instList.forEach(inst => {
+        const v = series[inst].coll[c][dir][i];
+        if (v !== null) s += v;
+      });
+      out[c] = s;
+    });
+    return out;
+  });
+
+  return { dates, instList, series, aggNet: agg('net'), aggRepoBal: agg('repo_bal'), aggRevBal: agg('rev_bal'), aggColl };
+}
+
+function updateRepoCharts() {
+  applyViewVisibility();
+  const instList = [...selectedInstitutions];
+  if (instList.length === 0) { repoShowNoData('请选择至少一个机构类型'); return; }
+  if (!repoData || !repoData.dates || !repoData.dates.length) {
+    repoShowNoData('质押式回购数据加载中…');
+    loadRepoData().then(() => { if (currentView === 'repo') updateRepoCharts(); });
+    return;
+  }
+
+  const { dates, instList: il, series, aggNet, aggRepoBal, aggRevBal, aggColl } = buildRepoSeries();
+  if (!dates.length) { repoShowNoData('选定时间范围内无数据，请调整筛选条件'); return; }
+
+  const startDate = document.getElementById('date-start').value;
+  const endDate = document.getElementById('date-end').value;
+
+  // ── KPI：最新有效值（合计口径）──
+  const lastVal = arr => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i] !== null) return arr[i]; return null; };
+  const kv = { net: lastVal(aggNet), rb: lastVal(aggRepoBal), vb: lastVal(aggRevBal) };
+  const fmtK = v => (v === null ? '--' : v.toFixed(2));
+  document.getElementById('kpi-total').querySelector('.kpi-value').textContent = fmtK(kv.net);
+  document.getElementById('kpi-avg').querySelector('.kpi-value').textContent = fmtK(kv.rb);
+  document.getElementById('kpi-days').querySelector('.kpi-value').textContent = fmtK(kv.vb);
+  ['kpi-total'].forEach(id => {
+    const card = document.getElementById(id);
+    const val = kv.net;
+    card.classList.remove('positive', 'negative');
+    if (val !== null && val > 0) card.classList.add('positive');
+    else if (val !== null && val < 0) card.classList.add('negative');
+  });
+
+  document.getElementById('chart-title').textContent = '各机构质押式回购净融出走势';
+  document.getElementById('chart-desc').textContent =
+    '机构：' + il.join('、') + ' | ' + startDate + ' ~ ' + endDate;
+
+  // 显示画布、隐藏 no-data
+  ['net', 'bal', 'coll', 'rate'].forEach(k => {
+    document.getElementById('no-data-repo-' + k).style.display = 'none';
+    document.getElementById('repo-chart-' + k).style.display = 'block';
+  });
+
+  const lineOpts = (unit) => ({
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'line', padding: 12, font: { size: 11 } } },
+      tooltip: {
+        backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#2c3e50', bodyColor: '#2c3e50',
+        borderColor: '#e8ecf1', borderWidth: 1, cornerRadius: 6, padding: 12,
+        callbacks: {
+          label: function(ctx) {
+            return ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(2) + ' ' + unit : '--');
+          },
+        },
+      },
+    },
+    scales: {
+      x: { ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 }, grid: { display: false } },
+      y: { ticks: { font: { size: 10 } }, grid: { color: '#f0f0f0' } },
+    },
+  });
+
+  // ── 图1：净融出走势（每机构一线）──
+  if (chartRepoNet) chartRepoNet.destroy();
+  chartRepoNet = new Chart(document.getElementById('repo-chart-net'), {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: il.map((inst, i) => {
+        const color = INST_COLORS[i % INST_COLORS.length];
+        return {
+          label: inst, data: series[inst].net,
+          borderColor: color, backgroundColor: color + '15', borderWidth: 2,
+          pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: color,
+          tension: 0.15, fill: false, spanGaps: true,
+        };
+      }),
+    },
+    options: lineOpts('亿'),
+    plugins: [zeroLinePlugin],
+  });
+
+  // ── 图2：正/逆回购余额（所选机构合计，双线）──
+  if (chartRepoBal) chartRepoBal.destroy();
+  chartRepoBal = new Chart(document.getElementById('repo-chart-bal'), {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [
+        {
+          label: '正回购余额（融入）', data: aggRepoBal,
+          borderColor: '#ee6666', backgroundColor: '#ee666615', borderWidth: 2,
+          pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: '#ee6666',
+          tension: 0.15, fill: false, spanGaps: true,
+        },
+        {
+          label: '逆回购余额（融出）', data: aggRevBal,
+          borderColor: '#5470c6', backgroundColor: '#5470c615', borderWidth: 2,
+          pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: '#5470c6',
+          tension: 0.15, fill: false, spanGaps: true,
+        },
+      ],
+    },
+    options: lineOpts('亿'),
+  });
+
+  // ── 图3：押品结构（所选机构合计，堆叠面积）──
+  if (chartRepoColl) chartRepoColl.destroy();
+  const collData = aggColl(repoCollDir);
+  chartRepoColl = new Chart(document.getElementById('repo-chart-coll'), {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: COLL_LIST.map(c => ({
+        label: c,
+        data: collData.map(row => +(row[c] || 0).toFixed(2)),
+        borderColor: COLL_COLORS[c], backgroundColor: COLL_COLORS[c] + '55',
+        borderWidth: 1.5, fill: true, pointRadius: 0, pointHoverRadius: 4,
+        pointHoverBackgroundColor: COLL_COLORS[c], tension: 0.1,
+      })),
+    },
+    options: (() => {
+      const o = lineOpts('亿');
+      o.scales.y.stacked = true;
+      return o;
+    })(),
+  });
+
+  // ── 图4：加权利率（每机构一线，正/逆可切换）──
+  if (chartRepoRate) chartRepoRate.destroy();
+  const rateKey = repoRateDir === 'rev' ? 'rev_rate' : 'repo_rate';
+  chartRepoRate = new Chart(document.getElementById('repo-chart-rate'), {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: il.map((inst, i) => {
+        const color = INST_COLORS[i % INST_COLORS.length];
+        return {
+          label: inst, data: series[inst][rateKey],
+          borderColor: color, backgroundColor: color + '15', borderWidth: 2,
+          pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: color,
+          tension: 0.15, fill: false, spanGaps: true,
+        };
+      }),
+    },
+    options: (() => {
+      const o = lineOpts('%');
+      o.plugins.tooltip.callbacks.label = function(ctx) {
+        return ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(4) + ' %' : '--');
+      };
+      o.scales.y.ticks.callback = v => (+v).toFixed(2) + '%';
+      return o;
+    })(),
+  });
+}
+
+// ── 回购视图 Excel 导出 ──
+function dlInstTag() {
+  const arr = [...selectedInstitutions];
+  if (arr.length === 0) return '全部机构';
+  if (arr.length === 1) return arr[0];
+  return arr.slice(0, 2).join('+') + '等' + arr.length + '机构';
+}
+
+function exportRepoNet() {
+  if (currentView !== 'repo' || !repoData) { alert('请先切换到质押式回购视图'); return; }
+  const { dates, instList, series } = buildRepoSeries();
+  if (!dates.length) { alert('当前筛选条件下无数据，无法导出'); return; }
+  const rows = [['日期', ...instList]];
+  dates.forEach((d, i) => rows.push([d, ...instList.map(inst => {
+    const v = series[inst].net[i];
+    return v === null ? '' : v;
+  })]));
+  exportWorkbook(dlSafeName('质押式回购_净融出_' + dlInstTag() + '_' + dlRangeTag() + '.xlsx'), [
+    { name: '净融出', rows },
+  ]);
+}
+
+function exportRepoBal() {
+  if (currentView !== 'repo' || !repoData) { alert('请先切换到质押式回购视图'); return; }
+  const { dates, aggRepoBal, aggRevBal } = buildRepoSeries();
+  if (!dates.length) { alert('当前筛选条件下无数据，无法导出'); return; }
+  const rows = [['日期', '正回购余额(亿元)', '逆回购余额(亿元)']];
+  dates.forEach((d, i) => rows.push([d,
+    aggRepoBal[i] === null ? '' : aggRepoBal[i],
+    aggRevBal[i] === null ? '' : aggRevBal[i]]));
+  exportWorkbook(dlSafeName('质押式回购_余额_' + dlInstTag() + '_' + dlRangeTag() + '.xlsx'), [
+    { name: '正逆回购余额', rows },
+  ]);
+}
+
+function exportRepoColl() {
+  if (currentView !== 'repo' || !repoData) { alert('请先切换到质押式回购视图'); return; }
+  const { dates, aggColl } = buildRepoSeries();
+  if (!dates.length) { alert('当前筛选条件下无数据，无法导出'); return; }
+  const dirName = repoCollDir === 'rev' ? '逆回购' : '正回购';
+  const rows = [['日期', '利率债(亿元)', '信用债(亿元)', '同业存单(亿元)']];
+  const data = aggColl(repoCollDir);
+  dates.forEach((d, i) => rows.push([d, ...COLL_LIST.map(c => +(data[i][c] || 0).toFixed(2))]));
+  exportWorkbook(dlSafeName('质押式回购_押品结构' + dirName + '_' + dlInstTag() + '_' + dlRangeTag() + '.xlsx'), [
+    { name: '押品结构' + dirName, rows },
+  ]);
+}
+
+function exportRepoRate() {
+  if (currentView !== 'repo' || !repoData) { alert('请先切换到质押式回购视图'); return; }
+  const { dates, instList, series } = buildRepoSeries();
+  if (!dates.length) { alert('当前筛选条件下无数据，无法导出'); return; }
+  const dirName = repoRateDir === 'rev' ? '逆回购' : '正回购';
+  const rateKey = repoRateDir === 'rev' ? 'rev_rate' : 'repo_rate';
+  const rows = [['日期', ...instList]];
+  dates.forEach((d, i) => rows.push([d, ...instList.map(inst => {
+    const v = series[inst][rateKey][i];
+    return v === null ? '' : v;
+  })]));
+  exportWorkbook(dlSafeName('质押式回购_' + dirName + '加权利率_' + dlInstTag() + '_' + dlRangeTag() + '.xlsx'), [
+    { name: dirName + '加权利率', rows },
+  ]);
+}
 
 // 监听时间范围变化
 document.addEventListener('DOMContentLoaded', () => {

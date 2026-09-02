@@ -1095,6 +1095,29 @@ def update_factor_data():
     return True
 
 
+def _latest_repo_report():
+    """返回 USER_PREPROCESS_CWD 同级质押式回购目录下最新的一份日报，没有则 None。
+
+    质押式回购日报分布在三个目录：
+      父目录（2021-01~2025-04 旧格式）、2025年/（待补）、2026年/（新格式）。
+    """
+    try:
+        candidates = []
+        for d in (
+            r"C:\Users\lihaoran\Documents\工作\质押式回购",
+            r"C:\Users\lihaoran\Documents\工作\质押式回购\2025年",
+            r"C:\Users\lihaoran\Documents\工作\质押式回购\2026年",
+        ):
+            if not os.path.isdir(d):
+                continue
+            candidates.extend(glob.glob(os.path.join(d, "质押式回购市场交易情况总结日报_*.xlsx")))
+            candidates.extend(glob.glob(os.path.join(d, "质押式回购市场交易情况总结日报_*.xls")))
+        candidates = [p for p in candidates if os.path.isfile(p)]
+        return max(candidates, key=os.path.getmtime) if candidates else None
+    except Exception:
+        return None
+
+
 def _latest_daily_report():
     """返回 USER_PREPROCESS_CWD 下最新的一份机构行为日报 xlsx，没有则 None"""
     try:
@@ -1152,6 +1175,9 @@ def wait_sources_stable():
         watch.append(("FICC现券Excel", FICC_EXCEL))
     if os.path.exists(CURVE_EXCEL):
         watch.append(("FICC曲线Excel", CURVE_EXCEL))
+    repo_report = _latest_repo_report()
+    if repo_report:
+        watch.append(("质押式回购日报", repo_report))
 
     for tag, path in watch:
         try:
@@ -1271,12 +1297,21 @@ def main():
 
     ok7 = True
     try:
-        log.info("[7/7] 沪深300 HV20/40/60 波动率数据")
+        log.info("[7/8] 沪深300 HV20/40/60 波动率数据")
         import update_hs300_volatility
         ok7 = update_hs300_volatility.main()
     except Exception as e:
         log.warning(f"沪深300波动率更新失败，保留现有数据: {e}")
         ok7 = False
+
+    ok8 = True
+    try:
+        log.info("[8/8] 质押式回购数据 (repo_trading_data.json)")
+        import repo_data_update
+        ok8 = repo_data_update.main()
+    except Exception as e:
+        log.warning(f"质押式回购数据更新失败，保留现有数据: {e}")
+        ok8 = False
 
     log.info("=" * 50)
     log.info(f"完成: 预处理={'成功' if ok0 else '失败'}, "
@@ -1286,10 +1321,11 @@ def main():
              f"合并={'成功' if ok4 else '失败'}, "
              f"因子={'成功' if ok5 else '失败'}, "
              f"偏离度={'成功' if ok6 else '失败'}, "
-             f"沪深300波动率={'成功' if ok7 else '保留旧数据'}")
+             f"沪深300波动率={'成功' if ok7 else '保留旧数据'}, "
+             f"质押式回购={'成功' if ok8 else '保留旧数据'}")
 
     # push 到 GitHub（唯一远程；gitee/gitcode 已于 2026-08-06 废弃，不再同步）
-    if ok1 or ok2 or ok3 or ok5 or ok7:
+    if ok1 or ok2 or ok3 or ok5 or ok7 or ok8:
         try:
             log.info("推送数据到远程仓库...")
             git_push_data()
@@ -1334,6 +1370,7 @@ def git_push_data():
         'factor_data.json',
         'curve_deviation.json',
         'hs300_volatility_data.json',
+        'repo_trading_data.json',
     ]
     for f in json_files:
         run_git('add', f)
@@ -1352,6 +1389,7 @@ def git_push_data():
         'hs300_bs_pricer.html',
         'hs300_volatility_dist.html',
         'hs300_volatility_dist.js',
+        'repo_data_update.py',
     ]
     for f in html_files:
         if (repo_dir / f).exists():
