@@ -545,6 +545,93 @@ def _parse_curve_sheet(df):
     return series, d0, d1
 
 
+FUTURES_BACKUP_SHEET = '价格数据'
+FUTURES_BACKUP_CODES = {
+    'T.CFE': 'T主力',
+    'TF.CFE': 'TF主力',
+    'TS.CFE': 'TS主力',
+    'TL.CFE': 'TL主力',
+}
+
+
+def _load_futures_backup(path):
+    """读取「价格数据」sheet，作为期货主力合约价格的备用源。
+
+    背景：「期货」sheet 的 T/TF/TS/TL.CFE 四列依赖 Wind 取数公式，
+    历史上多次出现整段失效（如 2026-08-24 起连续缺失），而同文件的
+    「价格数据」sheet 始终完好。两者在重叠期间数值完全一致（已验证
+    1366 个交易日零差异），因此可安全用于补齐空缺。
+
+    返回 {date_str: {'T主力': float, ...}}
+    """
+    try:
+        df = pd.read_excel(path, sheet_name=FUTURES_BACKUP_SHEET, header=None)
+    except Exception as e:
+        log.warning(f"    读取备用源 [{FUTURES_BACKUP_SHEET}] 失败: {e}")
+        return {}
+
+    hdr = None
+    for i in range(min(8, len(df))):
+        if any(str(x).strip() in FUTURES_BACKUP_CODES for x in df.iloc[i].tolist()):
+            hdr = i
+            break
+    if hdr is None:
+        log.warning(f"    [{FUTURES_BACKUP_SHEET}] 未找到 T/TF/TS/TL.CFE 表头，跳过备用源")
+        return {}
+
+    colmap = {}
+    for j in range(df.shape[1]):
+        code = str(df.iat[hdr, j]).strip()
+        if code in FUTURES_BACKUP_CODES:
+            colmap[FUTURES_BACKUP_CODES[code]] = j
+    if not colmap:
+        return {}
+
+    out = {}
+    for i in range(hdr + 1, len(df)):
+        d = pd.to_datetime(df.iat[i, 0], errors='coerce')
+        if pd.isna(d):
+            continue
+        rec = {}
+        for name, j in colmap.items():
+            v = pd.to_numeric(df.iat[i, j], errors='coerce')
+            if pd.notna(v) and v != 0:
+                rec[name] = round(float(v), 4)
+        if rec:
+            out[d.strftime('%Y-%m-%d')] = rec
+    return out
+
+
+def _patch_futures_series(series, backup, lo, hi):
+    """用备用源补齐期货主力序列的缺失日期。
+
+    只填补「期货」sheet 已覆盖日期区间内的空缺，不新增区间外的日期
+    （避免引入 Wind 模板预填但未收盘的占位行）。
+    返回 {序列名: 补入天数}
+    """
+    if not backup:
+        return {}
+    added = {}
+    for name in FUTURES_BACKUP_CODES.values():
+        s = series.get(name)
+        if not s:
+            continue
+        have = set(s['dates'])
+        miss = [
+            d for d in sorted(backup)
+            if d not in have and name in backup[d]
+            and (lo is None or d >= lo)
+            and (hi is None or d <= hi)
+        ]
+        if not miss:
+            continue
+        pairs = list(zip(s['dates'], s['values'])) + [(d, backup[d][name]) for d in miss]
+        pairs.sort(key=lambda x: x[0])
+        series[name] = {'dates': [p[0] for p in pairs], 'values': [p[1] for p in pairs]}
+        added[name] = len(miss)
+    return added
+
+
 def update_yield_curve_data():
     """更新收益率曲线数据（4 个 sheet 合并）"""
     if not os.path.exists(CURVE_EXCEL):
@@ -561,13 +648,25 @@ def update_yield_curve_data():
     date_min = None
     date_max = None
 
+    # 「价格数据」sheet 作为期货主力合约价格的备用源，不参与常规曲线解析
+    fut_backup = _load_futures_backup(CURVE_EXCEL)
+    if fut_backup:
+        log.info(f"    备用源 [{FUTURES_BACKUP_SHEET}]: 已加载 {len(fut_backup)} 天")
+
     for i, sn in enumerate(xl.sheet_names):
-        # 跳过"价格数据"sheet（说明性内容，非时间序列）
         if '价格' in sn:
-            log.info(f"    Sheet [{sn}]: 跳过（非时间序列）")
+            log.info(f"    Sheet [{sn}]: 仅作期货价格备用源（不解析为曲线）")
             continue
         df = pd.read_excel(CURVE_EXCEL, sheet_name=i, header=None)
         series, dmin, dmax = _parse_curve_sheet(df)
+        # 「期货」sheet：T/TF/TS/TL.CFE 四列偶发整段失效，用备用源补齐空缺日期
+        if '期货' in sn and fut_backup:
+            lo = dmin.strftime('%Y-%m-%d') if dmin is not None else None
+            hi = dmax.strftime('%Y-%m-%d') if dmax is not None else None
+            added = _patch_futures_series(series, fut_backup, lo, hi)
+            if added:
+                detail = ", ".join(f"{k} +{v}天" for k, v in added.items())
+                log.info(f"    Sheet [{sn}]: 备用源补入空缺 → {detail}")
         categories[sn] = list(series.keys())
         for name, s in series.items():
             all_series[name] = s
