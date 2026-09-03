@@ -27,6 +27,9 @@ from datetime import datetime, date
 from pathlib import Path
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+import jsonio  # JSON 幂等写入（无实质变化则跳过重写）
+
 BOND_DATA_EXCEL = r"C:\Users\lihaoran\Documents\工作\现券交易\bond_data.xlsx"
 OLD_BOND_DATA_EXCEL = r"C:\Users\lihaoran\Documents\工作\现券交易\bond_data_备份截至2025年.xlsx"
 BOND_DATA_OUTPUT = os.path.join(SCRIPT_DIR, "bond_trading_data.json")
@@ -355,11 +358,8 @@ def update_bond_trading_data():
         "detail": compact_detail,
         "summary": compact_summary,
     }
-    tmp = BOND_DATA_OUTPUT + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(output, f, ensure_ascii=False, separators=(',', ':'))
-    os.replace(tmp, BOND_DATA_OUTPUT)
-    log.info(f"  输出: {BOND_DATA_OUTPUT} ({os.path.getsize(BOND_DATA_OUTPUT)/1024/1024:.1f} MB)")
+    # 无新交易日数据时跳过重写，避免虚假 commit 与前端重新下载 6MB+
+    jsonio.write_json_skip_unchanged(BOND_DATA_OUTPUT, output, log)
     return True
 
 
@@ -1086,11 +1086,7 @@ def update_factor_data():
         "series": factors,
     }
 
-    tmp = FACTOR_OUTPUT + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(output, f, ensure_ascii=False, separators=(',', ':'))
-    os.replace(tmp, FACTOR_OUTPUT)
-    log.info(f"  输出: {FACTOR_OUTPUT} ({os.path.getsize(FACTOR_OUTPUT)/1024:.1f} KB)")
+    jsonio.write_json_skip_unchanged(FACTOR_OUTPUT, output, log)
     log.info(f"  因子数: {len(factors)}")
     return True
 

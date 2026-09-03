@@ -14,6 +14,9 @@ import re
 from datetime import date, datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+import sys
+sys.path.insert(0, SCRIPT_DIR)
+import jsonio  # JSON 幂等写入（无实质变化则跳过重写）
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -191,9 +194,7 @@ def main():
         "bonds": out_bonds,
     }
     out_path = os.path.join(SCRIPT_DIR, "curve_deviation.json")
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
-    log.info(f"  输出 curve_deviation.json ({os.path.getsize(out_path)/1024:.1f} KB)")
+    jsonio.write_json_skip_unchanged(out_path, out, log)
     log.info(f"  个券 {len(out_bonds)} 只, 曲线外插值(50Y)记录 {n_out_of_range} 条")
 
     # 最新一天偏离度一览
