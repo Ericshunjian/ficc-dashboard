@@ -24,3 +24,6 @@ factor_demo.py
 
 # 因子数据备份（本地留档，不入库）
 factor_data_backup_*.json
+
+# 2026-09-03 口径修复临时备份（验证无误后可删）
+_backup_20260903/
