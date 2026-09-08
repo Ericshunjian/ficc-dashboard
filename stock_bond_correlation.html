@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
+<html lang="zh-CN" data-page-node-id="dGIzVm0SFUQjbG8IabsRCm">
+<head data-page-node-id="AKBo4doPVi2FoTGh3qrrMe">
+<meta charset="UTF-8" data-page-node-id="FfziWy8nIdXDhSh7pEdYkN">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="HOQe3BpLi1cVZBPC5S2zuE">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" data-page-node-id="5WgfWC9E9OH7uqhIQgawUb">
+  <meta http-equiv="Pragma" content="no-cache" data-page-node-id="Dtyilm2gn6H8rNsHZWULaq">
+  <meta http-equiv="Expires" content="0" data-page-node-id="lIg5zEfnP15pD0TgrPgFPo">
 <title>股债相关性 × 期限利差 | FICC 看板</title>
 <script src="vendor/chart.umd.min.js"></script>
 <style>
@@ -79,6 +79,14 @@
   }
   .filter-label .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
   .filter-hint { font-size: 11px; color: var(--text-secondary); line-height: 1.6; }
+  .bond-fixed {
+    display: flex; flex-direction: column; gap: 3px;
+    padding: 8px 10px; border-radius: 6px;
+    background: var(--hover);
+    border: 1px solid var(--border);
+  }
+  .bond-fixed b { font-size: 12.5px; color: var(--text); }
+  .bond-fixed span { font-size: 11px; color: var(--text-secondary); }
 
   .tag-grid { display: flex; flex-wrap: wrap; gap: 6px; }
   .tag {
@@ -149,80 +157,80 @@
   .hidden { display: none !important; }
 </style>
 </head>
-<body>
+<body data-page-node-id="aswZFVnFmUJTaHQyGMs2Fe">
 
-<div class="sidebar">
-  <div class="sidebar-header">
-    <h2><span class="icon">📉</span>股债相关性 · 期限利差</h2>
-    <div class="subtitle">沪深300 × 国债 × 国债期限利差</div>
-    <a class="back-home" href="index.html">返回首页</a>
+<div class="sidebar" data-page-node-id="uazbButECExYSpU3BLLQfR">
+  <div class="sidebar-header" data-page-node-id="qxxJCzgwlbF9kJkmAlHuY1">
+    <h2 data-page-node-id="kp6OYvzwYUie9wGAYLkdnj"><span class="icon" data-page-node-id="mGgFO5kHoc6uR4QKm3kPYO">📉</span>股债相关性 · 期限利差</h2>
+    <div class="subtitle" data-page-node-id="V7wMw6AiZEJe4bmqVSB0tT">沪深300 × 国债 × 国债期限利差</div>
+    <a class="back-home" href="index.html" data-page-node-id="8v0xlSmJxYHmyoWktCvOg9">返回首页</a>
   </div>
 
-  <div class="filter-body">
-    <div class="filter-group">
-      <div class="filter-label"><span class="dot"></span>债券标的（股债相关的"债"）</div>
-      <div class="tag-grid" id="bondTags"></div>
-      <div class="filter-hint">口径：国债 ETF / 国债指数<b>前复权</b>价格（含分红再投，近似全收益）。中债国债总财富指数无公开免费日频接口，故用 ETF 代理。</div>
+  <div class="filter-body" data-page-node-id="fMSkBG4wmkVj9DBIRA92CC">
+    <div class="filter-group" data-page-node-id="EkVP4eQ8uT0t4QBIT71eRA">
+      <div class="filter-label" data-page-node-id="QyRhQVzUYci3sDHczIdhgy"><span class="dot" data-page-node-id="MUWftZ16gxzrg3ruIIGqEm"></span>债券口径（股债相关的"债"）</div>
+      <div class="bond-fixed" id="bondFixed">—</div>
+      <div class="filter-hint" data-page-node-id="b4PTvjHu9nvvZ2WQK7jHQ2">固定口径：<b>中债-国债总财富(总值)指数</b>（中债估值中心官方，含利息再投，日频自动更新）。中债接口不可用时自动降级为国债 ETF 前复权代理。</div>
     </div>
 
-    <div class="filter-group">
-      <div class="filter-label"><span class="dot"></span>滚动相关窗口</div>
-      <div class="tag-grid" id="winTags"></div>
+    <div class="filter-group" data-page-node-id="I8C3dpKJlJPt0Q2cYWyWlz">
+      <div class="filter-label" data-page-node-id="yNgePrdbi9Yaljg573K22C"><span class="dot" data-page-node-id="kY9m064csL2IdM5q00OgWe"></span>滚动相关窗口</div>
+      <div class="tag-grid" id="winTags" data-page-node-id="R88dVZJ2ZKWRknIDpThvIo"></div>
     </div>
 
-    <div class="filter-group">
-      <div class="filter-label"><span class="dot"></span>期限利差</div>
-      <div class="tag-grid" id="spreadTags"></div>
+    <div class="filter-group" data-page-node-id="HBbzVz5lVqfKzmwdltGGmD">
+      <div class="filter-label" data-page-node-id="fftaarWSN7qaiJYTHklNOA"><span class="dot" data-page-node-id="KAQ4TrBMR5D696cjAQorjv"></span>期限利差</div>
+      <div class="tag-grid" id="spreadTags" data-page-node-id="Ea4PUwyWOfmJH2KCvpq1nO"></div>
     </div>
 
-    <div class="filter-group">
-      <div class="filter-label"><span class="dot"></span>收益口径</div>
-      <div class="tag-grid" id="freqTags"></div>
+    <div class="filter-group" data-page-node-id="TfHHxLjeJAqwmdmFGdxDm0">
+      <div class="filter-label" data-page-node-id="g1MqICECkBD5LEqBABs1nK"><span class="dot" data-page-node-id="zANmJ3qShSx5Xu0vvmPE84"></span>收益口径</div>
+      <div class="tag-grid" id="freqTags" data-page-node-id="dGXWmlNGj7uLOt1QNEUGGO"></div>
     </div>
 
-    <div class="filter-group">
-      <div class="filter-label"><span class="dot"></span>时间区间</div>
-      <div class="tag-grid" id="rangeTags"></div>
+    <div class="filter-group" data-page-node-id="EHAl4sRMsKC8sFCAcZz6Gj">
+      <div class="filter-label" data-page-node-id="8djMf77aDYHzxODvrbgbXk"><span class="dot" data-page-node-id="TuxdeAaHpTOVLDrSMmzkh7"></span>时间区间</div>
+      <div class="tag-grid" id="rangeTags" data-page-node-id="S17TB1OMhimzfuy9N0nKMI"></div>
     </div>
 
-    <div class="filter-group">
-      <div class="filter-label"><span class="dot"></span>图表显示</div>
-      <div class="tag-grid" id="viewTags"></div>
+    <div class="filter-group" data-page-node-id="FN4bpYJWDZ0xbH7ToLad9O">
+      <div class="filter-label" data-page-node-id="BEy2burO6GArqdPoLsCdwA"><span class="dot" data-page-node-id="CIezM2s9e0PCZooSDweF1b"></span>图表显示</div>
+      <div class="tag-grid" id="viewTags" data-page-node-id="QSrHZnjRYLsiGn8FUD42HA"></div>
     </div>
 
-    <div class="filter-group">
-      <div class="filter-label"><span class="dot"></span>读数说明</div>
-      <div class="filter-hint">
-        ① 双轴图：<b>红</b>=股债滚动相关系数（左轴），<b>蓝</b>=期限利差（右轴，bp）。<br>
-        ② 标准化图：两序列各自 z-score，<b>灰底</b>=同向区间（共振），无底色=背离。<br>
-        ③ 散点图：横轴利差水平、纵轴滚动相关性，深红为 OLS 拟合线。<br>
-        <b>注意</b>：相关性水平与利差水平常高度相关（慢变量同趋势），但相关性<b>日变化</b>与利差日变化几乎无关，不要把"高相关"当预测力。
+    <div class="filter-group" data-page-node-id="HhmhZDSpmQd2cCQUKD9n9V">
+      <div class="filter-label" data-page-node-id="q6KyQWhTKsHFDq2nN0nIvv"><span class="dot" data-page-node-id="A8EB52WH4bGtvrHUl2Y9f2"></span>读数说明</div>
+      <div class="filter-hint" data-page-node-id="qC282R0mBvqN6miJmo9XL3">
+        ① 双轴图：<b data-page-node-id="uonoz37Du55VLFCGxsZVkn">红</b>=股债滚动相关系数（左轴），<b data-page-node-id="JTpHbUeXkJyxC8trLTI3H6">蓝</b>=期限利差（右轴，bp）。<br data-page-node-id="ZhwLjKsOALa6jrn0P44cLO">
+        ② 标准化图：两序列各自 z-score，<b data-page-node-id="OWGKqUQ6Ux2fnh3EQC4t4G">灰底</b>=同向区间（共振），无底色=背离。<br data-page-node-id="Zu7FXAg8HmfVGKYuJErbaC">
+        ③ 散点图：横轴利差水平、纵轴滚动相关性，深红为 OLS 拟合线。<br data-page-node-id="TqrSyEC6YdRvIg37Ij5BoM">
+        <b data-page-node-id="1MVGVWeGsEWrCztyJOLqhM">注意</b>：相关性水平与利差水平常高度相关（慢变量同趋势），但相关性<b data-page-node-id="PJSOw4ehJx3goznaizc2Cw">日变化</b>与利差日变化几乎无关，不要把"高相关"当预测力。
       </div>
     </div>
   </div>
 
-  <div class="sidebar-footer">
-    <button class="btn btn-primary" id="btnRefresh">刷新数据</button>
+  <div class="sidebar-footer" data-page-node-id="EAJsYrvoQxoqzvAAz38ewi">
+    <button class="btn btn-primary" id="btnRefresh" data-page-node-id="4KtYbDeWaxnqpM1c6wDITC">刷新数据</button>
   </div>
 </div>
 
-<div class="main">
-  <div class="main-header">
-    <div class="title-area">
-      <h3 id="mainTitle">股债滚动相关性 vs 期限利差</h3>
-      <div class="desc" id="mainDesc">加载中…</div>
+<div class="main" data-page-node-id="UtFnvBxpWKZNyPzuTmcqwb">
+  <div class="main-header" data-page-node-id="4wiOjm6QUhN7HgblSbDLuM">
+    <div class="title-area" data-page-node-id="dsZ4TsEFHnGxKveGDUQAGG">
+      <h3 id="mainTitle" data-page-node-id="O49gZzHqGSPFkVFYieOGhb">股债滚动相关性 vs 期限利差</h3>
+      <div class="desc" id="mainDesc" data-page-node-id="dJ5B4kdFvLV5W9deIGWg3u">加载中…</div>
     </div>
-    <div class="kpi-row" id="kpiRow"></div>
+    <div class="kpi-row" id="kpiRow" data-page-node-id="3uwyktKdEadUouQj9ziGbm"></div>
   </div>
-  <div class="chart-area" id="chartArea">
-    <div class="loading"><div class="spinner"></div>正在加载 stock_bond_data.json …</div>
+  <div class="chart-area" id="chartArea" data-page-node-id="Y2bf92rVmi79F3qN5S2sjZ">
+    <div class="loading" data-page-node-id="QFAVCdtFPtm5yOWmBVetFS"><div class="spinner" data-page-node-id="5KYcyMpHKE9oxrsPuYG2u1"></div>正在加载 stock_bond_data.json …</div>
   </div>
 </div>
 
 <script>
 /* ============ 状态 ============ */
 const state = {
-  bond: '五年国债ETF(511010)',
+  bond: '中债国债总财富指数',
   win: 120,
   spread: '30Y-10Y',
   freq: 1,          // 1=日收益, 5=5日(周)收益
@@ -359,8 +367,9 @@ function renderKPI(res) {
 
   $('mainTitle').textContent = `股债${state.win}日滚动相关性 vs 国债期限利差 ${state.spread}`;
   const freqTxt = state.freq === 1 ? '日收益' : '5日(周)收益';
+  const bondNote = state.bond.indexOf('中债') >= 0 ? '中债官方财富指数，含利息再投' : 'ETF前复权≈全收益（中债源降级代理）';
   $('mainDesc').innerHTML =
-    `股 = 沪深300 ｜ 债 = ${state.bond}（前复权≈全收益）｜ ${freqTxt} ｜ 数据更新 ${DATA.meta.last_updated}`;
+    `股 = 沪深300 ｜ 债 = ${state.bond}（${bondNote}）｜ ${freqTxt} ｜ 数据更新 ${DATA.meta.last_updated}`;
 }
 
 function renderMain(res) {
@@ -502,7 +511,7 @@ function renderAll() {
   if (!DATA) return;
   const res = computeSeries();
   if (!res || res.dates.length < 5) {
-    $('chartArea').innerHTML = '<div class="loading">当前组合样本不足（请调小窗口或换债券标的）</div>';
+    $('chartArea').innerHTML = '<div class="loading">当前组合样本不足（请调小相关窗口或延长时间区间）</div>';
     return;
   }
   renderKPI(res);
@@ -536,9 +545,15 @@ function buildTags(containerId, options, key, onPick) {
 }
 
 function buildControls() {
+  // 债券口径固定：优先 meta.default_bond，其次取非股票的序列
   const bonds = Object.keys(DATA.prices).filter(k => k !== '沪深300');
-  if (!bonds.includes(state.bond)) state.bond = bonds[0];
-  buildTags('bondTags', bonds.map(b => ({ t: b, v: b })), 'bond', renderAll);
+  const want = DATA.meta && DATA.meta.default_bond;
+  state.bond = (want && DATA.prices[want]) ? want : (bonds.includes('中债国债总财富指数') ? '中债国债总财富指数' : bonds[0]);
+  const bf = $('bondFixed');
+  if (bf) {
+    const p = DATA.prices[state.bond] || { dates: [] };
+    bf.innerHTML = `<b>${state.bond}</b><span>${p.dates.length} 个交易日 · ${p.dates[0] || '-'} ~ ${p.dates[p.dates.length - 1] || '-'}</span>`;
+  }
   buildTags('winTags', [60, 120, 250].map(w => ({ t: `${w}日`, v: w })), 'win', renderAll);
   buildTags('spreadTags', Object.keys(DATA.spreads).map(s => ({ t: s, v: s })), 'spread', renderAll);
   buildTags('freqTags', [{ t: '日收益', v: 1 }, { t: '周收益(5日)', v: 5 }], 'freq', renderAll);
