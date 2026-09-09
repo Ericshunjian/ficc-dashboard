@@ -288,6 +288,87 @@
     padding: 8px 28px; font-size: 11px; color: var(--text-secondary);
     border-top: 1px solid var(--border); background: var(--panel-bg);
   }
+
+  /* ── 视图切换 ── */
+  .view-tabs { display: flex; gap: 6px; margin-bottom: 6px; }
+  .view-tab {
+    padding: 4px 14px; border-radius: 14px; font-size: 12px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text-secondary);
+    user-select: none; transition: all 0.15s; white-space: nowrap;
+  }
+  .view-tab:hover { border-color: var(--primary); color: var(--primary); }
+  .view-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+  /* ── 利差总览 ── */
+  .spread-ov {
+    flex: 1; padding: 12px 28px 16px;
+    display: flex; flex-direction: column; gap: 12px; overflow: hidden;
+  }
+  .sp-toolbar {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    background: var(--panel-bg); border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 10px 16px; font-size: 12px;
+  }
+  .sp-toolbar .grp { display: flex; align-items: center; gap: 6px; }
+  .sp-toolbar .grp > label { font-weight: 600; color: var(--text-secondary); }
+  .sp-toolbar .seg { display: flex; gap: 4px; }
+  .sp-toolbar .seg .view-tab { padding: 3px 10px; }
+  .sp-table-box {
+    background: var(--panel-bg); border-radius: var(--radius); box-shadow: var(--shadow);
+    flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .sp-table-scroll { flex: 1; overflow-y: auto; }
+  .sp-table-scroll::-webkit-scrollbar { width: 6px; }
+  .sp-table-scroll::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 4px; }
+  table.sp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .sp-table th {
+    position: sticky; top: 0; background: var(--bg); z-index: 2;
+    text-align: right; padding: 8px 12px; font-weight: 600; color: var(--text-secondary);
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+    cursor: pointer; user-select: none;
+  }
+  .sp-table th:hover { color: var(--primary); }
+  .sp-table th:nth-child(1), .sp-table td:nth-child(1),
+  .sp-table th:nth-child(2), .sp-table td:nth-child(2) { text-align: left; }
+  .sp-table td {
+    padding: 6px 12px; text-align: right; border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .sp-table tbody tr { cursor: pointer; transition: background 0.12s; }
+  .sp-table tbody tr:hover { background: var(--primary-light); }
+  .sp-table tbody tr.active { background: var(--primary-light); }
+  .sp-table tbody tr.dim { opacity: 0.42; }
+  .sp-name { font-weight: 600; }
+  .sp-cat { color: var(--text-secondary); font-size: 11px; }
+  .z-hi { color: var(--danger); font-weight: 700; }
+  .z-lo { color: var(--success); font-weight: 700; }
+  .badge {
+    display: inline-block; padding: 1px 6px; border-radius: 8px;
+    font-size: 10px; margin-left: 6px; font-weight: 600;
+  }
+  .badge.hi { background: #fdecea; color: var(--danger); }
+  .badge.lo { background: #e9f7ef; color: #1e9e55; }
+  .sp-detail {
+    background: var(--panel-bg); border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 12px 20px 8px; height: 250px;
+    display: flex; flex-direction: column;
+  }
+  .sp-detail .chart-label {
+    font-size: 12px; font-weight: 600; color: var(--text-secondary);
+    margin-bottom: 4px; display: flex; align-items: center; gap: 6px;
+  }
+  .sp-detail .chart-label::before {
+    content: ''; display: inline-block; width: 8px; height: 8px;
+    background: var(--primary); border-radius: 2px;
+  }
+  .sp-detail .chart-wrap { flex: 1; min-height: 0; position: relative; }
+  .sp-empty {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; color: var(--text-secondary); font-size: 14px;
+  }
+  .sp-legend-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px;
+  }
 </style>
 </head>
 <body>
@@ -302,7 +383,7 @@
 
   <div class="filter-body">
     <!-- 步骤 1：选分类 -->
-    <div class="filter-group">
+    <div class="filter-group fg-trend">
       <label class="filter-label"><span class="dot"></span>步骤 1：选数据分类</label>
       <div class="tag-grid" id="category-tags"></div>
       <p class="hint">基准利率 / IRS / 期货 / 债券收益率</p>
@@ -316,7 +397,7 @@
     </div>
 
     <!-- 已选曲线 -->
-    <div class="filter-group">
+    <div class="filter-group fg-trend">
       <label class="filter-label"><span class="dot"></span>已选曲线（可拖入或双击添加）</label>
       <div class="selected-zone" id="selected-zone">
         <div class="selected-empty">拖拽曲线到此处</div>
@@ -336,13 +417,32 @@
     </div>
 
     <!-- 时间范围 -->
-    <div class="filter-group">
+    <div class="filter-group fg-trend">
       <label class="filter-label"><span class="dot"></span>时间范围（可选）</label>
       <div class="date-row">
         <input type="date" id="date-start">
         <span>至</span>
         <input type="date" id="date-end">
       </div>
+    </div>
+
+    <!-- ══ 利差总览专用（切换视图时显示）══ -->
+    <div class="filter-group fg-spread" style="display:none">
+      <label class="filter-label"><span class="dot"></span>z-score 回溯窗口</label>
+      <div class="seg" id="sp-win-tags" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+      <p class="hint">均值/标准差/分位均在此窗口内计算，用于判断当前利差是否偏离常态</p>
+    </div>
+
+    <div class="filter-group fg-spread" style="display:none">
+      <label class="filter-label"><span class="dot"></span>利差类别</label>
+      <div class="seg" id="sp-cat-tags" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+      <p class="hint">「新老券」需额外加载个券数据（0.13MB），勾选时才下载</p>
+    </div>
+
+    <div class="filter-group fg-spread" style="display:none">
+      <label class="filter-label"><span class="dot"></span>偏离阈值</label>
+      <div class="seg" id="sp-th-tags" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+      <p class="hint">|z| 超过阈值视为异常，标记并在排序中优先</p>
     </div>
   </div>
 
@@ -355,6 +455,10 @@
 <main class="main">
   <div class="main-header">
     <div class="title-area">
+      <div class="view-tabs" id="view-tabs">
+        <div class="view-tab active" data-v="trend" onclick="switchView('trend')">走势</div>
+        <div class="view-tab" data-v="spread" onclick="switchView('spread')">利差总览</div>
+      </div>
       <h3 id="chart-title">收益率曲线走势</h3>
       <p class="desc" id="chart-desc">请拖拽曲线到选区查看走势</p>
     </div>
@@ -365,7 +469,7 @@
     </div>
   </div>
 
-  <div class="chart-area">
+  <div class="chart-area" id="view-trend">
     <div class="chart-box curve-chart">
       <div class="chart-label">收益率走势 (%) · 单轴对比</div>
       <div class="chart-wrap"><canvas id="chart-curve"></canvas></div>
@@ -378,6 +482,52 @@
     <div class="chart-box spread-chart" id="spread-box" style="display:none">
       <div class="chart-label" id="spread-label">利差走势 (bp)</div>
       <div class="chart-wrap"><canvas id="chart-spread"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ══ 利差总览视图 ══ -->
+  <div class="spread-ov" id="view-spread" style="display:none">
+    <div class="sp-toolbar">
+      <div class="grp">
+        <label>排序</label>
+        <div class="seg" id="sp-sort-tags" style="display:flex; gap:4px;"></div>
+      </div>
+      <div class="grp">
+        <label>仅显示</label>
+        <div class="seg" id="sp-only-tags" style="display:flex; gap:4px;"></div>
+      </div>
+      <div class="grp" style="margin-left:auto; gap:8px;">
+        <button class="view-tab" onclick="exportSpreadTable()">⬇ Excel</button>
+        <span id="sp-count" style="color:var(--text-secondary)"></span>
+      </div>
+    </div>
+
+    <div class="sp-table-box">
+      <div class="sp-table-scroll">
+        <table class="sp-table">
+          <thead>
+            <tr>
+              <th data-k="name">利差对</th>
+              <th data-k="cat">类别</th>
+              <th data-k="cur">当前值</th>
+              <th data-k="mean">窗口均值</th>
+              <th data-k="z">z-score</th>
+              <th data-k="pct">分位</th>
+              <th data-k="chg">近20日</th>
+              <th data-k="n">样本</th>
+            </tr>
+          </thead>
+          <tbody id="sp-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="sp-detail">
+      <div class="chart-label" id="sp-detail-label">点击表格任一行查看利差走势</div>
+      <div class="chart-wrap">
+        <canvas id="chart-sp-detail"></canvas>
+        <div class="sp-empty" id="sp-detail-empty">点击上方表格任一行查看该利差的历史走势与 ±2σ 区间</div>
+      </div>
     </div>
   </div>
 
@@ -442,6 +592,13 @@ async function init() {
     document.getElementById('date-end').addEventListener('change', updateChart);
 
     updateChart();
+
+    // 利差总览：渲染侧栏参数并恢复上次视图
+    renderSpTags();
+    bindSpreadSort();
+    const savedView = localStorage.getItem('yc_last_view');
+    if (savedView === 'spread') switchView('spread');
+    else localStorage.setItem('yc_last_view', 'trend');
   } catch (err) {
     console.error('Data load error:', err);
     document.getElementById('no-data').style.display = 'flex';
@@ -871,6 +1028,17 @@ function showNoData(msg) {
   document.getElementById('kpi-range').textContent = '--';
 }
 
+function bindSpreadSort() {
+  document.querySelectorAll('.sp-table th').forEach(th => {
+    th.onclick = () => {
+      const k = th.dataset.k;
+      if (spSortKey === k) spSortDir = -spSortDir;
+      else { spSortKey = k; spSortDir = (k === 'name' || k === 'cat') ? 1 : -1; }
+      renderSpreadTable();
+    };
+  });
+}
+
 function resetFilters() {
   selectedCurves = [];
   spreadA = '';
@@ -881,6 +1049,353 @@ function resetFilters() {
   document.getElementById('date-start').value = allData.meta.date_range[0];
   document.getElementById('date-end').value = allData.meta.date_range[1];
   updateChart();
+}
+
+// ============================================
+// 利差总览视图（z-score 偏离扫描）
+// ============================================
+let curView = 'trend';
+let bondYieldData = null;                 // 个券数据（勾选「新老券」时才加载）
+let _bondYieldP = null;
+let spWindow = 250;                       // z-score 回溯窗口（交易日）
+let spThreshold = 2.0;                    // 异常阈值
+let spCats = new Set(['品种间', '期限间', '期现', 'IRS basis']);
+let spOnly = 'all';
+let spSortKey = 'z';
+let spSortDir = -1;
+let spRows = [];
+let spActiveKey = null;
+let chartSpDetail = null;
+
+const SP_CAT_LIST = ['品种间', '期限间', '期现', 'IRS basis', '新老券'];
+const SP_WINDOWS = [60, 120, 250, 500];
+const SP_THRESHOLDS = [1.5, 2.0, 2.5];
+const SP_MIN_N = 60;                      // 样本低于此值视为不足（淡显、不参与异常判定）
+
+function buildSpreadDefs() {
+  const d = [];
+  // ① 品种间
+  for (let y = 1; y <= 10; y++) d.push({ cat: '品种间', name: y + 'Y 国开−国债', a: y + '年国开', b: y + '年国债' });
+  [1, 2, 3, 5, 7, 10, 20, 30].forEach(y => d.push({ cat: '品种间', name: y + 'Y 地方债−国债', a: y + '年地方债', b: y + '年国债' }));
+  // ② 期限间
+  d.push(
+    { cat: '期限间', name: '30Y−10Y 国债', a: '30年国债', b: '10年国债' },
+    { cat: '期限间', name: '20Y−10Y 国债', a: '20年国债', b: '10年国债' },
+    { cat: '期限间', name: '50Y−30Y 国债', a: '50年国债', b: '30年国债' },
+    { cat: '期限间', name: '10Y−5Y 国债', a: '10年国债', b: '5年国债' },
+    { cat: '期限间', name: '5Y−1Y 国债', a: '5年国债', b: '1年国债' },
+    { cat: '期限间', name: '10Y−1Y 国债', a: '10年国债', b: '1年国债' },
+    { cat: '期限间', name: '30Y−1Y 国债', a: '30年国债', b: '1年国债' },
+    { cat: '期限间', name: '10Y−1Y 国开', a: '10年国开', b: '1年国开' },
+    { cat: '期限间', name: '10Y−5Y 国开', a: '10年国开', b: '5年国开' },
+    { cat: '期限间', name: '30Y−10Y 地方债', a: '30年地方债', b: '10年地方债' },
+  );
+  // ③ 期现：IRR（单序列，单位 %）
+  [2, 5, 10, 30].forEach(y => d.push({ cat: '期现', name: y + '年期货 IRR', single: y + '年期货IRR', unit: '%' }));
+  // ③ 期现：期货隐含利率 − 同期限国债（收益率口径的期现利差）
+  [2, 5, 10, 30].forEach(y => d.push({ cat: '期现', name: y + '年 期现利差（期货隐含−国债）', a: y + '年期货隐含利率', b: y + '年国债' }));
+  // ④ IRS basis
+  [[1, 'IRS-1Y'], [2, 'IRS-2Y'], [5, 'IRS-5Y']].forEach(p =>
+    d.push({ cat: 'IRS basis', name: 'IRS ' + p[0] + 'Y − ' + p[0] + '年国债', a: p[1], b: p[0] + '年国债' }));
+  return d;
+}
+let SPREAD_DEFS = [];
+
+function buildBondSpreadDefs() {
+  if (!bondYieldData) return [];
+  const terms = (bondYieldData.meta || {}).terms || {};
+  const series = bondYieldData.series || {};
+  const out = [];
+  Object.keys(terms).forEach(g => {
+    const v = terms[g] || [];
+    if (v.length < 2) return;
+    // terms 顺序为 新→旧；跳过刚上市、样本不足 40 日的券，避免算不出 z-score
+    const usable = v.filter(c => {
+      const s = series[c];
+      return s && s.dates && s.dates.length >= 40;
+    });
+    const pick = usable.length >= 2 ? usable.slice(0, 2) : v.slice(0, 2);
+    if (pick.length < 2) return;
+    out.push({ cat: '新老券', name: g + ' 活跃券−次活跃券', ba: pick[0], bb: pick[1] });
+  });
+  return out;
+}
+
+function loadBondYield() {
+  if (bondYieldData) return Promise.resolve(bondYieldData);
+  if (_bondYieldP) return _bondYieldP;
+  _bondYieldP = fetch('bond_yield_data.json', { cache: 'no-cache' })
+    .then(r => r.json())
+    .then(d => { bondYieldData = d; return d; })
+    .catch(e => { console.warn('个券数据加载失败', e); _bondYieldP = null; return null; });
+  return _bondYieldP;
+}
+
+function computeSpreadOne(def) {
+  let dates = [], vals = [], unit = 'bp';
+  if (def.single) {
+    const s = (allData.series || {})[def.single];
+    if (!s) return null;
+    dates = s.dates; vals = s.values; unit = def.unit || '%';
+  } else if (def.ba) {
+    if (!bondYieldData) return null;
+    const A = bondYieldData.series[def.ba], B = bondYieldData.series[def.bb];
+    if (!A || !B) return null;
+    const bm = new Map();
+    B.dates.forEach((d, i) => { if (B.yields[i] != null) bm.set(d, B.yields[i]); });
+    A.dates.forEach((d, i) => {
+      const b = bm.get(d);
+      if (b == null || A.yields[i] == null) return;
+      dates.push(d); vals.push((A.yields[i] - b) * 100);
+    });
+  } else {
+    const A = (allData.series || {})[def.a], B = (allData.series || {})[def.b];
+    if (!A || !B) return null;
+    const bm = new Map();
+    B.dates.forEach((d, i) => { if (B.values[i] != null) bm.set(d, B.values[i]); });
+    A.dates.forEach((d, i) => {
+      const a = A.values[i], b = bm.get(d);
+      if (a == null || b == null) return;
+      dates.push(d); vals.push((a - b) * 100);
+    });
+  }
+  let end = vals.length - 1;
+  while (end >= 0 && vals[end] == null) end--;
+  if (end < 0) return null;
+  const cur = vals[end];
+  const start = Math.max(0, end - spWindow + 1);
+  const w = [];
+  for (let i = start; i <= end; i++) if (vals[i] != null) w.push(vals[i]);
+  const n = w.length;
+  let mean = null, sd = null, z = null, pct = null;
+  if (n >= 20) {
+    mean = w.reduce((s, x) => s + x, 0) / n;
+    sd = Math.sqrt(w.reduce((s, x) => s + (x - mean) * (x - mean), 0) / (n - 1));
+    if (sd > 1e-9) {
+      z = (cur - mean) / sd;
+      pct = w.filter(x => x <= cur).length / n;
+    }
+  }
+  const chg = (end >= 20 && vals[end - 20] != null) ? cur - vals[end - 20] : null;
+  return {
+    key: def.name, cat: def.cat, name: def.name, unit,
+    dates, vals, cur, mean, sd, z, pct, chg, n,
+  };
+}
+
+function computeSpreads() {
+  if (!SPREAD_DEFS.length) SPREAD_DEFS = buildSpreadDefs();
+  const defs = SPREAD_DEFS.concat(buildBondSpreadDefs()).filter(d => spCats.has(d.cat));
+  spRows = [];
+  defs.forEach(d => { const r = computeSpreadOne(d); if (r) spRows.push(r); });
+  spRows.sort((a, b) => (Math.abs(b.z || 0)) - (Math.abs(a.z || 0)));
+  renderSpreadTable();
+  return spRows;
+}
+
+function spSortedRows() {
+  let rows = spRows.filter(r => spOnly === 'all' || (r.z != null && Math.abs(r.z) >= spThreshold));
+  const dir = spSortDir;
+  rows.sort((p, q) => {
+    if (spSortKey === 'z') {
+      const vp = p.z == null ? -1e9 : Math.abs(p.z), vq = q.z == null ? -1e9 : Math.abs(q.z);
+      return (vp - vq) * dir;
+    }
+    if (spSortKey === 'name' || spSortKey === 'cat') {
+      return String(p[spSortKey]).localeCompare(String(q[spSortKey]), 'zh') * dir;
+    }
+    const vp = p[spSortKey], vq = q[spSortKey];
+    if (vp == null && vq == null) return 0;
+    if (vp == null) return 1;
+    if (vq == null) return -1;
+    return (vp - vq) * dir;
+  });
+  return rows;
+}
+
+function renderSpreadTable() {
+  const rows = spSortedRows();
+  const dp = u => (u === '%' ? 3 : 1);
+  const fmt = (v, d) => (v == null ? '--' : v.toFixed(d));
+  const tb = document.getElementById('sp-tbody');
+  tb.innerHTML = rows.map(r => {
+    const alert = r.z != null && r.n >= SP_MIN_N && Math.abs(r.z) >= spThreshold;
+    const zc = r.z == null ? '' : (Math.abs(r.z) >= spThreshold ? (r.z > 0 ? 'z-hi' : 'z-lo') : '');
+    const badge = alert ? `<span class="badge ${r.z > 0 ? 'hi' : 'lo'}">${r.z > 0 ? '偏宽' : '偏窄'}</span>` : '';
+    const dim = r.n < SP_MIN_N ? 'dim' : '';
+    const chgC = r.chg == null ? '' : (r.chg > 0 ? 'z-hi' : (r.chg < 0 ? 'z-lo' : ''));
+    return `<tr class="${dim}${r.key === spActiveKey ? ' active' : ''}" data-key="${r.key}" onclick="selectSpread('${encodeURIComponent(r.key)}')">
+      <td><span class="sp-name">${r.name}</span>${badge}</td>
+      <td class="sp-cat">${r.cat}</td>
+      <td><b>${fmt(r.cur, dp(r.unit))}</b><span style="color:var(--text-secondary);font-size:11px"> ${r.unit}</span></td>
+      <td>${fmt(r.mean, dp(r.unit))}</td>
+      <td class="${zc}">${fmt(r.z, 2)}</td>
+      <td>${r.pct == null ? '--' : (r.pct * 100).toFixed(0) + '%'}</td>
+      <td class="${chgC}">${r.chg == null ? '--' : (r.chg > 0 ? '+' : '') + r.chg.toFixed(1)}</td>
+      <td style="color:var(--text-secondary)">${r.n}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-secondary)">当前筛选条件下无数据</td></tr>';
+
+  const alerts = spRows.filter(r => r.z != null && r.n >= SP_MIN_N && Math.abs(r.z) >= spThreshold).length;
+  document.getElementById('kpi-curves').textContent = alerts;
+  document.getElementById('kpi-days').textContent = spRows.length;
+  document.getElementById('kpi-range').textContent = (allData.meta && allData.meta.date_range ? allData.meta.date_range[1] : '--');
+  document.getElementById('sp-count').textContent =
+    `显示 ${rows.length} / ${spRows.length} 组 ｜ 窗口 ${spWindow} 日 ｜ 异常 ${alerts} 组`;
+}
+
+function selectSpread(encKey) {
+  const key = decodeURIComponent(encKey);
+  spActiveKey = key;
+  document.querySelectorAll('#sp-tbody tr').forEach(tr => tr.classList.toggle('active', tr.dataset.key === key));
+  const r = spRows.find(x => x.key === key);
+  if (r) renderSpreadDetail(r);
+}
+
+function renderSpreadDetail(r) {
+  document.getElementById('sp-detail-empty').style.display = 'none';
+  const cv = document.getElementById('chart-sp-detail');
+  cv.style.display = '';
+  const N = Math.max(spWindow * 2, 250);
+  const s = Math.max(0, r.vals.length - N);
+  const labels = r.dates.slice(s), data = r.vals.slice(s);
+  const line = (val, color, label, dash) => ({
+    label, data: labels.map(() => val), borderColor: color, borderWidth: 1.2,
+    borderDash: dash, pointRadius: 0, fill: false,
+  });
+  const ds = [{
+    label: r.name, data, borderColor: '#5470c6', backgroundColor: '#5470c615',
+    borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.1, spanGaps: true, fill: false,
+  }];
+  if (r.mean != null) {
+    ds.push(line(r.mean, '#7f8c8d', '窗口均值', [4, 3]));
+    if (r.sd != null) {
+      ds.push(line(r.mean + 2 * r.sd, '#ef4444', '+2σ', [3, 3]));
+      ds.push(line(r.mean - 2 * r.sd, '#22c55e', '−2σ', [3, 3]));
+    }
+  }
+  if (chartSpDetail) chartSpDetail.destroy();
+  chartSpDetail = new Chart(cv, {
+    type: 'line',
+    data: { labels, datasets: ds },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, position: 'top', labels: { boxWidth: 10, font: { size: 10 } } },
+        tooltip: {
+          callbacks: {
+            label: c => c.dataset.label + ': ' + (c.parsed.y == null ? '--' : c.parsed.y.toFixed(2) + r.unit),
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 16 }, grid: { display: false } },
+        y: { ticks: { font: { size: 10 }, callback: v => v + r.unit }, grid: { color: '#f0f0f0' } },
+      },
+    },
+  });
+  document.getElementById('sp-detail-label').textContent =
+    r.name + ' ｜ 当前 ' + (r.cur == null ? '--' : r.cur.toFixed(2) + r.unit)
+    + (r.z != null ? ' ｜ z = ' + r.z.toFixed(2) : '')
+    + (r.pct != null ? ' ｜ 分位 ' + (r.pct * 100).toFixed(0) + '%' : '')
+    + ' ｜ 样本 ' + r.n + ' 日';
+}
+
+function renderSpTags() {
+  const mk = (cid, items, isAct, onPick, label) => {
+    const c = document.getElementById(cid);
+    if (!c) return;
+    c.innerHTML = '';
+    items.forEach(it => {
+      const el = document.createElement('div');
+      el.className = 'view-tab' + (isAct(it) ? ' active' : '');
+      el.textContent = label ? label(it) : String(it);
+      el.onclick = () => onPick(it);
+      c.appendChild(el);
+    });
+  };
+  const refreshDetail = () => {
+    if (!spActiveKey) return;
+    const r = spRows.find(x => x.key === spActiveKey);
+    if (r) renderSpreadDetail(r);
+  };
+  mk('sp-win-tags', SP_WINDOWS, w => w === spWindow, w => {
+    spWindow = w; renderSpTags(); computeSpreads(); refreshDetail();
+  }, w => w + '日');
+  mk('sp-cat-tags', SP_CAT_LIST, c => spCats.has(c), c => {
+    if (spCats.has(c)) spCats.delete(c); else spCats.add(c);
+    if (spCats.size === 0) spCats.add(c);
+    renderSpTags();
+    if (c === '新老券' && spCats.has(c) && !bondYieldData) {
+      loadBondYield().then(() => computeSpreads());
+    } else {
+      computeSpreads();
+    }
+  });
+  mk('sp-th-tags', SP_THRESHOLDS, t => t === spThreshold, t => {
+    spThreshold = t; renderSpTags(); renderSpreadTable();
+    document.getElementById('kpi-curves').nextElementSibling.textContent = '异常(|z|≥' + t + ')';
+  }, t => '±' + t.toFixed(1) + 'σ');
+  mk('sp-sort-tags', [['z', '|z| 偏离'], ['cur', '当前值'], ['chg', '近20日'], ['pct', '分位']],
+    s => s[0] === spSortKey, s => { spSortKey = s[0]; spSortDir = -1; renderSpTags(); renderSpreadTable(); }, s => s[1]);
+  mk('sp-only-tags', [['all', '全部'], ['alert', '仅异常']],
+    s => s[0] === spOnly, s => { spOnly = s[0]; renderSpTags(); renderSpreadTable(); }, s => s[1]);
+}
+
+function switchView(v) {
+  curView = v;
+  try { localStorage.setItem('yc_last_view', v); } catch (e) {}
+  document.querySelectorAll('#view-tabs .view-tab').forEach(t => t.classList.toggle('active', t.dataset.v === v));
+  document.getElementById('view-trend').style.display = (v === 'trend' ? '' : 'none');
+  document.getElementById('view-spread').style.display = (v === 'spread' ? '' : 'none');
+  document.querySelectorAll('.fg-trend').forEach(e => e.style.display = (v === 'trend' ? '' : 'none'));
+  document.querySelectorAll('.fg-spread').forEach(e => e.style.display = (v === 'spread' ? '' : 'none'));
+
+  const lc = document.getElementById('kpi-curves');
+  const ld = document.getElementById('kpi-days');
+  const lr = document.getElementById('kpi-range');
+  if (v === 'spread') {
+    document.getElementById('chart-title').textContent = '利差总览 · z-score 偏离扫描';
+    lc.nextElementSibling.textContent = '异常(|z|≥' + spThreshold + ')';
+    ld.nextElementSibling.textContent = '监控组数';
+    lr.nextElementSibling.textContent = '数据日期';
+    if (!spRows.length) computeSpreads(); else renderSpreadTable();
+  } else {
+    document.getElementById('chart-title').textContent = '收益率曲线走势';
+    lc.nextElementSibling.textContent = '已选曲线';
+    ld.nextElementSibling.textContent = '样本天数';
+    lr.nextElementSibling.textContent = '区间';
+    updateChart();
+  }
+}
+
+function ensureXLSX(cb) {
+  if (typeof XLSX !== 'undefined') { cb(); return; }
+  const s = document.createElement('script');
+  s.src = 'vendor/xlsx.full.min.js';
+  s.onload = cb;
+  document.head.appendChild(s);
+}
+
+function exportSpreadTable() {
+  ensureXLSX(() => {
+    const rows = spSortedRows();
+    const out = [['利差对', '类别', '当前值', '单位', '窗口均值', '标准差', 'z-score', '分位(%)', '近20日变化', '样本天数', '最新日期']];
+    rows.forEach(r => out.push([
+      r.name, r.cat,
+      r.cur == null ? '' : +r.cur.toFixed(4), r.unit,
+      r.mean == null ? '' : +r.mean.toFixed(4),
+      r.sd == null ? '' : +r.sd.toFixed(4),
+      r.z == null ? '' : +r.z.toFixed(3),
+      r.pct == null ? '' : +(r.pct * 100).toFixed(1),
+      r.chg == null ? '' : +r.chg.toFixed(3),
+      r.n, r.dates[r.dates.length - 1],
+    ]));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(out), '利差总览');
+    XLSX.writeFile(wb, '利差总览_' + (allData.meta.date_range ? allData.meta.date_range[1] : '') + '.xlsx');
+  });
 }
 
 // ============================================
