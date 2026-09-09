@@ -606,28 +606,24 @@
     </div>
 
     <div class="chart-repo">
-      <div class="chart-label">正/逆回购余额（亿元 · 所选机构合计）
-        <button class="dl-btn" onclick="exportRepoBal()" title="导出正/逆回购余额数据">⬇ Excel</button>
+      <div class="chart-label">大行 / 货基 净融出走势（亿元 · 固定口径）
+        <button class="dl-btn" onclick="exportRepoOutflow()" title="导出大行、货基净融出数据">⬇ Excel</button>
       </div>
-      <div class="chart-wrap"><canvas id="repo-chart-bal"></canvas></div>
-      <div class="no-data" id="no-data-repo-bal" style="display:none">
-        <span class="icon">📈</span>
-        <span>请选择机构类型查看数据</span>
+      <div class="chart-wrap"><canvas id="repo-chart-outflow"></canvas></div>
+      <div class="no-data" id="no-data-repo-outflow" style="display:none">
+        <span class="icon">🏦</span>
+        <span>暂无数据</span>
       </div>
     </div>
 
     <div class="chart-repo">
-      <div class="chart-label">押品结构 · 当日成交金额（亿元 · 所选机构合计）
-        <span class="mini-toggle" id="repo-coll-toggle">
-          <span class="mt-opt active" data-dir="repo" onclick="setRepoCollDir('repo')">正回购</span>
-          <span class="mt-opt" data-dir="rev" onclick="setRepoCollDir('rev')">逆回购</span>
-        </span>
-        <button class="dl-btn" onclick="exportRepoColl()" title="导出押品结构数据">⬇ Excel</button>
+      <div class="chart-label">非银行体系净融入走势（亿元 · 正值=融入 · 固定口径）
+        <button class="dl-btn" onclick="exportRepoNonbank()" title="导出非银行体系净融入数据">⬇ Excel</button>
       </div>
-      <div class="chart-wrap"><canvas id="repo-chart-coll"></canvas></div>
-      <div class="no-data" id="no-data-repo-coll" style="display:none">
-        <span class="icon">🧱</span>
-        <span>请选择机构类型查看数据</span>
+      <div class="chart-wrap"><canvas id="repo-chart-nonbank"></canvas></div>
+      <div class="no-data" id="no-data-repo-nonbank" style="display:none">
+        <span class="icon">📥</span>
+        <span>暂无数据</span>
       </div>
     </div>
 
@@ -1792,12 +1788,17 @@ const DATA_URL_REPO = 'repo_trading_data.json';
 let repoData = null;              // {meta, dates, inst}
 let repoLoadPromise = null;
 let currentView = 'cash';         // 'cash' | 'repo'
-let repoCollDir = 'repo';         // 押品结构图方向：repo=正回购成交 / rev=逆回购成交
 let repoRateDir = 'repo';         // 加权利率图方向
 let viewDateState = { cash: null, repo: null };   // 两视图各自记住的日期区间
-let chartRepoNet = null, chartRepoBal = null, chartRepoColl = null, chartRepoRate = null;
-const COLL_COLORS = { '利率债': '#5470c6', '信用债': '#fac858', '同业存单': '#91cc75' };
-const COLL_LIST = ['利率债', '信用债', '同业存单'];
+let chartRepoNet = null, chartRepoOutflow = null, chartRepoNonbank = null, chartRepoRate = null;
+// 固定口径分组（不受左侧机构筛选影响）
+const REPO_OUTFLOW = ['大型银行', '货币市场基金'];                                        // 资金融出方：大行 / 货基
+const REPO_NONBANK = ['基金公司及产品', '证券公司', '保险公司', '理财子公司及理财类产品', '其他'];  // 非银行体系（基金为主）
+const OUTFLOW_COLORS = { '大型银行': '#5470c6', '货币市场基金': '#91cc75' };
+const NONBANK_COLORS = {
+  '基金公司及产品': '#ee6666', '证券公司': '#fac858', '保险公司': '#73c0de',
+  '理财子公司及理财类产品': '#9a60b4', '其他': '#91cc75',
+};
 
 function refreshViewTags() {
   document.querySelectorAll('#view-tags .tag').forEach(t => {
@@ -1813,8 +1814,8 @@ function applyViewVisibility() {
   document.getElementById('repo-chart-area').style.display = isRepo ? 'flex' : 'none';
   // KPI 标签随视图切换
   document.querySelector('#kpi-total .kpi-label').textContent = isRepo ? '最新净融出（亿元）' : '累计净买入（亿元）';
-  document.querySelector('#kpi-avg .kpi-label').textContent = isRepo ? '最新正回购余额（亿元）' : '日均净买入（亿元）';
-  document.querySelector('#kpi-days .kpi-label').textContent = isRepo ? '最新逆回购余额（亿元）' : '交易天数';
+  document.querySelector('#kpi-avg .kpi-label').textContent = isRepo ? '大行最新净融出（亿元）' : '日均净买入（亿元）';
+  document.querySelector('#kpi-days .kpi-label').textContent = isRepo ? '非银最新净融入（亿元）' : '交易天数';
   document.getElementById('chart-title').textContent = isRepo ? '各机构质押式回购净融出走势' : '各类型机构债券净买入走势';
   // 源-note 跟随视图
   const note = document.getElementById('source-note');
@@ -1885,13 +1886,6 @@ async function loadRepoData() {
   return repoLoadPromise;
 }
 
-function setRepoCollDir(dir) {
-  repoCollDir = dir;
-  document.querySelectorAll('#repo-coll-toggle .mt-opt').forEach(o =>
-    o.classList.toggle('active', o.dataset.dir === dir));
-  if (currentView === 'repo') updateChart();
-}
-
 function setRepoRateDir(dir) {
   repoRateDir = dir;
   document.querySelectorAll('#repo-rate-toggle .mt-opt').forEach(o =>
@@ -1900,14 +1894,14 @@ function setRepoRateDir(dir) {
 }
 
 function repoShowNoData(msg) {
-  ['net', 'bal', 'coll', 'rate'].forEach(k => {
+  ['net', 'outflow', 'nonbank', 'rate'].forEach(k => {
     document.getElementById('no-data-repo-' + k).style.display = 'flex';
     document.getElementById('no-data-repo-' + k).querySelector('span:last-child').textContent = msg;
     document.getElementById('repo-chart-' + k).style.display = 'none';
   });
   if (chartRepoNet) { chartRepoNet.destroy(); chartRepoNet = null; }
-  if (chartRepoBal) { chartRepoBal.destroy(); chartRepoBal = null; }
-  if (chartRepoColl) { chartRepoColl.destroy(); chartRepoColl = null; }
+  if (chartRepoOutflow) { chartRepoOutflow.destroy(); chartRepoOutflow = null; }
+  if (chartRepoNonbank) { chartRepoNonbank.destroy(); chartRepoNonbank = null; }
   if (chartRepoRate) { chartRepoRate.destroy(); chartRepoRate = null; }
   ['kpi-total', 'kpi-avg', 'kpi-days'].forEach(id => {
     document.getElementById(id).querySelector('.kpi-value').textContent = '--';
@@ -1936,12 +1930,7 @@ function buildRepoSeries() {
     series[inst] = {
       net: pick(blk.net), repo_bal: pick(blk.repo_bal), rev_bal: pick(blk.rev_bal),
       repo_rate: pick(blk.repo_rate), rev_rate: pick(blk.rev_rate),
-      coll: {},
     };
-    COLL_LIST.forEach(c => {
-      const cb = (blk.coll || {})[c] || {};
-      series[inst].coll[c] = { repo: pick(cb.repo), rev: pick(cb.rev) };
-    });
   });
 
   // 所选机构合计（null 视为缺省跳过；全缺→null）
@@ -1953,20 +1942,31 @@ function buildRepoSeries() {
     });
     return has ? s : null;
   });
-  const aggColl = (dir) => dates.map((d, i) => {
-    const out = {};
-    COLL_LIST.forEach(c => {
-      let s = 0;
-      instList.forEach(inst => {
-        const v = series[inst].coll[c][dir][i];
-        if (v !== null) s += v;
-      });
-      out[c] = s;
+  // ── 固定口径分组序列（不受左侧机构筛选影响）──
+  // net = 逆回购余额 − 正回购余额 = 净融出；净融入 = −net
+  const netOf = (inst) => {
+    const blk = (repoData.inst || {})[inst];
+    return blk ? pick(blk.net) : null;
+  };
+  const outflow = {};
+  REPO_OUTFLOW.forEach(n => { const a = netOf(n); if (a) outflow[n] = a; });
+  const nonbank = {};
+  REPO_NONBANK.forEach(n => {
+    const a = netOf(n);
+    if (a) nonbank[n] = a.map(v => (v === null ? null : -v));   // 转成净融入（正=融入）
+  });
+  const nonbankTotal = dates.map((d, i) => {
+    let s = null;
+    REPO_NONBANK.forEach(n => {
+      const a = nonbank[n];
+      if (!a) return;
+      const v = a[i];
+      if (v !== null) { s = (s === null ? 0 : s) + v; }
     });
-    return out;
+    return s;
   });
 
-  return { dates, instList, series, aggNet: agg('net'), aggRepoBal: agg('repo_bal'), aggRevBal: agg('rev_bal'), aggColl };
+  return { dates, instList, series, aggNet: agg('net'), outflow, nonbank, nonbankTotal };
 }
 
 function updateRepoCharts() {
@@ -2004,22 +2004,26 @@ function updateRepoCharts() {
     return;
   }
 
-  const { dates, instList: il, series, aggNet, aggRepoBal, aggRevBal, aggColl } = buildRepoSeries();
+  const { dates, instList: il, series, aggNet, outflow, nonbank, nonbankTotal } = buildRepoSeries();
   if (!dates.length) { repoShowNoData('选定时间范围内无数据，请调整筛选条件'); return; }
 
   const startDate = document.getElementById('date-start').value;
   const endDate = document.getElementById('date-end').value;
 
-  // ── KPI：最新有效值（合计口径）──
+  // ── KPI：最新有效值 ──
   const lastVal = arr => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i] !== null) return arr[i]; return null; };
-  const kv = { net: lastVal(aggNet), rb: lastVal(aggRepoBal), vb: lastVal(aggRevBal) };
+  const kv = {
+    net: lastVal(aggNet),                                        // 所选机构合计净融出
+    big: outflow['大型银行'] ? lastVal(outflow['大型银行']) : null,  // 大行净融出
+    nb: lastVal(nonbankTotal),                                    // 非银体系净融入
+  };
   const fmtK = v => (v === null ? '--' : v.toFixed(2));
   document.getElementById('kpi-total').querySelector('.kpi-value').textContent = fmtK(kv.net);
-  document.getElementById('kpi-avg').querySelector('.kpi-value').textContent = fmtK(kv.rb);
-  document.getElementById('kpi-days').querySelector('.kpi-value').textContent = fmtK(kv.vb);
-  ['kpi-total'].forEach(id => {
+  document.getElementById('kpi-avg').querySelector('.kpi-value').textContent = fmtK(kv.big);
+  document.getElementById('kpi-days').querySelector('.kpi-value').textContent = fmtK(kv.nb);
+  ['kpi-total', 'kpi-avg'].forEach(id => {
     const card = document.getElementById(id);
-    const val = kv.net;
+    const val = (id === 'kpi-total') ? kv.net : kv.big;
     card.classList.remove('positive', 'negative');
     if (val !== null && val > 0) card.classList.add('positive');
     else if (val !== null && val < 0) card.classList.add('negative');
@@ -2030,7 +2034,7 @@ function updateRepoCharts() {
     '机构：' + il.join('、') + ' | ' + startDate + ' ~ ' + endDate;
 
   // 显示画布、隐藏 no-data
-  ['net', 'bal', 'coll', 'rate'].forEach(k => {
+  ['net', 'outflow', 'nonbank', 'rate'].forEach(k => {
     document.getElementById('no-data-repo-' + k).style.display = 'none';
     document.getElementById('repo-chart-' + k).style.display = 'block';
   });
@@ -2076,50 +2080,49 @@ function updateRepoCharts() {
     plugins: [zeroLinePlugin],
   });
 
-  // ── 图2：正/逆回购余额（所选机构合计，双线）──
-  if (chartRepoBal) chartRepoBal.destroy();
-  chartRepoBal = new Chart(document.getElementById('repo-chart-bal'), {
+  // ── 图2：大行 / 货基 净融出（固定口径，不随左侧机构筛选变化）──
+  if (chartRepoOutflow) chartRepoOutflow.destroy();
+  chartRepoOutflow = new Chart(document.getElementById('repo-chart-outflow'), {
     type: 'line',
     data: {
       labels: dates,
-      datasets: [
-        {
-          label: '正回购余额（融入）', data: aggRepoBal,
-          borderColor: '#ee6666', backgroundColor: '#ee666615', borderWidth: 2,
-          pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: '#ee6666',
-          tension: 0.15, fill: false, spanGaps: true,
-        },
-        {
-          label: '逆回购余额（融出）', data: aggRevBal,
-          borderColor: '#5470c6', backgroundColor: '#5470c615', borderWidth: 2,
-          pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: '#5470c6',
-          tension: 0.15, fill: false, spanGaps: true,
-        },
-      ],
+      datasets: REPO_OUTFLOW.filter(n => outflow[n]).map(n => {
+        const color = OUTFLOW_COLORS[n] || '#5470c6';
+        return {
+          label: n + '（净融出）', data: outflow[n],
+          borderColor: color, backgroundColor: color + '15', borderWidth: 2,
+          pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: color,
+          tension: 0.15, fill: true, spanGaps: true,
+        };
+      }),
     },
     options: lineOpts('亿'),
+    plugins: [zeroLinePlugin],
   });
 
-  // ── 图3：押品结构（所选机构合计，堆叠面积）──
-  if (chartRepoColl) chartRepoColl.destroy();
-  const collData = aggColl(repoCollDir);
-  chartRepoColl = new Chart(document.getElementById('repo-chart-coll'), {
+  // ── 图3：非银行体系净融入（基金、证券、保险、理财、其他；正值=融入）──
+  if (chartRepoNonbank) chartRepoNonbank.destroy();
+  const nbDatasets = REPO_NONBANK.filter(n => nonbank[n]).map(n => {
+    const color = NONBANK_COLORS[n] || '#999';
+    return {
+      label: n, data: nonbank[n],
+      borderColor: color, backgroundColor: color + '15',
+      borderWidth: (n === '基金公司及产品') ? 2.5 : 1.8,
+      pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: color,
+      tension: 0.15, fill: false, spanGaps: true,
+    };
+  });
+  nbDatasets.push({
+    label: '非银合计', data: nonbankTotal,
+    borderColor: '#333333', backgroundColor: '#33333312', borderWidth: 2.5,
+    borderDash: [6, 3], pointRadius: 0, pointHoverRadius: 5,
+    pointHoverBackgroundColor: '#333333', tension: 0.15, fill: false, spanGaps: true,
+  });
+  chartRepoNonbank = new Chart(document.getElementById('repo-chart-nonbank'), {
     type: 'line',
-    data: {
-      labels: dates,
-      datasets: COLL_LIST.map(c => ({
-        label: c,
-        data: collData.map(row => +(row[c] || 0).toFixed(2)),
-        borderColor: COLL_COLORS[c], backgroundColor: COLL_COLORS[c] + '55',
-        borderWidth: 1.5, fill: true, pointRadius: 0, pointHoverRadius: 4,
-        pointHoverBackgroundColor: COLL_COLORS[c], tension: 0.1,
-      })),
-    },
-    options: (() => {
-      const o = lineOpts('亿');
-      o.scales.y.stacked = true;
-      return o;
-    })(),
+    data: { labels: dates, datasets: nbDatasets },
+    options: lineOpts('亿'),
+    plugins: [zeroLinePlugin],
   });
 
   // ── 图4：加权利率（每机构一线，正/逆可切换）──
@@ -2177,29 +2180,32 @@ function exportRepoNet() {
   ]);
 }
 
-function exportRepoBal() {
+function exportRepoOutflow() {
   if (currentView !== 'repo' || !repoData) { alert('请先切换到质押式回购视图'); return; }
-  const { dates, aggRepoBal, aggRevBal } = buildRepoSeries();
+  const { dates, outflow } = buildRepoSeries();
   if (!dates.length) { alert('当前筛选条件下无数据，无法导出'); return; }
-  const rows = [['日期', '正回购余额(亿元)', '逆回购余额(亿元)']];
-  dates.forEach((d, i) => rows.push([d,
-    aggRepoBal[i] === null ? '' : aggRepoBal[i],
-    aggRevBal[i] === null ? '' : aggRevBal[i]]));
-  exportWorkbook(dlSafeName('质押式回购_余额_' + dlInstTag() + '_' + dlRangeTag() + '.xlsx'), [
-    { name: '正逆回购余额', rows },
+  const cols = REPO_OUTFLOW.filter(n => outflow[n]);
+  const rows = [['日期', ...cols.map(n => n + '(亿元)')]];
+  dates.forEach((d, i) => rows.push([d, ...cols.map(n => {
+    const v = outflow[n][i];
+    return v === null ? '' : +v.toFixed(2);
+  })]));
+  exportWorkbook(dlSafeName('质押式回购_大行货基净融出_' + dlRangeTag() + '.xlsx'), [
+    { name: '大行货基净融出', rows },
   ]);
 }
 
-function exportRepoColl() {
+function exportRepoNonbank() {
   if (currentView !== 'repo' || !repoData) { alert('请先切换到质押式回购视图'); return; }
-  const { dates, aggColl } = buildRepoSeries();
+  const { dates, nonbank, nonbankTotal } = buildRepoSeries();
   if (!dates.length) { alert('当前筛选条件下无数据，无法导出'); return; }
-  const dirName = repoCollDir === 'rev' ? '逆回购' : '正回购';
-  const rows = [['日期', '利率债(亿元)', '信用债(亿元)', '同业存单(亿元)']];
-  const data = aggColl(repoCollDir);
-  dates.forEach((d, i) => rows.push([d, ...COLL_LIST.map(c => +(data[i][c] || 0).toFixed(2))]));
-  exportWorkbook(dlSafeName('质押式回购_押品结构' + dirName + '_' + dlInstTag() + '_' + dlRangeTag() + '.xlsx'), [
-    { name: '押品结构' + dirName, rows },
+  const cols = REPO_NONBANK.filter(n => nonbank[n]);
+  const rows = [['日期', ...cols.map(n => n + '(亿元)'), '非银合计(亿元)']];
+  dates.forEach((d, i) => rows.push([d,
+    ...cols.map(n => { const v = nonbank[n][i]; return v === null ? '' : +v.toFixed(2); }),
+    nonbankTotal[i] === null ? '' : +nonbankTotal[i].toFixed(2)]));
+  exportWorkbook(dlSafeName('质押式回购_非银净融入_' + dlRangeTag() + '.xlsx'), [
+    { name: '非银净融入', rows },
   ]);
 }
 
