@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
 <title>债券现券交易分析看板</title>
 <script src="vendor/chart.umd.min.js"></script>
-<script src="vendor/xlsx.full.min.js"></script>
+<!-- xlsx.full.min.js（1.8MB）改为点导出时按需加载，见 ensureXLSX() -->
 <style>
   :root {
     --bg: #f5f6fa;
@@ -689,8 +689,6 @@ let dataRendered = false;  // 首次渲染后才 true，防止后台更新时重
 // ============================================
 const IDB_NAME = 'ficc_cache';
 const IDB_STORE = 'kv';
-const CACHE_KEY_BTD = 'bond_trading_data';
-const DATA_URL_BTD = 'bond_trading_data.json';
 const CACHE_KEY_YC = 'yield_curve_data';
 const DATA_URL_YC = 'yield_curve_data.json';
 
@@ -726,6 +724,39 @@ async function idbSet(key, val) {
       tx.onerror = () => reject(tx.error);
     });
   } catch (e) { console.warn('IndexedDB 写入失败', e); }
+}
+
+// ── 数据版本比对（配合 data_version.json，避免每次打开都重新下载全部大文件）──
+// 原理：daily_update.py 每次更新后写 data_version.json（<1KB，含各文件 last_updated+size）。
+// 前端先比对本地缓存对应的版本戳，一致则直接用 IndexedDB 缓存，不再下载。
+const DATA_URL_VER = 'data_version.json';
+const CACHE_KEY_BTD = 'bond_trading_data';
+const DATA_URL_BTD = 'bond_trading_data.json';
+let _verPromise = null;
+function fetchVersion() {
+  if (!_verPromise) {
+    _verPromise = fetch(DATA_URL_VER, { cache: 'no-cache' })
+      .then(r => r.json())
+      .catch(() => null);
+  }
+  return _verPromise;
+}
+async function verStamp(name) {
+  const v = await fetchVersion();
+  if (!v || !v.files || !v.files[name]) return null;
+  return v.files[name].last_updated + '|' + v.files[name].size;
+}
+// 返回 {raw, fromCache}；版本未变且本地有缓存时不产生任何大文件下载
+async function loadDataIfChanged(url, name, cacheKey) {
+  const cached = await idbGet(cacheKey);
+  const stamp = await verStamp(name);
+  const localStamp = await idbGet('ver::' + name);
+  if (cached && stamp && stamp === localStamp) return { raw: cached, fromCache: true };
+  const resp = await fetch(url, { cache: 'no-cache' });
+  const raw = await resp.json();
+  await idbSet(cacheKey, raw);
+  if (stamp) await idbSet('ver::' + name, stamp);
+  return { raw, fromCache: false };
 }
 
 // 解压 compact_v1 格式
@@ -780,6 +811,18 @@ async function init() {
   loadYieldCurve();
   renderBenchTags();
 
+  // 记住上次看的视图：若上次是回购，先把回购数据（1MB）拉完再拉现券（6.2MB），
+  // 避免两者抢带宽导致回购页也要等大文件；最多等 3 秒。
+  let lastView = null;
+  try { lastView = localStorage.getItem('ficc_last_view'); } catch (e) {}
+  if (lastView === 'repo') {
+    switchView('repo');
+    await Promise.race([
+      loadRepoData().catch(() => {}),
+      new Promise(r => setTimeout(r, 3000)),
+    ]);
+  }
+
   // 1. 先从 IndexedDB 读缓存 → 命中则立即渲染（秒开）
   const cachedRaw = await idbGet(CACHE_KEY_BTD);
   if (cachedRaw) {
@@ -790,14 +833,12 @@ async function init() {
     if (noteEl) noteEl.textContent = '⏳ 首次加载，正在下载数据（约 5.8MB）...';
   }
 
-  // 2. 后台校验最新数据（带时间戳，强制绕过 CDN/浏览器缓存，确保拿到最新文件）
+  // 2. 后台校验最新数据：先用 data_version.json（<1KB）比对，未变更则零下载
   try {
-    const resp = await fetch(DATA_URL_BTD, { cache: 'no-cache' });
-    const raw = await resp.json();
+    const { raw, fromCache } = await loadDataIfChanged(DATA_URL_BTD, 'bond_trading_data.json', CACHE_KEY_BTD);
     const newUpdated = raw.meta && raw.meta.last_updated;
-    const cachedUpdated = cachedRaw && cachedRaw.meta && cachedRaw.meta.last_updated;
 
-    if (newUpdated !== cachedUpdated) {
+    if (!fromCache) {
       // 数据有更新（或首次加载）
       allData = decompressData(raw);
       renderFromData();
@@ -840,14 +881,8 @@ async function loadYieldCurve() {
   try {
     const cached = await idbGet(CACHE_KEY_YC);
     if (cached && cached.series) setYieldCurve(cached);
-    const resp = await fetch(DATA_URL_YC, { cache: 'no-cache' });
-    const raw = await resp.json();
-    const newUpd = raw.meta && raw.meta.last_updated;
-    const oldUpd = cached && cached.meta && cached.meta.last_updated;
-    if (newUpd !== oldUpd) {
-      setYieldCurve(raw);
-      await idbSet(CACHE_KEY_YC, raw);
-    }
+    const { raw, fromCache } = await loadDataIfChanged(DATA_URL_YC, 'yield_curve_data.json', CACHE_KEY_YC);
+    if (!fromCache) setYieldCurve(raw);
   } catch (e) {
     console.warn('收益率曲线加载失败', e);
   }
@@ -1646,8 +1681,23 @@ function dlAutoCols(rows) {
   return cols;
 }
 
-function exportWorkbook(filename, sheets) {
-  if (typeof XLSX === 'undefined') { alert('Excel 导出组件未加载，请刷新页面后重试'); return; }
+// XLSX（约 1.8MB）改为按需加载：只在真正点导出时才下载，首屏不再背这个包
+let _xlsxPromise = null;
+function ensureXLSX() {
+  if (typeof XLSX !== 'undefined') return Promise.resolve();
+  if (_xlsxPromise) return _xlsxPromise;
+  _xlsxPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'vendor/xlsx.full.min.js';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Excel 组件加载失败'));
+    document.head.appendChild(s);
+  });
+  return _xlsxPromise;
+}
+
+async function exportWorkbook(filename, sheets) {
+  try { await ensureXLSX(); } catch (e) { alert('Excel 导出组件加载失败，请检查网络后重试'); return; }
   try {
     const wb = XLSX.utils.book_new();
     sheets.forEach(s => {
@@ -1841,6 +1891,7 @@ function refreshViewTags() {
   document.querySelectorAll('#view-tags .tag').forEach(t => {
     t.classList.toggle('active', t.dataset.view === currentView);
   });
+  try { localStorage.setItem('ficc_last_view', currentView); } catch (e) {}
 }
 
 function applyViewVisibility() {
@@ -1906,16 +1957,8 @@ async function loadRepoData() {
     const cached = await idbGet(CACHE_KEY_REPO);
     if (cached && cached.meta && cached.dates) repoData = cached;
     try {
-      const resp = await fetch(DATA_URL_REPO, { cache: 'no-cache' });
-      const raw = await resp.json();
-      if (raw && raw.meta && raw.dates) {
-        const newUpd = raw.meta.last_updated;
-        const oldUpd = cached && cached.meta ? cached.meta.last_updated : null;
-        if (newUpd !== oldUpd) {
-          repoData = raw;
-          await idbSet(CACHE_KEY_REPO, raw);
-        }
-      }
+      const { raw, fromCache } = await loadDataIfChanged(DATA_URL_REPO, 'repo_trading_data.json', CACHE_KEY_REPO);
+      if (!fromCache && raw && raw.meta && raw.dates) repoData = raw;
     } catch (e) {
       console.warn('质押式回购数据加载失败', e);
     }

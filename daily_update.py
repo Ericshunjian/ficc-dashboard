@@ -41,6 +41,19 @@ FACTOR_OUTPUT = os.path.join(SCRIPT_DIR, "factor_data.json")
 FACTOR_MERGED_DATA = os.path.join(SCRIPT_DIR, "bond_trading_data_merged.json")
 LOG_PATH = os.path.join(SCRIPT_DIR, "daily_update.log")
 
+# 线上数据文件清单：data_version.json 供前端做「版本比对 → 未变更则零下载」
+DATA_FILES_FOR_VERSION = [
+    "bond_trading_data.json",
+    "bond_yield_data.json",
+    "yield_curve_data.json",
+    "factor_data.json",
+    "curve_deviation.json",
+    "hs300_volatility_data.json",
+    "repo_trading_data.json",
+    "stock_bond_data.json",
+]
+VERSION_OUTPUT = os.path.join(SCRIPT_DIR, "data_version.json")
+
 # 用户预处理脚本：从原始日报生成 bond_data.xlsx
 USER_PREPROCESS_SCRIPT = r"C:\Users\lihaoran\Documents\工作\现券交易\2026年交易\现券数据处理_2026.py"
 USER_PREPROCESS_CWD = r"C:\Users\lihaoran\Documents\工作\现券交易\2026年交易"
@@ -1232,6 +1245,34 @@ def run_user_preprocess():
         return False
 
 
+def write_data_version():
+    """生成 data_version.json：列出各数据文件的 last_updated + 字节数。
+    前端先拉这个几 KB 的小文件与本地缓存比对，未变更就不重复下载大 JSON。"""
+    files = {}
+    for name in DATA_FILES_FOR_VERSION:
+        p = os.path.join(SCRIPT_DIR, name)
+        if not os.path.exists(p):
+            continue
+        stamp = ""
+        try:
+            with open(p, 'r', encoding='utf-8') as f:
+                head = f.read(4096)
+            m = re.search(r'"last_updated"\s*:\s*"([^"]+)"', head)
+            if m:
+                stamp = m.group(1)
+        except Exception:
+            pass
+        if not stamp:  # 取不到 meta 里的 last_updated 就用 mtime 兜底
+            stamp = datetime.fromtimestamp(os.path.getmtime(p)).strftime("%Y-%m-%d %H:%M:%S")
+        files[name] = {"last_updated": stamp, "size": os.path.getsize(p)}
+    out = {
+        "generated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "files": files,
+    }
+    jsonio.write_json_skip_unchanged(VERSION_OUTPUT, out, log)
+    log.info(f"数据版本清单已更新: data_version.json（{len(files)} 个文件）")
+
+
 def main():
     log.info("=" * 50)
     log.info("每日数据更新任务启动")
@@ -1338,6 +1379,12 @@ def main():
              f"质押式回购={'成功' if ok8 else '保留旧数据'}, "
              f"股债相关性={'成功' if ok9 else '保留旧数据'}")
 
+    # 更新数据版本清单（前端据此跳过未变更文件的下载）
+    try:
+        write_data_version()
+    except Exception as e:
+        log.warning(f"data_version.json 生成失败（不影响数据）: {e}")
+
     # push 到 GitHub（唯一远程；gitee/gitcode 已于 2026-08-06 废弃，不再同步）
     if ok1 or ok2 or ok3 or ok5 or ok7 or ok8 or ok9:
         try:
@@ -1386,6 +1433,7 @@ def git_push_data():
         'hs300_volatility_data.json',
         'repo_trading_data.json',
         'stock_bond_data.json',
+        'data_version.json',
     ]
     for f in json_files:
         run_git('add', f)
