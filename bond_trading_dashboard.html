@@ -617,7 +617,7 @@
     </div>
 
     <div class="chart-repo">
-      <div class="chart-label">非银行体系净融入走势（亿元 · 正值=融入 · 固定口径）
+      <div class="chart-label">非银行体系净融入走势（亿元 · 正值=融入 · 默认合计，点击图例展开各机构）
         <button class="dl-btn" onclick="exportRepoNonbank()" title="导出非银行体系净融入数据">⬇ Excel</button>
       </div>
       <div class="chart-wrap"><canvas id="repo-chart-nonbank"></canvas></div>
@@ -2110,6 +2110,7 @@ function updateRepoCharts() {
       borderWidth: (n === '基金公司及产品') ? 2.5 : 1.8,
       pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: color,
       tension: 0.15, fill: false, spanGaps: true,
+      hidden: true,          // 默认只显示合计线，按需点击图例展开
     };
   });
   nbDatasets.push({
