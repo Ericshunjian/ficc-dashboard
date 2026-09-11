@@ -30,6 +30,34 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 import jsonio  # JSON 幂等写入（无实质变化则跳过重写）
 
+# ── PATH 兜底：某些 shell 环境（WorkBuddy shim 异常时）PATH 会丢失 Git Bash 的
+#    /mingw64/bin，导致 subprocess 调 git 报 "command not found" / 静默失败。
+#    2026-09-11 实测：check_update_status.py 因此误报“.git 损坏”，push 步骤也失败。
+#    这里把 PortableGit 目录补进 PATH，保证 git 始终可用。
+def _ensure_git_in_path():
+    if os.environ.get('_FICC_GIT_PATH_FIXED'):
+        return
+    try:
+        import shutil
+        if shutil.which('git'):
+            os.environ['_FICC_GIT_PATH_FIXED'] = '1'
+            return
+    except Exception:
+        pass
+    cands = [
+        r'C:\Users\lihaoran\.workbuddy\binaries\PortableGit\versions\1.2.0\mingw64\bin',
+        r'C:\Users\lihaoran\.workbuddy\binaries\PortableGit\versions\1.2.0\cmd',
+        r'C:\Program Files\Git\mingw64\bin',
+        r'C:\Program Files\Git\cmd',
+    ]
+    for c in cands:
+        if os.path.isfile(os.path.join(c, 'git.exe')):
+            os.environ['PATH'] = c + os.pathsep + os.environ.get('PATH', '')
+            os.environ['_FICC_GIT_PATH_FIXED'] = '1'
+            return
+
+_ensure_git_in_path()
+
 BOND_DATA_EXCEL = r"C:\Users\lihaoran\Documents\工作\现券交易\bond_data.xlsx"
 OLD_BOND_DATA_EXCEL = r"C:\Users\lihaoran\Documents\工作\现券交易\bond_data_备份截至2025年.xlsx"
 BOND_DATA_OUTPUT = os.path.join(SCRIPT_DIR, "bond_trading_data.json")
