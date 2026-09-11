@@ -43,6 +43,7 @@ ISSUE_DATE = {
     "2500001.IB": date(2025, 4, 25),   # 25超长特别国债01(20年) 免税
     "250021.IB":  date(2025, 11, 6),   # 25附息国债21(50年) 含税
     "250003.IB":  date(2025, 1, 25),   # 25附息国债03 免税
+    "250004.IB":  date(2025, 2, 15),   # 25附息国债04(10Y) 免税（中债公告：起息2025-02-15）
     "250016.IB":  date(2025, 8, 25),   # 25附息国债16 含税
     "250020.IB":  date(2025, 10, 25),  # 25附息国债20 含税
     "250022.IB":  date(2025, 11, 15),  # 25附息国债22 含税
@@ -64,7 +65,7 @@ def is_tax_free(code):
         return False
     if yy <= 24:   # 2024 年及以前发行
         return True
-    return None    # 2025 年发行但未列入表（不应发生）
+    return None    # 2025 年发行但未列入表 → 调用方须告警并补表
 
 
 def build_curve_nodes(yc_series):
@@ -125,8 +126,13 @@ def main():
         cat = it["category"]
         cname = CATEGORY_TO_CURVE[cat]
         nodes = CURVE_NODES[cname]
-        d0 = date.fromisoformat(it["dates"][0])
+        # duration = Excel 最新导出日的剩余期限（每日重导刷新），故锚点=序列最后一天；
+        # rem(t) = dur0 − (最后一天 − t)/365。此前误锚第一天，导致历史 rem 系统性偏短。
+        d0 = date.fromisoformat(it["dates"][-1])
         dur0 = float(it["duration"])
+        tf = is_tax_free(code)
+        if tf is None:
+            log.warning(f"  {code} 为2025年发行但未列入ISSUE_DATE表，tax_free=None（前端将按含税处理）→ 请查起息日补表")
         dates, yields, rems, devs, spr30 = [], [], [], [], []
         for ds, y in zip(it["dates"], it["yields"]):
             if y is None:
@@ -159,7 +165,7 @@ def main():
             spr30.append(s30)
             all_dates.add(ds)
         out_bonds[code] = {
-            "category": cat, "curve": cname, "tax_free": is_tax_free(code),
+            "category": cat, "curve": cname, "tax_free": tf,
             "dates": dates, "yields": yields, "rem": rems,
             "dev_bp": devs, "spread30_bp": spr30,
         }
