@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>因子库 · L0 原始序列与 L1 变换</title>
+<script src="vendor/chart.umd.min.js"></script>
+<script src="vendor/hammer.min.js"></script>
+<script src="vendor/chartjs-plugin-zoom.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6fa; --panel-bg: #ffffff; --text: #2c3e50; --text-secondary: #7f8c8d;
+    --border: #e8ecf1; --primary: #5470c6; --primary-light: #e8edff;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06); --radius: 8px; --sidebar-w: 400px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    background:var(--bg); color:var(--text); height:100vh; display:flex; overflow:hidden; font-size:13px; }
+  .sidebar { width:var(--sidebar-w); background:var(--panel-bg); border-right:1px solid var(--border);
+    display:flex; flex-direction:column; z-index:10; flex-shrink:0; }
+  .sidebar-header { padding:16px 18px 12px; border-bottom:1px solid var(--border); position:relative; }
+  .sidebar-header h2 { font-size:17px; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .sidebar-header .subtitle { font-size:12px; color:var(--text-secondary); margin-top:4px; }
+  .back-home { position:absolute; top:16px; right:18px; font-size:12px; color:var(--text-secondary);
+    text-decoration:none; padding:3px 8px; border:1px solid var(--border); border-radius:4px; }
+  .back-home:hover { color:var(--primary); border-color:var(--primary); }
+  .filter-body { flex:1; overflow-y:auto; padding:12px 18px; display:flex; flex-direction:column; gap:14px; }
+  .filter-group { display:flex; flex-direction:column; gap:6px; }
+  .filter-label { font-size:12px; font-weight:600; color:var(--text-secondary); }
+  .chips { display:flex; flex-wrap:wrap; gap:5px; }
+  .chip { padding:3px 9px; border:1px solid var(--border); border-radius:12px; cursor:pointer;
+    font-size:12px; background:#fff; user-select:none; transition:all .12s; }
+  .chip:hover { border-color:var(--primary); }
+  .chip.on { background:var(--primary); color:#fff; border-color:var(--primary); }
+  .chip.dim { opacity:.45; }
+  input[type=search], input[type=number], select {
+    padding:5px 8px; border:1px solid var(--border); border-radius:5px; font-size:12px;
+    font-family:inherit; background:#fff; color:var(--text); }
+  input[type=number] { width:56px; }
+  .cand-list { border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+  .cand-head { background:#fafbfc; padding:6px 10px; font-size:12px; color:var(--text-secondary);
+    display:flex; justify-content:space-between; border-bottom:1px solid var(--border); }
+  .cand-body { max-height:340px; overflow-y:auto; }
+  .cand-item { padding:5px 10px; cursor:pointer; border-bottom:1px solid #f2f4f7; display:flex;
+    align-items:center; gap:7px; font-size:12px; }
+  .cand-item:last-child { border-bottom:none; }
+  .cand-item:hover { background:var(--primary-light); }
+  .cand-item.on { background:var(--primary-light); color:var(--primary); font-weight:500; }
+  .cand-item .dot { width:8px; height:8px; border-radius:2px; flex-shrink:0; }
+  .cand-item .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cand-item .ct { color:var(--text-secondary); font-size:11px; }
+  .sel-box { border:1px solid var(--border); border-radius:6px; padding:8px 10px; min-height:44px;
+    display:flex; flex-wrap:wrap; gap:6px; align-content:flex-start; }
+  .sel-tag { background:var(--primary-light); color:var(--primary); padding:3px 7px; border-radius:4px;
+    font-size:12px; display:flex; align-items:center; gap:5px; }
+  .sel-tag .x { cursor:pointer; font-weight:600; opacity:.6; }
+  .sel-tag .x:hover { opacity:1; }
+  .empty-hint { color:#b9c0c8; font-size:12px; }
+  .main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .toolbar { background:var(--panel-bg); border-bottom:1px solid var(--border); padding:9px 18px;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .tb-group { display:flex; align-items:center; gap:5px; }
+  .tb-label { font-size:12px; color:var(--text-secondary); }
+  .seg { display:flex; border:1px solid var(--border); border-radius:5px; overflow:hidden; }
+  .seg button { border:none; background:#fff; padding:4px 10px; font-size:12px; cursor:pointer;
+    color:var(--text-secondary); font-family:inherit; }
+  .seg button.on { background:var(--primary); color:#fff; }
+  .btn { padding:4px 10px; border:1px solid var(--border); background:#fff; border-radius:5px;
+    cursor:pointer; font-size:12px; font-family:inherit; color:var(--text); }
+  .btn:hover { border-color:var(--primary); color:var(--primary); }
+  .btn.pri { background:var(--primary); color:#fff; border-color:var(--primary); }
+  .charts { flex:1; overflow-y:auto; padding:12px 18px; display:flex; flex-direction:column; gap:12px; }
+  .chart-card { background:var(--panel-bg); border-radius:var(--radius); padding:10px 14px;
+    box-shadow:var(--shadow); }
+  .chart-card h3 { font-size:13px; font-weight:600; margin-bottom:6px; color:var(--text); }
+  .chart-card .hint { font-size:11px; color:var(--text-secondary); font-weight:400; margin-left:8px; }
+  .cv-wrap { height:280px; position:relative; }
+  .cv-wrap.tall { height:340px; }
+  .cards { display:flex; gap:10px; flex-wrap:wrap; }
+  .card { background:var(--panel-bg); border-radius:var(--radius); padding:10px 14px;
+    box-shadow:var(--shadow); min-width:190px; }
+  .card .nm { font-size:12px; color:var(--text-secondary); margin-bottom:6px; }
+  .card .val { font-size:19px; font-weight:600; }
+  .card .sub { font-size:11px; color:var(--text-secondary); margin-top:5px; line-height:1.7; }
+  .up { color:#e24b4a; } .down { color:#1d9e75; }
+  .loading { padding:40px; text-align:center; color:var(--text-secondary); }
+  .warn { background:#fff8e6; border:1px solid #f0d9a0; color:#8a6d3b; padding:8px 12px;
+    border-radius:6px; font-size:12px; }
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <h2>因子库 · L0 原始池</h2>
+    <div class="subtitle" id="metaInfo">加载中…</div>
+    <a class="back-home" href="index.html">首页</a>
+  </div>
+  <div class="filter-body">
+    <div class="filter-group">
+      <div class="filter-label">数据分组</div>
+      <div class="chips" id="groupChips"></div>
+    </div>
+    <div class="filter-group" id="dimArea"></div>
+    <div class="filter-group">
+      <div class="filter-label">候选序列 <span id="candCount" style="font-weight:400"></span></div>
+      <input type="search" id="candSearch" placeholder="搜索名称…">
+      <div class="cand-list">
+        <div class="cand-head"><span>点击切换选中</span><span id="selCount"></span></div>
+        <div class="cand-body" id="candBody"></div>
+      </div>
+    </div>
+    <div class="filter-group">
+      <div class="filter-label">序列运算（构造分歧度等复合因子）</div>
+      <div style="display:flex; gap:5px; align-items:center;">
+        <select id="opA" style="flex:1;min-width:0"></select>
+        <select id="op" style="width:44px"><option value="-">−</option><option value="+">+</option></select>
+        <select id="opB" style="flex:1;min-width:0"></select>
+      </div>
+      <button class="btn" id="opAdd" style="margin-top:2px">加入已选</button>
+    </div>
+    <div class="filter-group">
+      <div class="filter-label">已选序列</div>
+      <div class="sel-box" id="selBox"><span class="empty-hint">从上方候选点击添加</span></div>
+      <button class="btn" id="clearSel" style="align-self:flex-start">清空</button>
+    </div>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="toolbar">
+    <div class="tb-group">
+      <span class="tb-label">显示</span>
+      <div class="seg" id="modeSeg">
+        <button data-m="both" class="on">原值+加工</button>
+        <button data-m="raw">仅原值</button>
+        <button data-m="proc">仅加工</button>
+      </div>
+    </div>
+    <div class="tb-group">
+      <span class="tb-label">MA</span><input type="number" id="maWin" value="10" min="1" max="120">
+    </div>
+    <div class="tb-group">
+      <span class="tb-label">标准化</span>
+      <select id="norm">
+        <option value="none">无</option>
+        <option value="pct" selected>滚动百分位</option>
+        <option value="z">Z-score</option>
+      </select>
+      <input type="number" id="normWin" value="60" min="5" max="500">
+    </div>
+    <div class="tb-group">
+      <span class="tb-label">后置平滑</span><input type="number" id="smoothWin" value="1" min="1" max="60">
+    </div>
+    <div class="tb-group">
+      <label style="font-size:12px"><input type="checkbox" id="diffChk"> 先差分</label>
+    </div>
+    <div class="tb-group">
+      <span class="tb-label">区间</span>
+      <select id="rangeSel">
+        <option value="120">近120日</option>
+        <option value="250" selected>近250日</option>
+        <option value="500">近500日</option>
+        <option value="0">全部</option>
+      </select>
+    </div>
+    <div class="tb-group">
+      <span class="tb-label">右轴叠加</span>
+      <select id="overlaySel">
+        <option value="">无</option>
+        <option value="yld10">10年国债(%)</option>
+        <option value="spread3010" selected>30Y−10Y 利差(%)</option>
+        <option value="tl3t">TL−3×T 价差</option>
+      </select>
+    </div>
+    <button class="btn pri" id="exportBtn">导出CSV</button>
+    <button class="btn" id="resetZoom">重置缩放</button>
+  </div>
+  <div class="charts">
+    <div id="loadingBox" class="loading">正在加载因子库（约 2.3MB）…</div>
+    <div class="chart-card" id="rawCard" style="display:none">
+      <h3>原值序列<span class="hint" id="rawUnit"></span></h3>
+      <div class="cv-wrap"><canvas id="rawChart"></canvas></div>
+    </div>
+    <div class="chart-card" id="procCard" style="display:none">
+      <h3>加工后序列<span class="hint" id="procHint"></span></h3>
+      <div class="cv-wrap tall"><canvas id="procChart"></canvas></div>
+    </div>
+    <div class="cards" id="cards"></div>
+  </div>
+</main>
+
+<script>
+(function(){
+var PALETTE = ['#5470c6','#91cc75','#fac858','#ee6666','#73c0de','#3ba272','#fc8452','#9a60b4','#ea7ccc'];
+var D = null, DATES = null, N = 0;
+var state = {
+  group:'cash', dims:{}, search:'', selected:[], custom:[],
+  mode:'both', ma:10, norm:'pct', normWin:60, smooth:1, diff:false, range:250, overlay:'spread3010'
+};
+var chRaw = null, chProc = null;
+var expanded = {};
+
+function el(id){ return document.getElementById(id); }
+function fmt(v,p){ return v===null||v===undefined ? '—' : Number(v).toFixed(p===undefined?2:p); }
+
+/* ---------- 数据 ---------- */
+function seriesKey(s){ return s.g + '|' + s.id; }
+function seriesName(s){ return s.name; }
+
+function buildAll(){
+  DATES = D.dates; N = DATES.length;
+  expanded = {};
+  state.cashList = D.cash.map(function(s){
+    return { g:'cash', id:s.bt+'/'+s.inst+'/'+s.mat, bt:s.bt, inst:s.inst, mat:s.mat, i0:s.i0, v:s.v,
+             name:'现券·'+s.bt+'·'+s.inst+'·'+s.mat, unit:'亿元' };
+  });
+  state.repoList = D.repo.map(function(s){
+    return { g:'repo', id:s.inst+'/'+s.field, inst:s.inst, field:s.field, i0:s.i0, v:s.v,
+             name:'回购·'+s.label+'·'+s.inst, unit:(s.field==='rate_spread'?'百分点':'亿元') };
+  });
+  state.curveList = D.curve.map(function(s){
+    return { g:'curve', id:s.name, cat:s.cat, i0:s.i0, v:s.v, name:'曲线·'+s.cat+'·'+s.name, unit:'%' };
+  });
+  // 技术指标：由主力合约收盘价前端派生
+  var fut = ['T','TF','TS','TL'].map(function(k){
+    var f = state.curveList.filter(function(s){ return s.id===k+'主力'; })[0];
+    return f ? { key:k, ser:f } : null;
+  }).filter(Boolean);
+  state.techList = [];
+  fut.forEach(function(f){
+    var p = expand(f.ser);
+    TECH_DEFS.forEach(function(td){
+      state.techList.push({ g:'tech', id:f.key+'/'+td.key, tech:td.key, src:f.ser,
+        name:'技术·'+td.name+'·'+f.key+'主力', unit:td.unit, _vals:td.calc(p) });
+    });
+  });
+  el('metaInfo').textContent = '更新 ' + D.meta.last_updated + ' · ' + DATES[0] + ' ~ ' + DATES[DATES.length-1]
+    + ' · 共 ' + (state.cashList.length+state.repoList.length+state.curveList.length) + ' 条原始序列 + '
+    + state.techList.length + ' 条技术指标';
+}
+
+var TECH_DEFS = [
+  { key:'mom20', name:'动量20日', unit:'%', calc:function(p){ return retN(p,20); } },
+  { key:'mom60', name:'动量60日', unit:'%', calc:function(p){ return retN(p,60); } },
+  { key:'ma_gap', name:'MA5−MA20', unit:'元', calc:function(p){ return sub(ma(p,5), ma(p,20)); } },
+  { key:'rsi14', name:'RSI(14)', unit:'', calc:function(p){ return rsi(p,14); } },
+  { key:'macd', name:'MACD柱', unit:'', calc:function(p){ return macdHist(p,12,26,9); } },
+  { key:'boll', name:'布林位置', unit:'σ', calc:function(p){ return bollPos(p,20); } },
+  { key:'vol20', name:'20日波动率', unit:'%', calc:function(p){ return annVol(p,20); } },
+  { key:'pct250', name:'250日分位', unit:'%', calc:function(p){ return rollPct(p,250,0.7); } }
+];
+
+function expand(s){
+  var k = s.g + '|' + s.id;
+  if (expanded[k]) return expanded[k];
+  var a = new Array(N).fill(null);
+  var v = s.v;
+  for (var i=0;i<v.length;i++) a[s.i0+i] = v[i];
+  expanded[k] = a;
+  return a;
+}
+function valsOf(s){
+  if (s.g === 'tech') return s._vals;
+  return expand(s);
+}
+
+/* ---------- 变换工具 ---------- */
+function ma(a,w){
+  // 窗口内非 null 计数 >= 70% 即输出均值（稀疏序列如期货合约不被缺口打断）
+  var out=new Array(a.length).fill(null), need=Math.max(2, Math.ceil(w*0.7));
+  for(var i=0;i<a.length;i++){
+    if(a[i]===null) continue;
+    var lo=Math.max(0,i-w+1), s=0, c=0;
+    for(var j=lo;j<=i;j++){ if(a[j]!==null){ s+=a[j]; c++; } }
+    if(c>=need) out[i]=s/c;
+  }
+  return out;
+}
+function sub(a,b){
+  return a.map(function(v,i){ return (v===null||b[i]===null)?null:v-b[i]; });
+}
+function retN(p,n){
+  return p.map(function(v,i){ return (v===null||i<n||p[i-n]===null||p[i-n]===0)?null:(v/p[i-n]-1)*100; });
+}
+function rsi(p,n){
+  var out=new Array(p.length).fill(null), g=0,l=0;
+  for(var i=1;i<p.length;i++){
+    if(p[i]===null||p[i-1]===null){ out[i]=null; continue; }
+    var d=p[i]-p[i-1], ug=d>0?d:0, ul=d<0?-d:0;
+    if(i<=n){ g+=ug/n; l+=ul/n; if(i===n) out[i]= l===0?100:100-100/(1+g/l); continue; }
+    g=(g*(n-1)+ug)/n; l=(l*(n-1)+ul)/n;
+    out[i]= l===0?100:100-100/(1+g/l);
+  }
+  return out;
+}
+function ema(a,n){
+  var k=2/(n+1), out=new Array(a.length).fill(null), prev=null;
+  for(var i=0;i<a.length;i++){
+    if(a[i]===null){ out[i]=null; continue; }
+    prev = prev===null ? a[i] : a[i]*k+prev*(1-k);
+    out[i]=prev;
+  }
+  return out;
+}
+function macdHist(p,f,s,g){
+  var ef=ema(p,f), es=ema(p,s), dif=new Array(p.length).fill(null);
+  for(var i=0;i<p.length;i++) dif[i]=(ef[i]===null||es[i]===null)?null:ef[i]-es[i];
+  var sig=ema(dif,g), out=new Array(p.length).fill(null);
+  for(var j=0;j<p.length;j++) out[j]=(dif[j]===null||sig[j]===null)?null:dif[j]-sig[j];
+  return out;
+}
+function rollStd(a,w){
+  var out=new Array(a.length).fill(null);
+  for(var i=w-1;i<a.length;i++){
+    var s=0,c=0,arr=[];
+    for(var j=i-w+1;j<=i;j++){ if(a[j]===null){arr=null;break;} arr.push(a[j]); }
+    if(!arr) continue;
+    var m=arr.reduce(function(x,y){return x+y;},0)/w;
+    var vv=arr.reduce(function(x,y){return x+(y-m)*(y-m);},0)/w;
+    out[i]=Math.sqrt(vv);
+  }
+  return out;
+}
+function bollPos(p,w){
+  var m=ma(p,w), sd=rollStd(p,w), out=new Array(p.length).fill(null);
+  for(var i=0;i<p.length;i++) out[i]=(p[i]===null||m[i]===null||sd[i]===null||sd[i]===0)?null:(p[i]-m[i])/(2*sd[i]);
+  return out;
+}
+function annVol(p,w){
+  var r=retN(p,1), out=new Array(p.length).fill(null);
+  for(var i=0;i<p.length;i++){
+    if(i<w) continue;
+    var arr=[],k;
+    for(k=i-w+1;k<=i;k++){ if(r[k]===null){arr=null;break;} arr.push(r[k]); }
+    if(!arr) continue;
+    var m=arr.reduce(function(x,y){return x+y;},0)/arr.length;
+    var vv=arr.reduce(function(x,y){return x+(y-m)*(y-m);},0)/arr.length;
+    out[i]=Math.sqrt(vv)*Math.sqrt(242);
+  }
+  return out;
+}
+function rollPct(a,w,minRatio){
+  var out=new Array(a.length).fill(null);
+  for(var i=0;i<a.length;i++){
+    if(a[i]===null) continue;
+    var lo=Math.max(0,i-w+1), arr=[];
+    for(var j=lo;j<=i;j++) if(a[j]!==null) arr.push(a[j]);
+    var need=Math.max(5, Math.floor(w*(minRatio||0.7)));
+    if(arr.length<need) continue;
+    var cur=a[i], c=0;
+    for(var k=0;k<arr.length;k++) if(arr[k]<=cur) c++;
+    out[i]=c/arr.length*100;
+  }
+  return out;
+}
+function rollZ(a,w,minRatio){
+  var out=new Array(a.length).fill(null);
+  for(var i=0;i<a.length;i++){
+    if(a[i]===null) continue;
+    var lo=Math.max(0,i-w+1), arr=[];
+    for(var j=lo;j<=i;j++) if(a[j]!==null) arr.push(a[j]);
+    var need=Math.max(5, Math.floor(w*(minRatio||0.7)));
+    if(arr.length<need) continue;
+    var m=arr.reduce(function(x,y){return x+y;},0)/arr.length;
+    var vv=arr.reduce(function(x,y){return x+(y-m)*(y-m);},0)/arr.length;
+    var sd=Math.sqrt(vv);
+    out[i]= sd===0?0:(a[i]-m)/sd;
+  }
+  return out;
+}
+function diff1(a){
+  var out=new Array(a.length).fill(null);
+  for(var i=1;i<a.length;i++) out[i]=(a[i]===null||a[i-1]===null)?null:a[i]-a[i-1];
+  return out;
+}
+
+function transform(a){
+  var x = a.slice();
+  if(state.diff) x = diff1(x);
+  if(state.ma>1) x = ma(x, state.ma);
+  if(state.norm==='pct') x = rollPct(x, state.normWin);
+  else if(state.norm==='z') x = rollZ(x, state.normWin);
+  if(state.smooth>1) x = ma(x, state.smooth);
+  return x;
+}
+
+/* ---------- 候选列表 ---------- */
+var GROUPS = [
+  { key:'cash', name:'机构行为·现券' },
+  { key:'repo', name:'机构行为·回购' },
+  { key:'curve', name:'估值·曲线期货' },
+  { key:'tech', name:'技术指标(派生)' }
+];
+var DIM_DEF = {
+  cash:[
+    { k:'bt', label:'券种', opts:function(){ return D.meta.groups[0].dims.bond_type; } },
+    { k:'inst', label:'机构', opts:function(){ return D.meta.groups[0].dims.institution; } },
+    { k:'mat', label:'期限', opts:function(){ return D.meta.groups[0].dims.maturity; } }
+  ],
+  repo:[
+    { k:'inst', label:'机构', opts:function(){ return D.meta.groups[1].dims.institution; } },
+    { k:'field', label:'字段', opts:function(){ return D.meta.groups[1].dims.field; } }
+  ],
+  curve:[ { k:'cat', label:'类别', opts:function(){ return D.meta.groups[2].dims.cat; } } ],
+  tech:[ { k:'tech', label:'指标', opts:function(){ return TECH_DEFS.map(function(t){return t.name;}); } } ]
+};
+
+function renderGroupChips(){
+  el('groupChips').innerHTML = GROUPS.map(function(g){
+    return '<span class="chip'+(state.group===g.key?' on':'')+'" data-g="'+g.key+'">'+g.name+'</span>';
+  }).join('');
+  Array.prototype.forEach.call(el('groupChips').children, function(c){
+    c.onclick = function(){
+      state.group = c.getAttribute('data-g');
+      state.dims = {}; state.search = '';
+      var sb = el('candSearch'); if(sb) sb.value = '';
+      renderGroupChips(); renderDims(); renderCandidates();
+    };
+  });
+}
+
+function renderDims(){
+  var defs = DIM_DEF[state.group] || [];
+  el('dimArea').innerHTML = defs.map(function(d){
+    var opts = d.opts();
+    var sel = state.dims[d.k] || [];
+    return '<div class="filter-group"><div class="filter-label">'+d.label+
+      ' <span style="font-weight:400">('+(sel.length===0?'全选':sel.length+'项')+')</span>'+
+      ' <a href="javascript:;" data-all="'+d.k+'" style="color:var(--primary);font-weight:400">全选</a></div>'+
+      '<div class="chips">'+opts.map(function(o){
+        return '<span class="chip'+(sel.indexOf(o)>=0?' on':'')+'" data-k="'+d.k+'" data-v="'+o+'">'+o+'</span>';
+      }).join('')+'</div></div>';
+  }).join('');
+  Array.prototype.forEach.call(el('dimArea').querySelectorAll('.chip'), function(c){
+    c.onclick = function(){
+      var k=c.getAttribute('data-k'), v=c.getAttribute('data-v');
+      var arr = state.dims[k] || (state.dims[k]=[]);
+      var i = arr.indexOf(v);
+      if(i>=0) arr.splice(i,1); else arr.push(v);
+      renderDims(); renderCandidates();
+    };
+  });
+  Array.prototype.forEach.call(el('dimArea').querySelectorAll('a[data-all]'), function(a){
+    a.onclick = function(){ state.dims[a.getAttribute('data-all')] = []; renderDims(); renderCandidates(); };
+  });
+}
+
+function candidates(){
+  var g = state.group, list;
+  if(g==='cash') list = state.cashList;
+  else if(g==='repo') list = state.repoList;
+  else if(g==='curve') list = state.curveList;
+  else list = state.techList;
+  var d = state.dims;
+  var out = list.filter(function(s){
+    for(var k in d){
+      var arr = d[k];
+      if(arr && arr.length){
+        var val = (k==='field') ? fieldLabel(s.field) : (k==='tech' ? techName(s.tech) : s[k]);
+        if(arr.indexOf(val)<0) return false;
+      }
+    }
+    if(state.search){
+      var q = state.search.toLowerCase();
+      if(s.name.toLowerCase().indexOf(q)<0) return false;
+    }
+    return true;
+  });
+  return out;
+}
+function fieldLabel(f){
+  var m = {net:'净融出', rev_bal:'逆回购余额', repo_bal:'正回购余额', rate_spread:'正回购利率-DR001'};
+  return m[f]||f;
+}
+function techName(k){
+  var t = TECH_DEFS.filter(function(x){ return x.key===k; })[0];
+  return t ? t.name : k;
+}
+
+function renderCandidates(){
+  var list = candidates();
+  el('candCount').textContent = '(' + list.length + ')';
+  var maxShow = 400;
+  var html = list.slice(0,maxShow).map(function(s){
+    var on = state.selected.filter(function(x){ return x.key===seriesKey(s); }).length>0;
+    var ci = state.selected.length % PALETTE.length;
+    return '<div class="cand-item'+(on?' on':'')+'" data-key="'+seriesKey(s)+'">'+
+      '<span class="dot" style="background:'+PALETTE[ci]+'"></span>'+
+      '<span class="nm">'+s.name+'</span></div>';
+  }).join('');
+  if(list.length>maxShow) html += '<div class="cand-item"><span class="ct">… 仅显示前 '+maxShow+' 条，请用维度或搜索缩小范围</span></div>';
+  el('candBody').innerHTML = html || '<div class="cand-item"><span class="ct">无匹配序列</span></div>';
+  Array.prototype.forEach.call(el('candBody').querySelectorAll('.cand-item[data-key]'), function(c){
+    c.onclick = function(){ toggleSel(c.getAttribute('data-key')); };
+  });
+  el('selCount').textContent = '已选 ' + state.selected.length;
+}
+
+function findSeries(key){
+  var all = state.cashList.concat(state.repoList, state.curveList, state.techList, state.custom);
+  for(var i=0;i<all.length;i++) if(seriesKey(all[i])===key) return all[i];
+  return null;
+}
+function toggleSel(key){
+  var idx = -1;
+  for(var i=0;i<state.selected.length;i++) if(state.selected[i].key===key){ idx=i; break; }
+  if(idx>=0) state.selected.splice(idx,1);
+  else if(state.selected.length>=9){ alert('最多同时显示 9 条序列'); return; }
+  else state.selected.push({ key:key });
+  renderCandidates(); renderSel(); renderAll();
+}
+function renderSel(){
+  var box = el('selBox');
+  if(!state.selected.length){ box.innerHTML = '<span class="empty-hint">从上方候选点击添加</span>'; renderOpSelect(); return; }
+  box.innerHTML = state.selected.map(function(s,i){
+    var ser = findSeries(s.key);
+    return '<span class="sel-tag"><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+PALETTE[i%PALETTE.length]+'"></span>'+
+      (ser?ser.name:s.key)+'<span class="x" data-i="'+i+'">×</span></span>';
+  }).join('');
+  Array.prototype.forEach.call(box.querySelectorAll('.x'), function(x){
+    x.onclick = function(){ state.selected.splice(+x.getAttribute('data-i'),1); renderCandidates(); renderSel(); renderAll(); };
+  });
+  renderOpSelect();
+}
+function renderOpSelect(){
+  var opts = state.selected.map(function(s,i){
+    var ser = findSeries(s.key);
+    return '<option value="'+s.key+'">'+(ser?ser.name:s.key)+'</option>';
+  }).join('');
+  el('opA').innerHTML = opts || '<option value="">—</option>';
+  el('opB').innerHTML = opts || '<option value="">—</option>';
+}
+
+/* ---------- 图表 ---------- */
+var zeroLine = {
+  id:'zeroLine',
+  beforeDatasetsDraw:function(c){
+    var y = c.scales.y; if(!y) return;
+    if(y.min>0 || y.max<0) return;
+    var ctx=c.ctx; ctx.save(); ctx.strokeStyle='#d6dbe2'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(c.chartArea.left, y.getPixelForValue(0)); ctx.lineTo(c.chartArea.right, y.getPixelForValue(0)); ctx.stroke(); ctx.restore();
+  }
+};
+
+function overlaySeries(){
+  if(!state.overlay) return null;
+  var get = function(nm){
+    var s = state.curveList.filter(function(x){ return x.id===nm; })[0];
+    return s ? expand(s) : null;
+  };
+  if(state.overlay==='yld10') return { name:'10年国债(%)', data:get('10年国债') };
+  if(state.overlay==='spread3010'){
+    var a=get('30年国债'), b=get('10年国债');
+    if(!a||!b) return null;
+    return { name:'30Y−10Y(%)', data:a.map(function(v,i){ return (v===null||b[i]===null)?null:v-b[i]; }) };
+  }
+  if(state.overlay==='tl3t'){
+    var t=get('TL主力'), tt=get('T主力');
+    if(!t||!tt) return null;
+    return { name:'TL−3×T', data:t.map(function(v,i){ return (v===null||tt[i]===null)?null:v-3*tt[i]; }) };
+  }
+  return null;
+}
+
+function windowRange(){
+  var r = state.range>0 ? Math.max(0, N-state.range) : 0;
+  return { lo:r, hi:N };
+}
+
+function renderAll(){
+  if(!D) return;
+  var w = windowRange();
+  var labels = DATES.slice(w.lo, w.hi);
+  var sers = state.selected.map(function(s){ return findSeries(s.key); }).filter(Boolean);
+  if(!sers.length){
+    el('rawCard').style.display='none'; el('procCard').style.display='none'; el('cards').innerHTML='';
+    return;
+  }
+  var ov = overlaySeries();
+  var dsRaw = sers.map(function(s,i){
+    return { label:s.name, data:valsOf(s).slice(w.lo,w.hi), borderColor:PALETTE[i%PALETTE.length],
+      backgroundColor:PALETTE[i%PALETTE.length]+'22', borderWidth:1.6, pointRadius:0, tension:0.05, spanGaps:true, yAxisID:'y' };
+  });
+  var dsProc = sers.map(function(s,i){
+    return { label:s.name, data:transform(valsOf(s)).slice(w.lo,w.hi), borderColor:PALETTE[i%PALETTE.length],
+      borderWidth:1.8, pointRadius:0, tension:0.05, spanGaps:true, yAxisID:'y' };
+  });
+  if(ov){
+    var od = { label:ov.name, data:ov.data.slice(w.lo,w.hi), borderColor:'#9aa5b1', borderWidth:1.2,
+      borderDash:[5,3], pointRadius:0, spanGaps:true, yAxisID:'y1' };
+    dsRaw.push(od); dsProc.push(od);
+  }
+  var y1 = { id:'y1', position:'right', grid:{drawOnChartArea:false},
+    ticks:{ color:'#8a94a0', font:{size:10} } };
+  var commonOpts = function(){
+    return {
+      responsive:true, maintainAspectRatio:false, interaction:{ mode:'index', intersect:false },
+      plugins:{
+        legend:{ position:'top', labels:{ boxWidth:12, font:{size:11}, usePointStyle:true, filter:function(i){ return true; } } },
+        tooltip:{ bodyFont:{size:11}, titleFont:{size:11} },
+        zoom:{ zoom:{ wheel:{enabled:true}, pinch:{enabled:true}, mode:'x' }, pan:{ enabled:true, mode:'x' } }
+      },
+      scales:{
+        x:{ ticks:{ maxTicksLimit:14, font:{size:10}, color:'#8a94a0' }, grid:{display:false} },
+        y:{ position:'left', ticks:{ font:{size:10}, color:'#8a94a0' }, grid:{ color:'#f0f2f5' } },
+        y1: ov ? y1 : { display:false }
+      }
+    };
+  };
+  var showRaw = state.mode==='raw'||state.mode==='both';
+  var showProc = state.mode==='proc'||state.mode==='both';
+  el('rawCard').style.display = showRaw?'block':'none';
+  el('procCard').style.display = showProc?'block':'none';
+  el('rawUnit').textContent = '单位按序列各自原始口径（亿元 / % / 元）';
+  el('procHint').textContent = 'MA' + state.ma + ' → ' +
+    (state.norm==='pct' ? '滚动百分位'+state.normWin : state.norm==='z' ? 'Z-score'+state.normWin : '无标准化') +
+    (state.smooth>1 ? ' → 平滑'+state.smooth : '') + (state.diff ? '（先差分）' : '');
+
+  if(showRaw){
+    if(chRaw) chRaw.destroy();
+    chRaw = new Chart(el('rawChart').getContext('2d'), { type:'line', data:{labels:labels,datasets:dsRaw}, options:commonOpts() });
+  }
+  if(showProc){
+    if(chProc) chProc.destroy();
+    chProc = new Chart(el('procChart').getContext('2d'), { type:'line', data:{labels:labels,datasets:dsProc},
+      options:commonOpts(), plugins:[zeroLine] });
+  }
+  renderCards(sers);
+}
+
+function renderCards(sers){
+  var html = sers.map(function(s,i){
+    var v = valsOf(s), t = transform(v);
+    var lastIdx=-1, last=null;
+    for(var k=v.length-1;k>=0;k--) if(v[k]!==null){ lastIdx=k; last=v[k]; break; }
+    var procLast = t[lastIdx];
+    var pct = rollPct(v,250)[lastIdx];
+    var d5 = (lastIdx>=5 && v[lastIdx-5]!==null) ? last-v[lastIdx-5] : null;
+    var d20 = (lastIdx>=20 && v[lastIdx-20]!==null) ? last-v[lastIdx-20] : null;
+    var cls = function(x){ return x===null?'':(x>0?'up':(x<0?'down':'')); };
+    return '<div class="card"><div class="nm" style="color:'+PALETTE[i%PALETTE.length]+'">'+s.name+'</div>'+
+      '<div class="val">'+fmt(last,2)+' <span style="font-size:11px;color:var(--text-secondary)">'+s.unit+'</span></div>'+
+      '<div class="sub">加工值 '+fmt(procLast,2)+
+        (pct!==null&&pct!==undefined ? '<br>250日分位 '+fmt(pct,1)+'%' : '')+
+        '<br>5日 <span class="'+cls(d5)+'">'+(d5>0?'+':'')+fmt(d5,2)+'</span>'+
+        ' · 20日 <span class="'+cls(d20)+'">'+(d20>0?'+':'')+fmt(d20,2)+'</span></div></div>';
+  }).join('');
+  el('cards').innerHTML = html;
+}
+
+/* ---------- 事件 ---------- */
+function bind(){
+  el('candSearch').oninput = function(){ state.search = this.value.trim(); renderCandidates(); };
+  el('modeSeg').onclick = function(e){
+    if(e.target.tagName!=='BUTTON') return;
+    state.mode = e.target.getAttribute('data-m');
+    Array.prototype.forEach.call(this.children,function(b){ b.classList.toggle('on', b===e.target); });
+    renderAll();
+  };
+  el('normWin').onchange = function(){ state.normWin = +this.value; renderAll(); };
+  el('maWin').onchange = function(){ state.ma = +this.value; renderAll(); };
+  el('smoothWin').onchange = function(){ state.smooth = +this.value; renderAll(); };
+  el('norm').onchange = function(){ state.norm = this.value; renderAll(); };
+  el('diffChk').onchange = function(){ state.diff = this.checked; renderAll(); };
+  el('rangeSel').onchange = function(){ state.range = +this.value; renderAll(); };
+  el('overlaySel').onchange = function(){ state.overlay = this.value; renderAll(); };
+  el('clearSel').onclick = function(){ state.selected=[]; state.custom=[]; renderCandidates(); renderSel(); renderAll(); };
+  el('resetZoom').onclick = function(){ if(chRaw) chRaw.resetZoom(); if(chProc) chProc.resetZoom(); };
+  el('opAdd').onclick = function(){
+    var ka=el('opA').value, kb=el('opB').value, op=el('op').value;
+    if(!ka||!kb||ka===kb){ alert('请选择两条不同序列'); return; }
+    var A=findSeries(ka), B=findSeries(kb);
+    if(!A||!B) return;
+    var va=valsOf(A), vb=valsOf(B);
+    var vals = va.map(function(x,i){ return (x===null||vb[i]===null)?null:(op==='-'?x-vb[i]:x+vb[i]); });
+    var cs = { g:'custom', id:ka+'|'+op+'|'+kb, name:'自定义·'+A.name+(op==='-'?' − ':' + ')+B.name,
+      unit:A.unit, i0:0, v:vals, _vals:vals };
+    state.custom.push(cs);
+    state.selected.push({ key:seriesKey(cs) });
+    renderCandidates(); renderSel(); renderAll();
+  };
+  el('exportBtn').onclick = exportCsv;
+}
+function exportCsv(){
+  var w = windowRange();
+  var sers = state.selected.map(function(s){ return findSeries(s.key); }).filter(Boolean);
+  if(!sers.length){ alert('请先选择序列'); return; }
+  var rows = ['日期'];
+  sers.forEach(function(s){ rows.push(s.name+'(原值)', s.name+'(加工)'); });
+  for(var i=w.lo;i<w.hi;i++){
+    var line = [DATES[i]];
+    sers.forEach(function(s){
+      var v=valsOf(s), t=transform(v);
+      line.push(v[i]===null?'':v[i], t[i]===null?'':(+t[i]).toFixed(4));
+    });
+    rows.push(line.join(','));
+  }
+  var blob = new Blob(['\ufeff'+rows.join('\n')], {type:'text/csv;charset=utf-8'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'factor_library_' + DATES[w.hi-1] + '.csv';
+  a.click();
+}
+
+/* ---------- 启动 ---------- */
+fetch('factor_library.json?t=' + Date.now())
+  .then(function(r){ return r.json(); })
+  .then(function(j){
+    D = j;
+    buildAll();
+    renderGroupChips(); renderDims(); renderCandidates(); renderSel(); bind();
+    el('loadingBox').style.display='none';
+    // 默认示例：基金与保险超长国债净买入
+    var defs = ['现券·国债·基金公司及产品·20-30年','现券·国债·保险公司·20-30年'];
+    state.cashList.concat(state.repoList,state.curveList,state.techList).forEach(function(s){
+      if(defs.indexOf(s.name)>=0) state.selected.push({ key:seriesKey(s) });
+    });
+    renderCandidates(); renderSel(); renderAll();
+  })
+  .catch(function(e){
+    el('loadingBox').innerHTML = '<div class="warn">因子库加载失败：'+e.message+
+      '<br>请确认 factor_library.json 已生成（运行 prepare_factor_library.py）</div>';
+  });
+})();
+</script>
+</body>
+</html>

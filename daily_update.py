@@ -79,6 +79,7 @@ DATA_FILES_FOR_VERSION = [
     "hs300_volatility_data.json",
     "repo_trading_data.json",
     "stock_bond_data.json",
+    "factor_library.json",
 ]
 VERSION_OUTPUT = os.path.join(SCRIPT_DIR, "data_version.json")
 
@@ -1395,6 +1396,15 @@ def main():
         log.warning(f"股债相关性数据更新失败，保留现有数据: {e}")
         ok9 = False
 
+    ok10 = True
+    try:
+        log.info("[10/10] 因子库原始序列池 (factor_library.json)")
+        import prepare_factor_library
+        prepare_factor_library.main()
+    except Exception as e:
+        log.warning(f"因子库生成失败，保留现有数据: {e}")
+        ok10 = False
+
     log.info("=" * 50)
     log.info(f"完成: 预处理={'成功' if ok0 else '失败'}, "
              f"机构行为={'成功' if ok1 else '失败'}, "
@@ -1405,7 +1415,8 @@ def main():
              f"偏离度={'成功' if ok6 else '失败'}, "
              f"沪深300波动率={'成功' if ok7 else '保留旧数据'}, "
              f"质押式回购={'成功' if ok8 else '保留旧数据'}, "
-             f"股债相关性={'成功' if ok9 else '保留旧数据'}")
+             f"股债相关性={'成功' if ok9 else '保留旧数据'}, "
+             f"因子库={'成功' if ok10 else '保留旧数据'}")
 
     # 更新数据版本清单（前端据此跳过未变更文件的下载）
     try:
@@ -1414,7 +1425,7 @@ def main():
         log.warning(f"data_version.json 生成失败（不影响数据）: {e}")
 
     # push 到 GitHub（唯一远程；gitee/gitcode 已于 2026-08-06 废弃，不再同步）
-    if ok1 or ok2 or ok3 or ok5 or ok7 or ok8 or ok9:
+    if ok1 or ok2 or ok3 or ok5 or ok7 or ok8 or ok9 or ok10:
         try:
             log.info("推送数据到远程仓库...")
             git_push_data()
@@ -1461,6 +1472,7 @@ def git_push_data():
         'hs300_volatility_data.json',
         'repo_trading_data.json',
         'stock_bond_data.json',
+        'factor_library.json',
         'data_version.json',
     ]
     for f in json_files:
@@ -1473,6 +1485,8 @@ def git_push_data():
         'bond_spread_dashboard.html',
         'yield_curve_dashboard.html',
         'factor_dashboard.html',
+        'factor_library.html',
+        'prepare_factor_library.py',
         'backtest_dashboard.html',
         'bond_curve_deviation.html',
         'hs300_rolling_mdd.html',
