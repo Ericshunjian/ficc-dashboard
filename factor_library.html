@@ -170,7 +170,7 @@
         <option value="">无</option>
         <option value="yld10">10年国债(%)</option>
         <option value="spread3010" selected>30Y−10Y 利差(%)</option>
-        <option value="tl3t">TL−3×T 价差</option>
+        <option value="tl3t">3T−TL 价差</option>
       </select>
     </div>
     <button class="btn pri" id="exportBtn">导出CSV</button>
@@ -558,7 +558,7 @@ function overlaySeries(){
   if(state.overlay==='tl3t'){
     var t=get('TL主力'), tt=get('T主力');
     if(!t||!tt) return null;
-    return { name:'TL−3×T', data:t.map(function(v,i){ return (v===null||tt[i]===null)?null:v-3*tt[i]; }) };
+    return { name:'3T−TL', data:t.map(function(v,i){ return (v===null||tt[i]===null)?null:3*tt[i]-v; }) };
   }
   return null;
 }

@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>因子体检 · L2 有效性检验</title>
+<script src="vendor/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:#f5f6fa; --panel-bg:#ffffff; --text:#2c3e50; --text-secondary:#7f8c8d;
+    --border:#e8ecf1; --primary:#5470c6; --primary-light:#e8edff;
+    --pos:#378ADD; --neg:#D85A30; --shadow:0 1px 3px rgba(0,0,0,0.06); --radius:8px;
+    --detail-w:440px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column;
+    overflow:hidden; font-size:13px; }
+  header { background:var(--panel-bg); border-bottom:1px solid var(--border); padding:12px 18px;
+    display:flex; align-items:center; gap:14px; flex-shrink:0; position:relative; }
+  header h2 { font-size:17px; font-weight:600; }
+  header .subtitle { font-size:12px; color:var(--text-secondary); }
+  .back-home { position:absolute; top:12px; right:18px; font-size:12px; color:var(--text-secondary);
+    text-decoration:none; padding:3px 8px; border:1px solid var(--border); border-radius:4px; }
+  .back-home:hover { color:var(--primary); border-color:var(--primary); }
+  .jump { font-size:12px; color:var(--text-secondary); text-decoration:none; padding:3px 8px;
+    border:1px solid var(--border); border-radius:4px; margin-left:8px; }
+  .jump:hover { color:var(--primary); border-color:var(--primary); }
+
+  .toolbar { background:var(--panel-bg); border-bottom:1px solid var(--border); padding:10px 18px;
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap; flex-shrink:0; }
+  .seg { display:flex; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+  .seg button { border:none; background:var(--panel-bg); padding:5px 11px; font-size:12px;
+    cursor:pointer; color:var(--text-secondary); border-right:1px solid var(--border); }
+  .seg button:last-child { border-right:none; }
+  .seg button.on { background:var(--primary); color:#fff; }
+  .seg button:hover:not(.on) { background:var(--primary-light); }
+  .fld { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); }
+  .fld select, .fld input { border:1px solid var(--border); border-radius:5px; padding:4px 7px;
+    font-size:12px; color:var(--text); background:var(--panel-bg); }
+  .fld input[type=text] { width:150px; }
+  .fld input[type=number] { width:64px; }
+  .btn { border:1px solid var(--border); background:var(--panel-bg); border-radius:5px;
+    padding:4px 10px; font-size:12px; cursor:pointer; color:var(--text); }
+  .btn:hover { border-color:var(--primary); color:var(--primary); }
+  .spacer { flex:1; }
+  .stat { font-size:12px; color:var(--text-secondary); }
+
+  .main { flex:1; display:flex; overflow:hidden; }
+  .table-wrap { flex:1; overflow:auto; }
+  table { border-collapse:collapse; width:100%; font-size:12px; }
+  thead th { position:sticky; top:0; background:#fafbfc; border-bottom:1px solid var(--border);
+    padding:7px 6px; text-align:right; font-weight:600; font-size:11px; color:var(--text-secondary);
+    cursor:pointer; white-space:nowrap; z-index:2; }
+  thead th:hover { background:var(--primary-light); }
+  thead th.l { text-align:left; }
+  thead th .ar { color:var(--primary); margin-left:2px; }
+  tbody td { padding:5px 6px; border-bottom:1px solid #f0f2f5; text-align:right;
+    white-space:nowrap; font-variant-numeric:tabular-nums; }
+  tbody td.l { text-align:left; }
+  tbody tr { cursor:pointer; }
+  tbody tr:hover { background:var(--primary-light); }
+  tbody tr.sel { background:#dce6ff; }
+  tbody tr.sig1 td:first-child { box-shadow:inset 3px 0 0 var(--primary); }
+  tbody tr.sig2 td:first-child { box-shadow:inset 3px 0 0 #1D9E75; }
+  .yr { display:inline-flex; gap:2px; }
+  .yr i { width:13px; height:13px; border-radius:2px; display:inline-block; background:#eef1f5; }
+  .mono { font-weight:600; }
+  .pos { color:var(--pos); } .neg { color:var(--neg); }
+
+  aside.detail { width:var(--detail-w); background:var(--panel-bg); border-left:1px solid var(--border);
+    overflow-y:auto; padding:16px 18px; flex-shrink:0; }
+  aside.detail h3 { font-size:14px; font-weight:600; margin-bottom:4px; line-height:1.4; }
+  aside.detail .meta { font-size:11px; color:var(--text-secondary); margin-bottom:12px; }
+  .kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:14px; }
+  .kpi { background:var(--bg); border-radius:6px; padding:7px 9px; }
+  .kpi .v { font-size:15px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .kpi .k { font-size:10px; color:var(--text-secondary); margin-top:1px; }
+  .sec { margin-bottom:16px; }
+  .sec h4 { font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; }
+  .chart-box { height:150px; }
+  .chart-box.tall { height:190px; }
+  .hint { font-size:11px; color:var(--text-secondary); line-height:1.6; }
+  .empty { color:var(--text-secondary); font-size:13px; padding:40px; text-align:center; }
+  .loading { padding:40px; text-align:center; color:var(--text-secondary); }
+  table.tinytip td { text-align:left; }
+</style>
+</head>
+<body>
+
+<header>
+  <h2>🔬 因子体检</h2>
+  <span class="subtitle" id="subtitle">加载中…</span>
+  <a href="index.html" class="back-home">← 返回首页</a>
+</header>
+
+<div class="toolbar">
+  <div class="fld">目标
+    <select id="tgtSel"></select>
+  </div>
+  <div class="seg" id="nSeg"></div>
+  <div class="seg" id="formSeg"></div>
+  <div class="fld">分组
+    <select id="grpSel">
+      <option value="">全部</option>
+      <option value="cash">机构行为·现券</option>
+      <option value="repo">机构行为·回购</option>
+      <option value="curve">估值·曲线期货</option>
+    </select>
+  </div>
+  <div class="fld">显著
+    <select id="sigSel">
+      <option value="0">全部</option>
+      <option value="1">NW-t 的 FDR 显著</option>
+      <option value="2">置换检验也认可</option>
+    </select>
+  </div>
+  <div class="fld">|IC| ≥ <input type="number" id="icMin" value="0" step="0.01" min="0" max="1"></div>
+  <div class="fld"><input type="text" id="search" placeholder="搜索因子名"></div>
+  <button class="btn" id="resetBtn">重置</button>
+  <div class="spacer"></div>
+  <span class="stat" id="stat"></span>
+  <button class="btn" id="csvBtn">导出 CSV</button>
+</div>
+
+<div class="main">
+  <div class="table-wrap">
+    <div class="loading" id="loading">正在加载体检数据…</div>
+    <table id="tbl" style="display:none">
+      <thead><tr id="thr"></tr></thead>
+      <tbody id="tb"></tbody>
+    </table>
+  </div>
+  <aside class="detail" id="detail">
+    <div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>
+  </aside>
+</div>
+
+<script>
+var CK = null, LIB = null;
+var IDX = {g:0,k:1,label:2,n:3,ic:4,icp:5,icir:6,t:7,ti:8,pind:9,win:10,wl:11,ws:12,pl:13,
+  tail:14,q1:15,q2:16,q3:17,q4:18,q5:19,qd:20,qt:21,mono:22,turn:23,kurt:24,acf:25,
+  p:26,pb:27,sig:28,h6:29,yr21:30,yr22:31,yr23:32,yr24:33,yr25:34,yr26:35,
+  rgu:36,rgd:37,rghv:38,rglv:39};
+var YRKEYS = ['yr21','yr22','yr23','yr24','yr25','yr26'];
+var YRLABEL = ['21','22','23','24','25','26'];
+
+var S = { tgt:'s3010', N:5, form:'pct', grp:'', sig:0, icmin:0, q:'',
+          sort:'t', desc:true, sel:null };
+
+var COLS = [
+  {k:'label', t:'因子', cls:'l', w:1},
+  {k:'n',     t:'样本'},
+  {k:'ic',    t:'IC'},
+  {k:'icir',  t:'ICIR'},
+  {k:'t',     t:'NW-t'},
+  {k:'ti',    t:'独立样本t'},
+  {k:'pind',  t:'p(独立)'},
+  {k:'p',     t:'p置换'},
+  {k:'win',   t:'胜率'},
+  {k:'pl',    t:'盈亏比'},
+  {k:'tail',  t:'尾部赔率'},
+  {k:'qd',    t:'Q5−Q1'},
+  {k:'qt',    t:'Q差t'},
+  {k:'mono',  t:'单调'},
+  {k:'turn',  t:'换手'},
+  {k:'h6',    t:'近6月'},
+  {k:'yr',    t:'分年 IC', cls:'l'},
+];
+
+function el(id){ return document.getElementById(id); }
+function fmt(v, nd){
+  if(v===null||v===undefined||isNaN(v)) return '—';
+  return Number(v).toFixed(nd===undefined?3:nd);
+}
+function icColor(v){
+  if(v===null||v===undefined||isNaN(v)) return '#eef1f5';
+  var a = Math.min(1, Math.abs(v)/0.15);
+  if(a < 0.08) return '#eef1f5';
+  return v>0 ? 'rgba(55,138,221,'+(0.15+0.75*a)+')' : 'rgba(216,90,48,'+(0.15+0.75*a)+')';
+}
+function cls(v){ return (v===null||isNaN(v))?'':(v>0?'pos':'neg'); }
+
+function load(){
+  return fetch('factor_checkup.json?t='+Date.now())
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      CK = j;
+      var m = j.meta;
+      el('subtitle').textContent =
+        'L2 有效性检验 · ' + m.n_tests + ' 套 · 数据 '+m.date_range[0]+' ~ '+m.date_range[1]+
+        ' · 因子滞后 '+m.lag+' 日 · '+m.bootstrap;
+      if(m.p_dist){
+        var pd=m.p_dist;
+        el('subtitle').innerHTML += ' <b style="color:#D85A30">｜全局 p(置换) 分布：'+
+          'P(p&lt;0.05)='+pd.p_lt_05+'（期望 0.05）· 中位数 '+pd.median+' → '+pd.verdict+'</b>';
+      }
+      var ts = el('tgtSel');
+      m.targets.forEach(function(t){
+        var o=document.createElement('option');
+        o.value=t.id; o.textContent=t.name+' ('+t.unit+')'; ts.appendChild(o);
+      });
+      ts.value = S.tgt;
+      seg('nSeg', m.horizons.map(function(n){return {v:n, t:'N='+n};}), 'N', function(v){ S.N=+v; render(); });
+      seg('formSeg', m.forms.map(function(f){return {v:f.id, t:f.name};}), 'form', function(v){ S.form=v; render(); });
+      buildHead();
+      render();
+    });
+}
+
+function seg(id, items, key, cb){
+  var box = el(id); box.innerHTML='';
+  items.forEach(function(it){
+    var b=document.createElement('button');
+    b.textContent=it.t; b.setAttribute('data-v', it.v);
+    if(String(S[key])===String(it.v)) b.className='on';
+    b.onclick=function(){
+      S[key]=it.v;
+      Array.prototype.forEach.call(box.children, function(c){ c.className=''; });
+      b.className='on';
+      cb(it.v);
+    };
+    box.appendChild(b);
+  });
+}
+
+function buildHead(){
+  var tr = el('thr'); tr.innerHTML='';
+  COLS.forEach(function(c){
+    var th=document.createElement('th');
+    th.textContent=c.t;
+    if(c.cls) th.className=c.cls;
+    if(S.sort===c.k) th.innerHTML += '<span class="ar">'+(S.desc?'▼':'▲')+'</span>';
+    th.onclick=function(){
+      if(c.k==='yr') return;
+      if(S.sort===c.k) S.desc=!S.desc; else { S.sort=c.k; S.desc=true; }
+      buildHead(); render();
+    };
+    tr.appendChild(th);
+  });
+}
+
+function blockKey(){ return S.form+'|'+S.tgt+'|'+S.N; }
+
+function rows(){
+  var b = CK.blocks[blockKey()] || [];
+  var out = b.filter(function(r){
+    if(S.grp && r[IDX.g]!==S.grp) return false;
+    if(S.sig && (r[IDX.sig]||0) < S.sig) return false;
+    if(S.icmin && Math.abs(r[IDX.ic]||0) < S.icmin) return false;
+    if(S.q && r[IDX.label].indexOf(S.q)<0) return false;
+    return true;
+  });
+  var sk = S.sort, d = S.desc?1:-1;
+  out.sort(function(a,b){
+    var va = sk==='label' ? a[IDX.label] : (sk==='yr' ? 0 : a[IDX[sk]]);
+    var vb = sk==='label' ? b[IDX.label] : (sk==='yr' ? 0 : b[IDX[sk]]);
+    if(va===null||va===undefined||isNaN(va)) return 1;
+    if(vb===null||vb===undefined||isNaN(vb)) return -1;
+    if(sk==='label') return d * String(va).localeCompare(String(vb));
+    if(sk==='t'||sk==='ti'||sk==='ic'||sk==='icir'||sk==='qd'||sk==='qt')
+      return d * (Math.abs(vb)-Math.abs(va));
+    return d * (vb - va);
+  });
+  return out;
+}
+
+function render(){
+  var rs = rows();
+  var tb = el('tb'); tb.innerHTML='';
+  el('stat').textContent = rs.length + ' 行';
+  rs.forEach(function(r){
+    var tr=document.createElement('tr');
+    if(S.sel && S.sel===r[IDX.k]) tr.className='sel';
+    else if(r[IDX.sig]===2) tr.className='sig2';
+    else if(r[IDX.sig]===1) tr.className='sig1';
+    COLS.forEach(function(c){
+      var td=document.createElement('td');
+      if(c.cls) td.className=c.cls;
+      if(c.k==='label'){ td.textContent=r[IDX.label]; }
+      else if(c.k==='yr'){
+        var h='<span class="yr">';
+        YRKEYS.forEach(function(yk,i){
+          var v=r[IDX[yk]];
+          h+='<i style="background:'+icColor(v)+'" title="'+YRLABEL[i]+'年 IC='+fmt(v)+'"></i>';
+        });
+        h+='</span>'; td.innerHTML=h;
+      }
+      else {
+        var v=r[IDX[c.k]];
+        if(c.k==='p'||c.k==='pnw') td.textContent = fmt(v,3);
+        else if(c.k==='mono'){ td.innerHTML = v===1?'<span class="mono pos">↑</span>':(v===-1?'<span class="mono neg">↓</span>':'—'); }
+        else if(c.k==='turn') td.textContent = fmt(v,2);
+        else td.textContent = fmt(v);
+        if(c.k==='ic'||c.k==='t'||c.k==='qd'||c.k==='h6') td.className=(td.className+' '+cls(v)).trim();
+      }
+      tr.appendChild(td);
+    });
+    tr.onclick=function(){
+      S.sel = r[IDX.k];
+      Array.prototype.forEach.call(tb.children, function(x){ x.className=''; });
+      tr.className='sel';
+      detail(r);
+    };
+    tb.appendChild(tr);
+  });
+  el('loading').style.display='none';
+  el('tbl').style.display='';
+}
+
+/* ---------------- 详情面板 ---------------- */
+var chartObjs = [];
+function killCharts(){
+  chartObjs.forEach(function(c){ try{ c.destroy(); }catch(e){} });
+  chartObjs=[];
+}
+function mkChart(canvasId, cfg){
+  var cv = document.getElementById(canvasId);
+  if(!cv) return null;
+  var c = new Chart(cv.getContext('2d'), cfg);
+  chartObjs.push(c);
+  return c;
+}
+var baseOpt = { responsive:true, maintainAspectRatio:false,
+  plugins:{ legend:{display:false} },
+  scales:{ x:{grid:{display:false}, ticks:{font:{size:10}}},
+           y:{grid:{color:'#f0f2f5'}, ticks:{font:{size:10}}} } };
+
+function detail(r){
+  killCharts();
+  var tgtName = (CK.meta.targets.filter(function(t){return t.id===S.tgt;})[0]||{}).name||S.tgt;
+  var unit = (CK.meta.targets.filter(function(t){return t.id===S.tgt;})[0]||{}).unit||'';
+  var formName = (CK.meta.forms.filter(function(f){return f.id===S.form;})[0]||{}).name||S.form;
+  var h = '';
+  h += '<h3>'+r[IDX.label]+'</h3>';
+  h += '<div class="meta">目标 '+tgtName+' · N='+S.N+' 日 · 形态 '+formName+' · 样本 '+r[IDX.n]+' 天</div>';
+  h += '<div class="kpis">';
+  function kpi(v,k,nd){ h+='<div class="kpi"><div class="v '+cls(v)+'">'+fmt(v,nd===undefined?3:nd)+'</div><div class="k">'+k+'</div></div>'; }
+  kpi(r[IDX.ic],'IC (Spearman)');
+  kpi(r[IDX.t],'NW-t',2);
+  kpi(r[IDX.ti],'独立样本 t',2);
+  kpi(r[IDX.pind],'p(独立)',3);
+  kpi(r[IDX.p],'p 置换',3);
+  kpi(r[IDX.icir],'ICIR');
+  kpi(r[IDX.win],'胜率',3);
+  kpi(r[IDX.pl],'盈亏比',2);
+  kpi(r[IDX.tail],'尾部赔率',2);
+  kpi(r[IDX.qd],'Q5−Q1 ('+unit+')',3);
+  kpi(r[IDX.turn],'日均换手',2);
+  kpi(r[IDX.h6],'近6月 IC');
+  kpi(r[IDX.qt],'Q差 t',2);
+  kpi(r[IDX.acf],'ACF(1)',2);
+  h += '</div>';
+
+  h += '<div class="sec"><h4>分组收益 Q1→Q5（按滚动 250 日 Z-score 五等分，单位 '+unit+'）</h4>';
+  h += '<div class="chart-box"><canvas id="cGroup"></canvas></div></div>';
+
+  h += '<div class="sec"><h4>分年 IC</h4>';
+  h += '<div class="chart-box"><canvas id="cYear"></canvas></div></div>';
+
+  h += '<div class="sec"><h4>衰减曲线（各周期 IC）</h4>';
+  h += '<div class="chart-box"><canvas id="cDecay"></canvas></div></div>';
+
+  h += '<div class="sec"><h4>环境稳定性（regime 分段 IC）</h4>';
+  h += '<div class="chart-box"><canvas id="cReg"></canvas></div></div>';
+
+  h += '<div class="sec"><h4>因子走势</h4>';
+  h += '<div class="chart-box tall"><canvas id="cSeries"></canvas></div>';
+  h += '<div class="hint" id="serHint">加载中…</div></div>';
+
+  h += '<div class="sec"><h4>解读提示</h4><div class="hint">';
+  var msg = [];
+  var tgtObj = CK.meta.targets.filter(function(t){return t.id===S.tgt;})[0]||{};
+  var sameSrc = (tgtObj.legs||[]).some(function(n){ return r[IDX.label].indexOf(n)>=0; });
+  if(sameSrc) msg.push('⚠ 该因子就是预测目标的标的本身（或其组成部分），IC 只反映标的自身的均值回复/动量特性，不是外部增量信息。');
+  if(Math.abs(r[IDX.ic]) < CK.meta.min_ic_strong && Math.abs(r[IDX.t])>2)
+    msg.push('⚠ |IC| 低于门槛 '+CK.meta.min_ic_strong+' 但 t 值偏高：多半是极端值驱动的假信号，勿采信。');
+  if(r[IDX.sig]===2) msg.push('✓ 通过最严格的置换检验（保留 y 全部自相关结构后仍显著），可信度最高。');
+  else if(r[IDX.sig]===1) msg.push('○ 仅“不重叠子样本”判据的 FDR 显著，置换检验未认可——信号可能来自因子与目标的共同低频趋势，需谨慎。');
+  else msg.push('× 未通过 FDR 校正，不能排除是多重检验下的巧合。');
+  if(r[IDX.mono]===0 && Math.abs(r[IDX.qd])>0) msg.push('分组非单调：可能只有两端有效、中间是噪音（极值型信号）。');
+  if(r[IDX.turn]!==null && r[IDX.turn]>0.3) msg.push('换手偏高（>0.3/日），成本敏感，需按实盘摩擦折扣。');
+  var yrs = YRKEYS.map(function(k){return r[IDX[k]];});
+  var pos = yrs.filter(function(v){return v!==null&&v>0;}).length;
+  var neg = yrs.filter(function(v){return v!==null&&v<0;}).length;
+  if(pos&&neg) msg.push('分年 IC 符号不稳（正 '+pos+' / 负 '+neg+' 年），可能存在 regime 依赖。');
+  h += msg.join('<br>');
+  h += '</div></div>';
+
+  el('detail').innerHTML = h;
+
+  // 分组收益
+  var qv = [r[IDX.q1],r[IDX.q2],r[IDX.q3],r[IDX.q4],r[IDX.q5]];
+  mkChart('cGroup', { type:'bar',
+    data:{ labels:['Q1(最低)','Q2','Q3','Q4','Q5(最高)'],
+      datasets:[{ data:qv, backgroundColor:qv.map(function(v){return icColor(v);}),
+        borderWidth:0 }] },
+    options: Object.assign({}, baseOpt, { plugins:{ legend:{display:false},
+      tooltip:{callbacks:{label:function(c){ return fmt(c.parsed.y,3)+' '+unit; }}} } }) });
+
+  // 分年
+  mkChart('cYear', { type:'bar',
+    data:{ labels:['2021','2022','2023','2024','2025','2026'],
+      datasets:[{ data:yrs.map(function(v){return v===null?0:v;}),
+        backgroundColor:yrs.map(function(v){return icColor(v);}), borderWidth:0 }] },
+    options: Object.assign({}, baseOpt, { plugins:{ legend:{display:false},
+      tooltip:{callbacks:{label:function(c){
+        var v=yrs[c.dataIndex]; return v===null?'样本不足':fmt(v,3); }}} } }) });
+
+  // 衰减：跨 N 取同一因子的 IC
+  var ns = CK.meta.horizons, dec = [];
+  ns.forEach(function(n){
+    var b = CK.blocks[S.form+'|'+S.tgt+'|'+n] || [];
+    var f = b.filter(function(x){ return x[IDX.k]===r[IDX.k]; })[0];
+    dec.push(f ? f[IDX.ic] : null);
+  });
+  mkChart('cDecay', { type:'line',
+    data:{ labels:ns.map(function(n){return 'N='+n;}),
+      datasets:[{ data:dec, borderColor:'#5470c6', backgroundColor:'#5470c6',
+        pointRadius:4, spanGaps:true, tension:0.2 }] },
+    options: Object.assign({}, baseOpt, { plugins:{ legend:{display:false} },
+      scales:{ x:{grid:{display:false}}, y:{grid:{color:'#f0f2f5'},
+        ticks:{font:{size:10}, callback:function(v){ return v.toFixed(2); }}} } }) });
+
+  // regime
+  var rgv=[r[IDX.rgu],r[IDX.rgd],r[IDX.rghv],r[IDX.rglv]];
+  mkChart('cReg', { type:'bar',
+    data:{ labels:['趋势上行段','趋势下行段','高波动段','低波动段'],
+      datasets:[{ data:rgv.map(function(v){return v===null?0:v;}),
+        backgroundColor:rgv.map(function(v){return icColor(v);}), borderWidth:0 }] },
+    options: Object.assign({}, baseOpt, { indexAxis:'y',
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:function(c){
+        var v=rgv[c.dataIndex]; return v===null?'样本不足':fmt(v,3); }}} },
+      scales:{ x:{grid:{color:'#f0f2f5'}}, y:{grid:{display:false}, ticks:{font:{size:10}}} } }) });
+
+  drawSeries(r[IDX.g], r[IDX.k]);
+}
+
+/* 懒加载因子库并画走势 */
+function drawSeries(g, k){
+  var draw = function(){
+    if(!LIB){ el('serHint').textContent='（因子库未加载）'; return; }
+    var s = null;
+    var arr = LIB[g==='cash'?'cash':(g==='repo'?'repo':'curve')] || [];
+    for(var i=0;i<arr.length;i++){
+      var kk = g==='cash' ? (arr[i].bt+'|'+arr[i].inst+'|'+arr[i].mat)
+             : g==='repo' ? (arr[i].inst+'|'+arr[i].field) : arr[i].name;
+      if(kk===k){ s=arr[i]; break; }
+    }
+    if(!s){ el('serHint').textContent='（未找到该序列）'; return; }
+    var D = LIB.dates.length;
+    var raw = new Array(D).fill(null);
+    for(var j=0;j<s.v.length;j++) raw[s.i0+j] = s.v[j];
+    var form = S.form;
+    var v = raw.slice();
+    if(form==='pct') v = rollingPct(maNan(raw,10), 60);
+    else if(form==='diff'){ v = new Array(D).fill(null); for(var t=5;t<D;t++) v[t]=(raw[t]===null||raw[t-5]===null)?null:raw[t]-raw[t-5]; }
+    // 只画最近 500 天
+    var lo = Math.max(0, D-500);
+    mkChart('cSeries', { type:'line',
+      data:{ labels: LIB.dates.slice(lo), datasets:[{ data:v.slice(lo), borderColor:'#5470c6',
+        borderWidth:1.2, pointRadius:0, spanGaps:false }] },
+      options:{ responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{ x:{grid:{display:false}, ticks:{font:{size:9}, maxTicksLimit:8}},
+                 y:{grid:{color:'#f0f2f5'}, ticks:{font:{size:10}}} } } });
+    el('serHint').textContent = '最近 500 个交易日 · 形态：'+S.form;
+  };
+  if(LIB){ draw(); return; }
+  fetch('factor_library.json?t='+Date.now()).then(function(r){return r.json();})
+    .then(function(j){ LIB=j; draw(); })
+    .catch(function(){ el('serHint').textContent='（加载失败）'; });
+}
+function maNan(a,w){
+  var n=a.length, out=new Array(n).fill(null), s=0, c=0;
+  for(var i=0;i<n;i++){
+    if(i>=w && a[i-w]!==null && !isNaN(a[i-w])){ s-=a[i-w]; c--; }
+    if(a[i]!==null && !isNaN(a[i])){ s+=a[i]; c++; }
+    if(i>=w-1 && c >= w*0.7) out[i]=s/c;
+  }
+  return out;
+}
+function rollingPct(a,w){
+  var n=a.length, out=new Array(n).fill(null);
+  for(var i=w-1;i<n;i++){
+    var cur=a[i], le=0, eq=0, cnt=0;
+    if(cur===null||isNaN(cur)) continue;
+    for(var j=i-w+1;j<=i;j++){
+      var x=a[j]; if(x===null||isNaN(x)) continue;
+      cnt++; if(x<cur) le++; else if(x===cur) eq++;
+    }
+    if(cnt>0) out[i]=(le+0.5*eq)/cnt*100;
+  }
+  return out;
+}
+
+/* ---------------- 事件 ---------------- */
+el('tgtSel').onchange = function(){ S.tgt=this.value; S.sel=null; render(); el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>'; killCharts(); };
+el('grpSel').onchange = function(){ S.grp=this.value; render(); };
+el('sigSel').onchange = function(){ S.sig=+this.value; render(); };
+el('icMin').oninput  = function(){ S.icmin=+this.value||0; render(); };
+el('search').oninput = function(){ S.q=this.value.trim(); render(); };
+el('resetBtn').onclick = function(){
+  S.grp=''; S.sig=0; S.icmin=0; S.q='';
+  el('grpSel').value=''; el('sigSel').value='0'; el('icMin').value='0'; el('search').value='';
+  render();
+};
+el('csvBtn').onclick = function(){
+  var rs = rows(), hdr = COLS.map(function(c){return c.t;}).join(',');
+  var lines=[hdr];
+  rs.forEach(function(r){
+    lines.push(COLS.map(function(c){
+      if(c.k==='yr') return YRKEYS.map(function(yk){ var v=r[IDX[yk]]; return v===null?'':v; }).join(' ');
+      var v=r[IDX[c.k]];
+      if(c.k==='label') return '"'+v+'"';
+      return (v===null||v===undefined)?'':v;
+    }).join(','));
+  });
+  var blob = new Blob(['\ufeff'+lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='因子体检_'+S.tgt+'_N'+S.N+'_'+S.form+'.csv';
+  a.click();
+};
+
+load();
+</script>
+</body>
+</html>

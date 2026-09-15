@@ -80,6 +80,7 @@ DATA_FILES_FOR_VERSION = [
     "repo_trading_data.json",
     "stock_bond_data.json",
     "factor_library.json",
+    "factor_checkup.json",
 ]
 VERSION_OUTPUT = os.path.join(SCRIPT_DIR, "data_version.json")
 
@@ -1405,6 +1406,19 @@ def main():
         log.warning(f"因子库生成失败，保留现有数据: {e}")
         ok10 = False
 
+    ok11 = True
+    try:
+        import datetime as _dt
+        if _dt.datetime.now().weekday() != 0:
+            log.info("[11/11] 因子体检：非周一，跳过（研究性质，每周一全量重算，约 1 分钟）")
+        else:
+            log.info("[11/11] 因子体检 (factor_checkup.json)")
+            import prepare_factor_checkup
+            prepare_factor_checkup.main()
+    except Exception as e:
+        log.warning(f"因子体检生成失败，保留现有数据: {e}")
+        ok11 = False
+
     log.info("=" * 50)
     log.info(f"完成: 预处理={'成功' if ok0 else '失败'}, "
              f"机构行为={'成功' if ok1 else '失败'}, "
@@ -1416,7 +1430,8 @@ def main():
              f"沪深300波动率={'成功' if ok7 else '保留旧数据'}, "
              f"质押式回购={'成功' if ok8 else '保留旧数据'}, "
              f"股债相关性={'成功' if ok9 else '保留旧数据'}, "
-             f"因子库={'成功' if ok10 else '保留旧数据'}")
+             f"因子库={'成功' if ok10 else '保留旧数据'}, "
+             f"因子体检={'成功' if ok11 else '保留旧数据'}")
 
     # 更新数据版本清单（前端据此跳过未变更文件的下载）
     try:
@@ -1425,7 +1440,7 @@ def main():
         log.warning(f"data_version.json 生成失败（不影响数据）: {e}")
 
     # push 到 GitHub（唯一远程；gitee/gitcode 已于 2026-08-06 废弃，不再同步）
-    if ok1 or ok2 or ok3 or ok5 or ok7 or ok8 or ok9 or ok10:
+    if ok1 or ok2 or ok3 or ok5 or ok7 or ok8 or ok9 or ok10 or ok11:
         try:
             log.info("推送数据到远程仓库...")
             git_push_data()
@@ -1473,6 +1488,7 @@ def git_push_data():
         'repo_trading_data.json',
         'stock_bond_data.json',
         'factor_library.json',
+        'factor_checkup.json',
         'data_version.json',
     ]
     for f in json_files:
@@ -1487,6 +1503,8 @@ def git_push_data():
         'factor_dashboard.html',
         'factor_library.html',
         'prepare_factor_library.py',
+        'factor_checkup.html',
+        'prepare_factor_checkup.py',
         'backtest_dashboard.html',
         'bond_curve_deviation.html',
         'hs300_rolling_mdd.html',
