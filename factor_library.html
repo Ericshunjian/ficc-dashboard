@@ -138,7 +138,8 @@
       </div>
     </div>
     <div class="tb-group">
-      <span class="tb-label">MA</span><input type="number" id="maWin" value="10" min="1" max="120">
+      <span class="tb-label">MA</span><input type="number" id="maWin" value="10" min="1" max="120" list="maList" style="width:52px">
+      <datalist id="maList"><option value="1"><option value="5"><option value="10"><option value="20"><option value="60"></datalist>
     </div>
     <div class="tb-group">
       <span class="tb-label">标准化</span>
@@ -147,13 +148,20 @@
         <option value="pct" selected>滚动百分位</option>
         <option value="z">Z-score</option>
       </select>
-      <input type="number" id="normWin" value="60" min="5" max="500">
+      <input type="number" id="normWin" value="60" min="5" max="500" list="normList" style="width:52px">
+      <datalist id="normList"><option value="60"><option value="125"><option value="250"></datalist>
     </div>
     <div class="tb-group">
-      <span class="tb-label">后置平滑</span><input type="number" id="smoothWin" value="1" min="1" max="60">
+      <span class="tb-label">后置平滑</span><input type="number" id="smoothWin" value="1" min="1" max="60" style="width:44px">
     </div>
     <div class="tb-group">
       <label style="font-size:12px"><input type="checkbox" id="diffChk"> 先差分</label>
+      <select id="diffWin" style="width:52px">
+        <option value="1" selected>1日</option>
+        <option value="5">5日</option>
+        <option value="10">10日</option>
+        <option value="20">20日</option>
+      </select>
     </div>
     <div class="tb-group">
       <span class="tb-label">区间</span>
@@ -196,7 +204,7 @@ var PALETTE = ['#5470c6','#91cc75','#fac858','#ee6666','#73c0de','#3ba272','#fc8
 var D = null, DATES = null, N = 0;
 var state = {
   group:'cash', dims:{}, search:'', selected:[], custom:[],
-  mode:'both', ma:10, norm:'pct', normWin:60, smooth:1, diff:false, range:250, overlay:'spread3010'
+  mode:'both', ma:10, norm:'pct', normWin:60, smooth:1, diff:false, diffWin:1, range:250, overlay:'spread3010'
 };
 var chRaw = null, chProc = null;
 var expanded = {};
@@ -369,15 +377,16 @@ function rollZ(a,w,minRatio){
   }
   return out;
 }
-function diff1(a){
+function diff1(a,n){
+  n = n||1;
   var out=new Array(a.length).fill(null);
-  for(var i=1;i<a.length;i++) out[i]=(a[i]===null||a[i-1]===null)?null:a[i]-a[i-1];
+  for(var i=n;i<a.length;i++) out[i]=(a[i]===null||a[i-n]===null)?null:a[i]-a[i-n];
   return out;
 }
 
 function transform(a){
   var x = a.slice();
-  if(state.diff) x = diff1(x);
+  if(state.diff) x = diff1(x, state.diffWin);
   if(state.ma>1) x = ma(x, state.ma);
   if(state.norm==='pct') x = rollPct(x, state.normWin);
   else if(state.norm==='z') x = rollZ(x, state.normWin);

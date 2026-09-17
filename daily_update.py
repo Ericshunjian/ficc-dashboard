@@ -81,6 +81,7 @@ DATA_FILES_FOR_VERSION = [
     "stock_bond_data.json",
     "factor_library.json",
     "factor_checkup.json",
+    "factor_checkup_detail.json",
 ]
 VERSION_OUTPUT = os.path.join(SCRIPT_DIR, "data_version.json")
 
@@ -1489,6 +1490,7 @@ def git_push_data():
         'stock_bond_data.json',
         'factor_library.json',
         'factor_checkup.json',
+        'factor_checkup_detail.json',
         'data_version.json',
     ]
     for f in json_files:

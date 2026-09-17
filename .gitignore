@@ -27,3 +27,7 @@ factor_data_backup_*.json
 
 # 2026-09-03 口径修复临时备份（验证无误后可删）
 _backup_20260903/
+
+# 临时产物
+push_result.txt
+_run.txt

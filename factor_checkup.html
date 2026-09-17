@@ -187,6 +187,10 @@ var COLS = [
 ];
 
 function el(id){ return document.getElementById(id); }
+/* 每个目标允许的周期：样本短的品种（TL 仅 2023-04 起）用 maxN 限制。
+   注意：detail() 内有同名局部变量 tgtObj，故此处不能叫 tgtObj */
+function tgtSpecOf(){ return (CK && CK.meta ? CK.meta.targets||[] : []).filter(function(t){ return t.id===S.tgt; })[0] || {}; }
+function horizonsOf(t){ return ((CK&&CK.meta?CK.meta.horizons:null)||[1,5,10,20]).filter(function(n){ return !t.maxN || n<=t.maxN; }); }
 function fmt(v, nd){
   if(v===null||v===undefined||isNaN(v)) return '—';
   return Number(v).toFixed(nd===undefined?3:nd);
@@ -219,11 +223,18 @@ function load(){
         o.value=t.id; o.textContent=t.name+' ('+t.unit+')'; ts.appendChild(o);
       });
       ts.value = S.tgt;
-      seg('nSeg', m.horizons.map(function(n){return {v:n, t:'N='+n};}), 'N', function(v){ S.N=+v; render(); });
+      buildNSeg();
+      seg('formSeg', m.forms.map(function(f){return {v:f.id, t:f.name};}), 'form', function(v){ S.form=v; render(); });
       seg('formSeg', m.forms.map(function(f){return {v:f.id, t:f.name};}), 'form', function(v){ S.form=v; render(); });
       buildHead();
       render();
     });
+}
+
+function buildNSeg(){
+  var hs = horizonsOf(tgtSpecOf());
+  if(hs.indexOf(S.N) < 0) S.N = hs[hs.length-1] || 5;
+  seg('nSeg', hs.map(function(n){ return {v:n, t:'N='+n}; }), 'N', function(v){ S.N=+v; render(); });
 }
 
 function seg(id, items, key, cb){
@@ -395,6 +406,18 @@ function detail(r){
   h += '<div class="sec"><h4>环境稳定性（regime 分段 IC）</h4>';
   h += '<div class="chart-box"><canvas id="cReg"></canvas></div></div>';
 
+  h += '<div class="sec"><h4>累计 IC（非重叠抽稀，步长 = N）</h4>';
+  h += '<div class="chart-box"><canvas id="cCumIC"></canvas></div>';
+  h += '<div class="hint" id="cumHint">加载中…</div></div>';
+
+  h += '<div class="sec"><h4>信号累计净值（|Z|&gt;1 才持仓，未扣成本）</h4>';
+  h += '<div class="chart-box"><canvas id="cPnl"></canvas></div>';
+  h += '<div class="hint" id="pnlHint">加载中…</div></div>';
+
+  h += '<div class="sec"><h4>分位区间条件分布（按滚动 250 日经验分位切区）</h4>';
+  h += '<div class="chart-box"><canvas id="cCond"></canvas></div>';
+  h += '<div id="condBox"><div class="hint">加载中…</div></div></div>';
+
   h += '<div class="sec"><h4>因子走势</h4>';
   h += '<div class="chart-box tall"><canvas id="cSeries"></canvas></div>';
   h += '<div class="hint" id="serHint">加载中…</div></div>';
@@ -439,7 +462,7 @@ function detail(r){
         var v=yrs[c.dataIndex]; return v===null?'样本不足':fmt(v,3); }}} } }) });
 
   // 衰减：跨 N 取同一因子的 IC
-  var ns = CK.meta.horizons, dec = [];
+  var ns = horizonsOf(tgtObj), dec = [];
   ns.forEach(function(n){
     var b = CK.blocks[S.form+'|'+S.tgt+'|'+n] || [];
     var f = b.filter(function(x){ return x[IDX.k]===r[IDX.k]; })[0];
@@ -465,6 +488,133 @@ function detail(r){
       scales:{ x:{grid:{color:'#f0f2f5'}}, y:{grid:{display:false}, ticks:{font:{size:10}}} } }) });
 
   drawSeries(r[IDX.g], r[IDX.k]);
+
+  // 详情扩展（累计 IC / 累计净值 / 条件分布）：独立文件，按需加载
+  var blk = CK.blocks[S.form+'|'+S.tgt+'|'+S.N] || [];
+  var ri = -1;
+  for(var bi=0;bi<blk.length;bi++){ if(blk[bi][IDX.k]===r[IDX.k]){ ri=bi; break; } }
+  drawExtras(ri, unit);
+}
+
+/* ---------- 详情扩展：懒加载 factor_checkup_detail.json ---------- */
+var DET = null;
+function drawExtras(ri, unit){
+  if(ri < 0){ extrasFail('（未定位到该行）'); return; }
+  var key = S.form+'|'+S.tgt+'|'+S.N;
+  var go = function(det){
+    var rows = (det.blocks||{})[key] || [];
+    var d = rows[ri];
+    if(!d){ extrasFail('（该行无详情数据）'); return; }
+    drawCumIC(d[0][0]||[]);
+    drawPnl(d[0][1]||[], unit);
+    drawCond(d[1]||[], unit);
+  };
+  if(DET){ go(DET); return; }
+  fetch('factor_checkup_detail.json?t='+Date.now()).then(function(x){ return x.json(); })
+    .then(function(j){ DET=j; go(j); })
+    .catch(function(){ extrasFail('（详情数据加载失败）'); });
+}
+function extrasFail(m){
+  ['cumHint','pnlHint'].forEach(function(id){ var e=el(id); if(e) e.textContent=m; });
+  var b=el('condBox'); if(b) b.innerHTML='<div class="hint">'+m+'</div>';
+}
+function drawCumIC(cum){
+  if(!cum.length){ el('cumHint').textContent='（样本不足）'; return; }
+  var ic=[], i;
+  for(i=0;i<cum.length;i++) ic.push(i===0?cum[0]:cum[i]-cum[i-1]);
+  var mu=ic.reduce(function(a,b){return a+b;},0)/ic.length;
+  var sd=Math.sqrt(ic.reduce(function(a,b){return a+(b-mu)*(b-mu);},0)/Math.max(ic.length-1,1));
+  var up=[], dn=[], labels=[];
+  for(i=0;i<cum.length;i++){ var b=1.96*sd*Math.sqrt(i+1); up.push(b); dn.push(-b); labels.push(String(i+1)); }
+  mkChart('cCumIC', { type:'line',
+    data:{ labels:labels, datasets:[
+      { data:up, borderColor:'#dcdcdc', borderWidth:1, pointRadius:0, fill:'+1',
+        backgroundColor:'rgba(140,140,140,0.12)', label:'+1.96σ' },
+      { data:dn, borderColor:'#dcdcdc', borderWidth:1, pointRadius:0, fill:false, label:'−1.96σ' },
+      { data:cum, borderColor:'#5470c6', borderWidth:2, pointRadius:0, tension:0.08, label:'累计 IC' }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:function(c){
+        return c.dataIndex===cum.length-1||c.datasetIndex===2 ? '累计 IC '+fmt(c.parsed.y,2) : ''; }}} },
+      scales:{ x:{grid:{display:false}, ticks:{font:{size:9}, maxTicksLimit:10}},
+               y:{grid:{color:'#f0f2f5'}, ticks:{font:{size:10}}} } } });
+  el('cumHint').textContent = '共 '+cum.length+' 个非重叠期（每 '+S.N+' 个交易日一期，故各期近似独立）。'
+    + '灰色带为零假设下 ±1.96σ√t 的随机游走区间——曲线跑出带外才说明是真信号，'
+    + '在带内单调上升只是自相关造成的假象。';
+}
+function drawPnl(p, unit){
+  if(!p.length){ el('pnlHint').textContent='（样本不足）'; return; }
+  var last=p[p.length-1], mx=Math.max.apply(null,p), mn=Math.min.apply(null,p);
+  mkChart('cPnl', { type:'line',
+    data:{ labels:p.map(function(_,i){return String(i+1);}),
+      datasets:[{ data:p, borderColor:last>=0?'#c0392b':'#27ae60', borderWidth:2,
+        pointRadius:0, tension:0.08, fill:false }] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:function(c){
+        return fmt(c.parsed.y,2)+' '+unit; }}} },
+      scales:{ x:{grid:{display:false}, ticks:{font:{size:9}, maxTicksLimit:10}},
+               y:{grid:{color:'#f0f2f5'}, ticks:{font:{size:10}}} } } });
+  el('pnlHint').textContent = '期末 '+fmt(last,2)+' '+unit+' · 峰值 '+fmt(mx,2)+' · 谷值 '+fmt(mn,2)
+    + ' ｜ 未扣交易成本，换手高的因子需自行打折。';
+}
+function drawCond(cond, unit){
+  var edges = (DET && DET.cond_edges) || [0,10,25,50,75,90,100];
+  var labels=[], mean=[], up=[], n=[], med=[], sd=[], p5=[];
+  for(var i=0;i<cond.length;i++){
+    var c=cond[i];
+    labels.push(edges[i]+'–'+edges[i+1]+'%');
+    n.push(c[0]); mean.push(c[1]); med.push(c[2]); sd.push(c[3]); up.push(c[4]); p5.push(c[5]);
+  }
+  var bg = mean.map(function(v){ return v===null?'#cccccc':(v>0?'#27ae60':'#c0392b'); });
+  mkChart('cCond', { type:'bar',
+    data:{ labels:labels, datasets:[
+      { type:'bar', data:mean.map(function(v){return v===null?0:v;}), backgroundColor:bg,
+        borderWidth:0, yAxisID:'y', order:2 },
+      { type:'line', data:up.map(function(v){return v===null?null:v;}), borderColor:'#534AB7',
+        backgroundColor:'#534AB7', borderWidth:2, pointRadius:4, pointStyle:'rectRot',
+        tension:0.15, yAxisID:'y1', order:1 }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:function(c){
+        if(c.dataset.type==='line') return '上行概率 '+fmt(c.parsed.y,1)+'%';
+        var i=c.dataIndex;
+        return '均值 '+fmt(mean[i],3)+' '+unit+'（n='+n[i]+'，标准差 '+fmt(sd[i],2)+'）';
+      }}} },
+      scales:{ x:{grid:{display:false}, ticks:{font:{size:10}, autoSkip:false}},
+               y:{grid:{color:'#f0f2f5'}, ticks:{font:{size:10}},
+                  title:{display:true, text:'未来 '+S.N+' 日变动均值（'+unit+'）', font:{size:10}}},
+               y1:{position:'right', grid:{display:false}, ticks:{font:{size:10}},
+                  title:{display:true, text:'上行概率 %', font:{size:10}}} } } });
+  var h = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">'
+    + '<thead><tr style="color:#888;border-bottom:1px solid #eee">'
+    + '<th style="text-align:left;padding:4px">分位区间</th><th style="padding:4px">n</th>'
+    + '<th style="padding:4px">均值</th><th style="padding:4px">中位</th><th style="padding:4px">标准差</th>'
+    + '<th style="padding:4px">上行概率</th><th style="padding:4px">5% 分位</th></tr></thead><tbody>';
+  for(var j=0;j<cond.length;j++){
+    var q=cond[j];
+    h += '<tr style="border-bottom:1px solid #fafafa">'
+      + '<td style="padding:4px">'+labels[j]+'</td>'
+      + '<td style="padding:4px;text-align:right">'+q[0]+'</td>'
+      + '<td style="padding:4px;text-align:right;color:'+(q[1]===null?'#999':(q[1]>0?'#27ae60':'#c0392b'))+'">'+fmt(q[1],3)+'</td>'
+      + '<td style="padding:4px;text-align:right">'+fmt(q[2],3)+'</td>'
+      + '<td style="padding:4px;text-align:right">'+fmt(q[3],3)+'</td>'
+      + '<td style="padding:4px;text-align:right">'+fmt(q[4],1)+'%</td>'
+      + '<td style="padding:4px;text-align:right">'+fmt(q[5],3)+'</td></tr>';
+  }
+  h += '</tbody></table>';
+  var spread = (mean[0]!==null && mean[mean.length-1]!==null) ? Math.abs(mean[0]-mean[mean.length-1]) : null;
+  var mxu = Math.max.apply(null, up.filter(function(v){return v!==null;}));
+  var mnu = Math.min.apply(null, up.filter(function(v){return v!==null;}));
+  var tip = '这张表用来捞 <b>B 类（区域）因子</b>和 <b>C 类（风险）因子</b>：'
+    + '线性 IC 检验只看均值单调性，会漏掉「非单调但区间差异大」和「均值无差异但尾部/波动差异大」的因子。';
+  if(mxu-mnu >= 10) tip += ' ⚠ 各区间上行概率极差 '+(mxu-mnu).toFixed(1)+' 个百分点，'
+    + '存在明显的区域效应，建议按阈值触发而非线性打分。';
+  var sds = sd.filter(function(v){return v!==null;});
+  if(sds.length>1 && Math.max.apply(null,sds)/Math.min.apply(null,sds) > 1.5)
+    tip += ' ⚠ 各区间标准差相差 '+(Math.max.apply(null,sds)/Math.min.apply(null,sds)).toFixed(2)
+      + ' 倍，该因子更像风险/赔率指标（决定仓位与止损），不宜当方向信号。';
+  h += '<div class="hint" style="margin-top:8px">'+tip+'</div>';
+  el('condBox').innerHTML = h;
 }
 
 /* 懒加载因子库并画走势 */
@@ -526,7 +676,7 @@ function rollingPct(a,w){
 }
 
 /* ---------------- 事件 ---------------- */
-el('tgtSel').onchange = function(){ S.tgt=this.value; S.sel=null; render(); el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>'; killCharts(); };
+el('tgtSel').onchange = function(){ S.tgt=this.value; S.sel=null; buildNSeg(); render(); el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>'; killCharts(); };
 el('grpSel').onchange = function(){ S.grp=this.value; render(); };
 el('sigSel').onchange = function(){ S.sig=+this.value; render(); };
 el('icMin').oninput  = function(){ S.icmin=+this.value||0; render(); };

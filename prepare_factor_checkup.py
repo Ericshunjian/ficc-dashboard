@@ -31,6 +31,7 @@ except Exception:
 
 LIB_PATH = os.path.join(BASE, "factor_library.json")
 OUT_PATH = os.path.join(BASE, "factor_checkup.json")
+DETAIL_PATH = os.path.join(BASE, "factor_checkup_detail.json")
 
 # ---------------- 配置 ----------------
 
@@ -38,19 +39,25 @@ FORMS = [("raw", "原值"), ("pct", "MA10→60日百分位"), ("diff", "5日差�
 
 # 预测目标：配置化。以后扩展只需追加一行。
 #   mode=yield   : legs 为 (曲线名, 权重)，y = Σ w·Y，取 N 日变动 ×100 → bp
-#   mode=futures : legs 为 (期货主力名, 手数)，y = (ΔP)/Σ|w|·P × 100 → %
+#   mode=futures : legs 为 (期货主力名, 手数[, 面值百万])，默认面值 100 万
+#                  y = Σ w·fv·ΔP / Σ|w|·fv·P × 100 → %
+#                  若加 "as": "price"，则直接输出价差报价的点数变动 → 点
+#   可选 "maxN"  : 该目标最长预测周期（样本短的品种用它限制，如 TL 仅 2023-04 起）
+# ★ 方向约定：符号必须与该目标对应的收益率利差同向（3T−TL 与「30Y−10Y 走阔」同向）
 TARGETS = [
     {"id": "y10", "name": "10Y国债", "mode": "yield",
      "legs": [("10年国债", 1)], "unit": "bp"},
     {"id": "s3010", "name": "30Y−10Y利差", "mode": "yield",
      "legs": [("30年国债", 1), ("10年国债", -1)], "unit": "bp"},
     {"id": "tl3t", "name": "3T−TL", "mode": "futures",
-     "legs": [("T主力", 3), ("TL主力", -1)], "unit": "%"},
-    # 预留（用户 09-15 提出后续要加）：
-    # {"id": "ts4t", "name": "4TS−T", "mode": "futures",
-    #  "legs": [("TS主力", 4), ("T主力", -1)], "unit": "%"},
-    # {"id": "tl", "name": "TL单边", "mode": "futures",
-    #  "legs": [("TL主力", 1)], "unit": "%"},
+     "legs": [("T主力", 3), ("TL主力", -1)], "unit": "%", "maxN": 10},
+    # ★ 4TS−T 的「4」= 名义 400 万 = 2 手 TS(200万/手) − 1 手 T(100万)
+    {"id": "ts4t", "name": "4TS−T", "mode": "futures",
+     "legs": [("TS主力", 2, 200), ("T主力", -1, 100)], "unit": "%"},
+    {"id": "t", "name": "T单边", "mode": "futures",
+     "legs": [("T主力", 1)], "unit": "点", "as": "price"},
+    {"id": "tl", "name": "TL单边", "mode": "futures",
+     "legs": [("TL主力", 1)], "unit": "点", "as": "price", "maxN": 10},
 ]
 
 HORIZONS = [1, 5, 10, 20]
@@ -63,6 +70,8 @@ MIN_IC_STRONG = 0.05     # 判定显著所要求的最小 |IC|（防极端值撑
 SIGNAL_Z = 1.0          # 胜率/盈亏比的开仓阈值（|Z|>1 才持仓）
 TAIL_Z = 1.5            # 尾部赔率阈值
 RECENT6 = 125           # "近 6 个月"交易日数
+CURVE_PTS = 20          # 详情曲线降采样点数（控制 factor_checkup_detail.json 体积）
+COND_EDGES = [0, 10, 25, 50, 75, 90, 100]   # 条件分布：滚动经验分位切点
 
 COLS = ["g", "k", "label", "n", "ic", "icp", "icir", "t", "ti", "pind", "win", "wl", "ws",
         "pl", "tail", "q1", "q2", "q3", "q4", "q5", "qd", "qt", "mono", "turn",
@@ -309,10 +318,17 @@ def build_target(spec, cmap, D):
     else:
         pnl = np.zeros(D)
         denom = np.zeros(D)
-        for name, w in spec["legs"]:
+        notional = 0.0
+        for leg in spec["legs"]:
+            name, w = leg[0], leg[1]
+            fv = leg[2] if len(leg) > 2 else 100.0   # 面值（百万），TS=200 其余=100
             p = cmap[name]
-            pnl = pnl + w * p
-            denom = denom + abs(w) * p
+            pnl = pnl + w * fv * p
+            denom = denom + abs(w) * fv * p
+            notional += abs(w) * fv
+        if spec.get("as") == "price":
+            # 价差报价（每百元面值）：除以名义金额而非价格加权分母
+            return pnl, np.full(D, notional if notional > 0 else np.nan)
         return pnl, denom
 
 
@@ -325,10 +341,61 @@ def target_change(spec, lvl, denom, N, D):
     valid = np.isfinite(lvl) & np.isfinite(nxt)
     if spec["mode"] == "yield":
         out[valid] = (nxt[valid] - lvl[valid]) * 100.0      # bp
+    elif spec.get("as") == "price":
+        d = np.where((denom > 0) & np.isfinite(denom), denom, np.nan)
+        out[valid] = (nxt[valid] - lvl[valid]) / d[valid]   # 点（价差报价的涨跌，几分几毛）
     else:
         d = np.where(denom > 0, denom, np.nan)
         out[valid] = (nxt[valid] - lvl[valid]) / d[valid] * 100.0   # %
     return out
+
+
+def _downsample(a, m):
+    """降采样到最多 m 点，只保留有限值"""
+    a = np.asarray(a, dtype=float)
+    a = a[np.isfinite(a)]
+    if len(a) == 0:
+        return []
+    if len(a) <= m:
+        return [round(float(v), 3) for v in a]
+    idx = np.linspace(0, len(a) - 1, m).round().astype(int)
+    return [round(float(v), 3) for v in a[idx]]
+
+
+def curve_pair(xs, ys, z, N):
+    """非重叠抽稀的 (累计 IC, 信号累计净值)。
+    y 是未来 N 日累计变动，重叠长度即 N，故按步长 N 抽稀后各期近似独立，
+    累计曲线才有意义；直接对逐日滚动 IC 累加只会得到一条假稳定的线。"""
+    step = max(int(N), 1)
+    icseq = rolling_ic(xs, ys, ICIR_WIN)
+    cumic = np.cumsum(icseq[::step]) if len(icseq) > 5 else np.array([])
+    pos = np.where(z > SIGNAL_Z, 1.0, np.where(z < -SIGNAL_Z, -1.0, 0.0))
+    cumpnl = np.cumsum((pos * ys)[::step])
+    return _downsample(cumic, CURVE_PTS), _downsample(cumpnl, CURVE_PTS)
+
+
+def cond_dist(p, ys):
+    """按滚动经验分位切 6 区间的条件分布：
+    每区间 [n, 均值, 中位, 标准差, 上行概率%, 5%分位]
+    用于捞 B/C 类因子：线性 IC 不显著，但区间间分布差异可能很大（非单调或尾部差异）。"""
+    out = []
+    for i in range(len(COND_EDGES) - 1):
+        lo, hi = COND_EDGES[i], COND_EDGES[i + 1]
+        s = (p >= lo) & ((p < hi) if hi < 100 else (p <= 100))
+        yy = ys[s & np.isfinite(ys)]
+        if len(yy) < 10:
+            out.append([0, None, None, None, None, None])
+            continue
+        out.append([int(len(yy)), round(float(yy.mean()), 3), round(float(np.median(yy)), 3),
+                    round(float(yy.std(ddof=1)), 3), round(float((yy > 0).mean() * 100), 1),
+                    round(float(np.percentile(yy, 5)), 3)])
+    return out
+
+
+def horizons_for(spec):
+    """该目标允许的预测周期（样本短的品种用 maxN 限制，如 TL 仅 2023-04 起）"""
+    mx = spec.get("maxN")
+    return [N for N in HORIZONS if mx is None or N <= mx]
 
 
 def make_form(x, form):
@@ -382,31 +449,36 @@ def main():
         for g, k, label, v in series:
             xf = make_form(v, fid)
             zf = rolling_z(xf, Z_WIN)
+            pf = rolling_pct(xf, Z_WIN)      # 滚动经验分位（条件分布分区用，防前视）
             if LAG > 0:
                 xl = np.full(D, np.nan)
                 xl[LAG:] = xf[:-LAG]
                 zl = np.full(D, np.nan)
                 zl[LAG:] = zf[:-LAG]
+                pl = np.full(D, np.nan)
+                pl[LAG:] = pf[:-LAG]
             else:
-                xl, zl = xf, zf
-            lst.append((xl, zl))
+                xl, zl, pl = xf, zf, pf
+            lst.append((xl, zl, pl))
         forms_cache[fid] = lst
         print(f"  形态 {fid} 预计算完成")
 
     blocks = {}
+    dblocks = {}
     n_tests = 0
     for fid, _fname in FORMS:
         xlist = forms_cache[fid]
         for spec in TARGETS:
             tc = tgt_cache[spec["id"]]
-            for N in HORIZONS:
+            for N in horizons_for(spec):
                 y_full = tc["ys"][N]
                 rows = []
+                drows = []
                 pvals = []
                 pperms = []
                 ic_list = []
                 for si, (g, k, label, _v) in enumerate(series):
-                    x, zlag = xlist[si]
+                    x, zlag, plag = xlist[si]
                     m = np.isfinite(x) & np.isfinite(y_full)
                     n = int(m.sum())
                     if n < MIN_OBS:
@@ -426,6 +498,7 @@ def main():
 
                     # 分组（滚动 250 日 Z-score，已预计算并滞后，防未来函数）
                     z = zlag[m]
+                    pctl = plag[m]
                     qb = [-0.8416, -0.2533, 0.2533, 0.8416]
                     qs, mono = [], 0
                     edges = [-np.inf] + qb + [np.inf]
@@ -506,6 +579,7 @@ def main():
                         yrd[2021], yrd[2022], yrd[2023], yrd[2024], yrd[2025], yrd[2026],
                         rgu, rgd, rghv, rglv,
                     ])
+                    drows.append([curve_pair(xs, ys, z, N), cond_dist(pctl, ys)])
                     pvals.append(pind)
                     pperms.append(pv)
                     ic_list.append(ic if np.isfinite(ic) else 0.0)
@@ -523,6 +597,7 @@ def main():
                         rows[i][28] = 2 if sigp[i] else (1 if sig[i] else 0)
                 key = f"{fid}|{spec['id']}|{N}"
                 blocks[key] = [[_r(c, 4) if isinstance(c, float) else c for c in r] for r in rows]
+                dblocks[key] = drows
                 n_tests += len(rows)
                 print(f"  {key:16s} {len(rows):4d} 行，独立样本显著 {int(sig.sum())}，置换也认可 {int(sigp.sum())}")
 
@@ -543,7 +618,11 @@ def main():
         "cols": COLS,
         "forms": [{"id": a, "name": b} for a, b in FORMS],
         "targets": [{"id": t["id"], "name": t["name"], "unit": t["unit"],
-                     "legs": [n for n, _w in t["legs"]]} for t in TARGETS],
+                     "legs": [leg[0] for leg in t["legs"]],
+                     "maxN": t.get("maxN"), "as": t.get("as")} for t in TARGETS],
+        "cond_edges": COND_EDGES,
+        "curve_pts": CURVE_PTS,
+        "detail_file": "factor_checkup_detail.json",
         "min_ic_strong": MIN_IC_STRONG,
         "horizons": HORIZONS,
         "notes": [
@@ -596,6 +675,23 @@ def main():
 
     size = os.path.getsize(OUT_PATH) / 1e6
     print(f"\n输出 {OUT_PATH}  {size:.2f} MB  {'[已更新]' if changed else '[无变化，跳过重写]'}")
+
+    # 详情（累计 IC / 信号累计净值 / 分位条件分布）：独立文件，前端按需 fetch，主表不膨胀
+    dpayload = {
+        "generated": meta["generated"],
+        "cond_edges": COND_EDGES,
+        "curve_pts": CURVE_PTS,
+        "blocks": dblocks,
+    }
+    if jsonio is not None:
+        dch = jsonio.write_json_skip_unchanged(DETAIL_PATH, dpayload)
+    else:
+        with open(DETAIL_PATH, "w", encoding="utf-8") as f:
+            json.dump(dpayload, f, ensure_ascii=False, separators=(",", ":"))
+        dch = True
+    dsize = os.path.getsize(DETAIL_PATH) / 1e6
+    print(f"输出 {DETAIL_PATH}  {dsize:.2f} MB  {'[已更新]' if dch else '[无变化，跳过重写]'}")
+
     print(f"总检验 {n_tests} 套，耗时 {time.time()-t0:.1f}s")
     return payload
 
