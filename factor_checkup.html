@@ -46,6 +46,18 @@
   .btn:hover { border-color:var(--primary); color:var(--primary); }
   .spacer { flex:1; }
   .stat { font-size:12px; color:var(--text-secondary); }
+  /* 二级维度栏（随一级分组动态生成） */
+  .dimbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:7px 14px; background:#fafbfc; border-bottom:1px solid var(--border); font-size:12px; }
+  .dimbar .hint { color:var(--text-secondary); font-size:11px; }
+  .dimbar .dimsep { width:1px; height:16px; background:var(--border); }
+  tr.grp-row { background:#eef2f7; cursor:pointer; }
+  tr.grp-row td { text-align:left; font-weight:600; font-size:11px; color:var(--text-secondary);
+    padding:5px 8px; border-top:1px solid var(--border); border-bottom:1px solid var(--border);
+    position:sticky; top:28px; z-index:1; }
+  tr.grp-row:hover { background:#e4eaf3; }
+  tr.grp-row .grp-n { font-weight:400; margin-left:6px; }
+  tr.grp-row .grp-more { color:var(--primary); font-weight:400; margin-left:6px; text-decoration:underline; }
   .abs-sort { cursor:pointer; user-select:none; }
   .abs-sort input { cursor:pointer; }
   .abs-sort.on { color:var(--primary); font-weight:600; }
@@ -105,12 +117,7 @@
   <div class="seg" id="nSeg"></div>
   <div class="seg" id="formSeg"></div>
   <div class="fld">分组
-    <select id="grpSel">
-      <option value="">全部</option>
-      <option value="cash">机构行为·现券</option>
-      <option value="repo">机构行为·回购</option>
-      <option value="curve">估值·曲线期货</option>
-    </select>
+    <div class="seg" id="grpSeg"></div>
   </div>
   <div class="fld">显著
     <select id="sigSel">
@@ -129,6 +136,8 @@
   <span class="stat" id="stat"></span>
   <button class="btn" id="csvBtn">导出 CSV</button>
 </div>
+
+<div class="dimbar" id="dimBar"></div>
 
 <div class="main">
   <div class="table-wrap">
@@ -152,8 +161,64 @@ var IDX = {g:0,k:1,label:2,n:3,ic:4,icp:5,icir:6,t:7,ti:8,pind:9,win:10,wl:11,ws
 var YRKEYS = ['yr21','yr22','yr23','yr24','yr25','yr26'];
 var YRLABEL = ['21','22','23','24','25','26'];
 
-var S = { tgt:'s3010', N:5, form:'pct', grp:'', sig:0, icmin:0, q:'',
-          sort:'t', desc:true, absSort:false, sel:null };
+var S = { tgt:'s3010', N:5, form:'pct', grp:'', dims:{}, sig:0, icmin:0, q:'',
+          sort:'t', desc:true, absSort:false, sel:null, open:{}, allOpen:false, topN:10 };
+
+/* ---------------- 因子分类 ----------------
+   一级：数据大类（对应 factor_library 的分组）
+   二级：组内维度，随一级动态生成下拉；筛选后表格按"第一个未筛选维度"分段折叠   */
+var GROUPS = [
+  {id:'',     name:'全部'},
+  {id:'cash', name:'机构行为·现券'},
+  {id:'repo', name:'机构行为·回购'},
+  {id:'curve',name:'估值·曲线期货'}
+];
+var FIELD_CN = {net:'净融出', rev_bal:'逆回购余额', repo_bal:'正回购余额', rate_spread:'正回购利率−DR001'};
+
+/* k 的构成：cash = 券种|机构|期限 ；repo = 机构|字段 ；curve = 名称（类别取 label 首段） */
+function parts(r){
+  var k = String(r[IDX.k]).split('|');
+  for(var i=0;i<k.length;i++) k[i]=k[i].trim();
+  return k;
+}
+var DIMS = {
+  cash: [
+    {k:'inst', name:'机构', get:function(r){ return parts(r)[1]; }},
+    {k:'bt',   name:'券种', get:function(r){ return parts(r)[0]; }},
+    {k:'mat',  name:'期限', get:function(r){ return parts(r)[2]; }}
+  ],
+  repo: [
+    {k:'inst',  name:'机构', get:function(r){ return parts(r)[0]; }},
+    {k:'field', name:'字段', get:function(r){ return FIELD_CN[parts(r)[1]] || parts(r)[1]; }}
+  ],
+  curve: [
+    {k:'cat', name:'类别', get:function(r){ return String(r[IDX.label]).split('·')[0]; }}
+  ]
+};
+function dimsOf(g){ return DIMS[g] || []; }
+/* 当前分段键：一级为"全部"时按大类分；否则取组内第一个未筛选的维度 */
+function segKey(){
+  if(!S.grp) return {name:'大类', get:function(r){ return r[IDX.g]; }, cn:function(v){
+    var o = GROUPS.filter(function(g){return g.id===v;})[0]; return o ? o.name : v; }};
+  var ds = dimsOf(S.grp);
+  for(var i=0;i<ds.length;i++){
+    if(!S.dims[ds[i].k]) return {name:ds[i].name, key:ds[i].k, get:ds[i].get, cn:function(v){return v;}};
+  }
+  return null;
+}
+/* 从当前 block 抽取某维度的全部取值（按出现顺序去重） */
+function dimValues(dimKey){
+  var b = CK.blocks[blockKey()] || [], seen = [], out = [];
+  var list = S.grp ? b.filter(function(r){ return r[IDX.g]===S.grp; }) : b;
+  var ds = dimsOf(S.grp);
+  for(var i=0;i<ds.length;i++){ if(ds[i].k===dimKey){
+    list.forEach(function(r){
+      var v = ds[i].get(r);
+      if(v && v!=='undefined' && seen.indexOf(v)<0){ seen.push(v); out.push(v); }
+    });
+  }}
+  return out;
+}
 
 /* 数值列才参与「按 |x| 排」；label 为字符串列，yr 不可排序 */
 var NUMERIC_COLS = ['n','ic','icp','icir','t','ti','pind','p','win','pl','tail',
@@ -225,7 +290,12 @@ function load(){
       ts.value = S.tgt;
       buildNSeg();
       seg('formSeg', m.forms.map(function(f){return {v:f.id, t:f.name};}), 'form', function(v){ S.form=v; render(); });
-      seg('formSeg', m.forms.map(function(f){return {v:f.id, t:f.name};}), 'form', function(v){ S.form=v; render(); });
+      seg('grpSeg', GROUPS.map(function(g){ return {v:g.id, t:g.name}; }), 'grp', function(v){
+        S.grp=v; S.dims={}; S.open={}; S.allOpen=false; S.sel=null;
+        buildHead(); render();
+        el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>';
+        killCharts();
+      });
       buildHead();
       render();
     });
@@ -276,11 +346,16 @@ function blockKey(){ return S.form+'|'+S.tgt+'|'+S.N; }
 
 function rows(){
   var b = CK.blocks[blockKey()] || [];
+  var ds = S.grp ? dimsOf(S.grp) : [];
   var out = b.filter(function(r){
     if(S.grp && r[IDX.g]!==S.grp) return false;
     if(S.sig && (r[IDX.sig]||0) < S.sig) return false;
     if(S.icmin && Math.abs(r[IDX.ic]||0) < S.icmin) return false;
     if(S.q && r[IDX.label].indexOf(S.q)<0) return false;
+    for(var i=0;i<ds.length;i++){
+      var v = S.dims[ds[i].k];
+      if(v && ds[i].get(r)!==v) return false;
+    }
     return true;
   });
   var sk = S.sort, d = S.desc?1:-1;
@@ -307,11 +382,39 @@ function rows(){
   return out;
 }
 
-function render(){
-  var rs = rows();
-  var tb = el('tb'); tb.innerHTML='';
-  el('stat').textContent = rs.length + ' 行';
-  rs.forEach(function(r){
+/* 二级维度栏：随一级分组动态生成下拉 + 展开/收起 */
+function buildDimBar(){
+  var bar = el('dimBar'); bar.innerHTML='';
+  if(!CK) return;
+  if(!S.grp){
+    bar.innerHTML = '<span class="hint">当前按「大类」分段，每组默认显示前 '+S.topN+
+      ' 条（按当前排序列）· 点上方分组进入组内，可用维度进一步收窄</span>';
+    return;
+  }
+  dimsOf(S.grp).forEach(function(d){
+    var f=document.createElement('div'); f.className='fld';
+    var lb=document.createElement('span'); lb.textContent=d.name; f.appendChild(lb);
+    var sel=document.createElement('select');
+    var o0=document.createElement('option'); o0.value=''; o0.textContent='全部'; sel.appendChild(o0);
+    dimValues(d.k).forEach(function(v){
+      var o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o);
+    });
+    sel.value = S.dims[d.k] || '';
+    sel.onchange=function(){ S.dims[d.k]=this.value; S.open={}; render(); };
+    f.appendChild(sel); bar.appendChild(f);
+  });
+  var segk = segKey();
+  var hint=document.createElement('span'); hint.className='hint';
+  hint.textContent = segk ? ('当前按「'+segk.name+'」分段，每组默认 '+S.topN+' 条') : '已收窄到最细维度';
+  bar.appendChild(hint);
+  var sp=document.createElement('div'); sp.className='spacer'; bar.appendChild(sp);
+  var bt=document.createElement('button'); bt.className='btn';
+  bt.textContent = S.allOpen ? '收起全部' : '展开全部';
+  bt.onclick=function(){ S.allOpen=!S.allOpen; S.open={}; render(); };
+  bar.appendChild(bt);
+}
+
+function rowEl(r, tb){
     var tr=document.createElement('tr');
     if(S.sel && S.sel===r[IDX.k]) tr.className='sel';
     else if(r[IDX.sig]===2) tr.className='sig2';
@@ -340,12 +443,56 @@ function render(){
     });
     tr.onclick=function(){
       S.sel = r[IDX.k];
-      Array.prototype.forEach.call(tb.children, function(x){ x.className=''; });
+      Array.prototype.forEach.call(tb.children, function(x){
+        if(!x.classList.contains('grp-row')) x.className='';
+      });
       tr.className='sel';
       detail(r);
     };
-    tb.appendChild(tr);
-  });
+    return tr;
+}
+
+function render(){
+  var rs = rows();
+  var tb = el('tb'); tb.innerHTML='';
+  el('stat').textContent = rs.length + ' 行';
+  buildDimBar();
+  var sk = segKey();
+  if(!sk){
+    rs.forEach(function(r){ tb.appendChild(rowEl(r, tb)); });
+  } else {
+    /* 按分段键归组，保持全局排序；每组默认只显示 top N */
+    var order = [], map = {};
+    rs.forEach(function(r){
+      var v = String(sk.get(r));
+      if(!map[v]){ map[v]=[]; order.push(v); }
+      map[v].push(r);
+    });
+    order.forEach(function(v){
+      var list = map[v];
+      var open = S.allOpen || !!S.open[v];
+      var show = open ? list : list.slice(0, S.topN);
+      var gtr = document.createElement('tr'); gtr.className='grp-row';
+      var td = document.createElement('td'); td.colSpan = COLS.length;
+      var name = sk.cn ? sk.cn(v) : v;
+      td.textContent = name;
+      var n = document.createElement('span'); n.className='grp-n';
+      n.textContent = '· ' + list.length + ' 条'; td.appendChild(n);
+      if(list.length > S.topN){
+        var m = document.createElement('span'); m.className='grp-more';
+        m.textContent = open ? '收起' : ('展开其余 ' + (list.length - show.length) + ' 条');
+        td.appendChild(m);
+      }
+      gtr.appendChild(td);
+      gtr.onclick = function(){
+        S.open[v] = !open;
+        if(!S.open[v]) S.allOpen = false;
+        render();
+      };
+      tb.appendChild(gtr);
+      show.forEach(function(r){ tb.appendChild(rowEl(r, tb)); });
+    });
+  }
   el('loading').style.display='none';
   el('tbl').style.display='';
 }
@@ -676,22 +823,26 @@ function rollingPct(a,w){
 }
 
 /* ---------------- 事件 ---------------- */
-el('tgtSel').onchange = function(){ S.tgt=this.value; S.sel=null; buildNSeg(); render(); el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>'; killCharts(); };
-el('grpSel').onchange = function(){ S.grp=this.value; render(); };
-el('sigSel').onchange = function(){ S.sig=+this.value; render(); };
-el('icMin').oninput  = function(){ S.icmin=+this.value||0; render(); };
-el('search').oninput = function(){ S.q=this.value.trim(); render(); };
+el('tgtSel').onchange = function(){ S.tgt=this.value; S.sel=null; S.open={}; buildNSeg(); render(); el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>'; killCharts(); };
+el('sigSel').onchange = function(){ S.sig=+this.value; S.open={}; render(); };
+el('icMin').oninput  = function(){ S.icmin=+this.value||0; S.open={}; render(); };
+el('search').oninput = function(){ S.q=this.value.trim(); S.open={}; render(); };
 el('absSort').onchange = function(){
   S.absSort = this.checked;
   this.parentNode.className = 'fld abs-sort' + (this.checked?' on':'');
   buildHead(); render();
 };
 el('resetBtn').onclick = function(){
-  S.grp=''; S.sig=0; S.icmin=0; S.q=''; S.absSort=false;
-  S.sort='t'; S.desc=true;
-  el('grpSel').value=''; el('sigSel').value='0'; el('icMin').value='0'; el('search').value='';
+  S.grp=''; S.dims={}; S.open={}; S.allOpen=false;
+  S.sig=0; S.icmin=0; S.q=''; S.absSort=false;
+  S.sort='t'; S.desc=true; S.sel=null;
+  seg('grpSeg', GROUPS.map(function(g){ return {v:g.id, t:g.name}; }), 'grp',
+      function(v){ S.grp=v; S.dims={}; S.open={}; render(); });
+  el('sigSel').value='0'; el('icMin').value='0'; el('search').value='';
   el('absSort').checked=false; el('absSort').parentNode.className='fld abs-sort';
   buildHead(); render();
+  el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>';
+  killCharts();
 };
 el('csvBtn').onclick = function(){
   var rs = rows(), hdr = COLS.map(function(c){return c.t;}).join(',');
