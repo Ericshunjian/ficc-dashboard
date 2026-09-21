@@ -1451,6 +1451,95 @@ def main():
     return ok0 and ok1 and ok2 and ok3 and ok4 and ok5 and ok6
 
 
+def _git_env():
+    env = os.environ.copy()
+    env['GIT_TERMINAL_PROMPT'] = '0'
+    # 确保 SSH 使用正确的密钥
+    env['GIT_SSH_COMMAND'] = 'ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519'
+    return env
+
+
+def sync_with_remote(repo_dir, remote='github', branch='main', log=log):
+    """推送前先与远程对齐，返回 True 表示可以继续 add/commit/push。
+
+    背景：家里的电脑会改页面并 push，本脚本在这台机器上每天跑数据更新，两边互不通信。
+    若只 push 不 pull，远程领先时 push 会被拒 —— 表现为"数据更新看着跑完了，线上却一直没变"。
+
+    三条路径：
+      落后 → merge --ff-only 快进（不产生合并节点，不动本地已有 commit）
+      分叉 → 返回 False 跳过推送，交给人工（绝不自动 merge/rebase）
+      一致 → 什么都不做
+
+    ff-only 唯一的失败原因是"本地有未提交、且远程正好也改到同一文件的改动"。
+    此时宁可跳过这次推送。数据文件已在本地写好，第二天会自动补上，不会丢。
+    """
+    env = _git_env()
+
+    def run_git(*args):
+        try:
+            r = subprocess.run(['git'] + list(args), cwd=repo_dir,
+                               capture_output=True, text=True, env=env, timeout=120)
+            if r.returncode != 0:
+                log.warning(f"  git {args[0]} 返回码 {r.returncode}: {(r.stderr or '')[:200]}")
+            return r.returncode == 0
+        except subprocess.TimeoutExpired:
+            log.warning(f"  git {args[0]} 超时")
+            return False
+
+    def git_out(*args):
+        try:
+            r = subprocess.run(['git'] + list(args), cwd=repo_dir,
+                               capture_output=True, text=True, env=env, timeout=120)
+            return (r.returncode == 0), (r.stdout or '').strip()
+        except subprocess.TimeoutExpired:
+            log.warning(f"  git {args[0]} 超时")
+            return False, ''
+
+    for attempt in range(2):
+        ok_fetch, _ = git_out('fetch', remote, branch)
+        if not ok_fetch:
+            log.error(f"  git fetch {remote} 失败，跳过本次推送（数据已在本地生成，明天会自动补）")
+            return False
+        ok_head, head = git_out('rev-parse', 'HEAD')
+        ok_base, mbase = git_out('merge-base', 'HEAD', 'FETCH_HEAD')
+        if not (ok_head and ok_base and head and mbase):
+            log.error("  本地与远程无法比对，跳过本次推送")
+            return False
+        ok_bh, behind_s = git_out('rev-list', '--count', f'{head}..FETCH_HEAD')
+        ok_ah, ahead_s = git_out('rev-list', '--count', f'FETCH_HEAD..{head}')
+        try:
+            behind_n = int(behind_s or 0)
+            ahead_n = int(ahead_s or 0)
+        except ValueError:
+            log.error("  无法解析远程差异，跳过本次推送")
+            return False
+
+        if behind_n == 0:
+            if ahead_n > 0:
+                log.info(f"  本地领先远程 {ahead_n} 个提交（此前推送可能被跳过），继续推送")
+            else:
+                log.info("  与远程一致")
+            return True
+
+        if ahead_n > 0:
+            log.error(f"  本地与远程分叉（本地领先 {ahead_n} / 落后 {behind_n}），需人工处理")
+            log.error("  跳过本次推送：数据已在本地生成，请先确认两边的改动再合并")
+            return False
+
+        log.info(f"  本地落后远程 {behind_n} 个提交（远程有新改动），先快进")
+        if run_git('merge', '--ff-only', 'FETCH_HEAD'):
+            log.info("  已快进到远程最新")
+            return True
+
+        log.warning("  快进失败，通常是本地有未提交、且远程正好也改到同一文件的改动")
+        if attempt == 0:
+            log.warning("  重试一次（远程在此期间可能又有新提交）")
+        else:
+            log.error("  跳过本次推送：请先处理本地未提交的改动")
+            return False
+    return False
+
+
 def git_push_data():
     """commit 并 push 更新的 JSON 数据 + HTML 网页到 GitHub（唯一远程；gitee/gitcode 已废弃）"""
     repo_dir = Path(SCRIPT_DIR)
@@ -1477,6 +1566,11 @@ def git_push_data():
         except subprocess.TimeoutExpired:
             log.warning(f"  git {args[0]} 超时")
             return False
+
+    # 推送前先与远程对齐（家里的电脑可能改过页面）
+    if not sync_with_remote(repo_dir):
+        log.error("  未能与远程对齐，跳过本次推送")
+        return False
 
     # add JSON 数据文件
     json_files = [
@@ -1516,6 +1610,8 @@ def git_push_data():
         'hs300_volatility_dist.js',
         'repo_data_update.py',
         'stock_bond_update.py',
+        'preview.py',
+        'sync_check.py',
         'stock_bond_correlation.html',
     ]
     for f in html_files:
