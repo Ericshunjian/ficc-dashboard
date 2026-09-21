@@ -371,7 +371,10 @@ def curve_pair(xs, ys, z, N):
     cumic = np.cumsum(icseq[::step]) if len(icseq) > 5 else np.array([])
     pos = np.where(z > SIGNAL_Z, 1.0, np.where(z < -SIGNAL_Z, -1.0, 0.0))
     cumpnl = np.cumsum((pos * ys)[::step])
-    return _downsample(cumic, CURVE_PTS), _downsample(cumpnl, CURVE_PTS)
+    # ★ 必须返回 list 不能是 tuple：json.dump 会把 tuple 写成数组、读回来却变成 list，
+    #   导致 jsonio 的幂等比对 (tuple != list) 永远判定"有变化"，
+    #   每周一体检重跑都会白写一个 8.67MB 的新 blob。详见 2026-09-21 排查。
+    return [_downsample(cumic, CURVE_PTS), _downsample(cumpnl, CURVE_PTS)]
 
 
 def cond_dist(p, ys):
