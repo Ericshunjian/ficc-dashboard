@@ -71,6 +71,13 @@ SIGNAL_Z = 1.0          # 胜率/盈亏比的开仓阈值（|Z|>1 才持仓）
 TAIL_Z = 1.5            # 尾部赔率阈值
 RECENT6 = 125           # "近 6 个月"交易日数
 CURVE_PTS = 20          # 详情曲线降采样点数（控制 factor_checkup_detail.json 体积）
+
+# 是否把「机构行为·现券衍生因子」纳入周一全量体检。
+# 默认关闭：衍生层与原始 303 条同源（同一批净买入的变换），纳入后会显著加重
+# 多重检验负担、并把周一耗时从 ~130s 拉长到 ~210s。
+# 需要单独检验衍生层时，用环境变量临时打开，不改代码：
+#     FICC_CHECKUP_DERIVED=1 python prepare_factor_checkup.py
+INCLUDE_DERIVED = os.environ.get("FICC_CHECKUP_DERIVED", "0") == "1"
 COND_EDGES = [0, 10, 25, 50, 75, 90, 100]   # 条件分布：滚动经验分位切点
 
 COLS = ["g", "k", "label", "n", "ic", "icp", "icir", "t", "ti", "pind", "win", "wl", "ws",
@@ -305,6 +312,12 @@ def load_library():
         v[i0:i0 + len(arr)] = arr
         cmap[s["name"]] = v
         series.append(("curve", f"{s['name']}", f"{s['cat']}·{s['name']}", v))
+    if INCLUDE_DERIVED:
+        for s in lib.get("derived", []):
+            v = np.full(D, np.nan)
+            i0, arr = s["i0"], np.asarray(s["v"], dtype=float)
+            v[i0:i0 + len(arr)] = arr
+            series.append(("derived", f"{s['op']}|{s['inst']}|{s['tenor']}", s["name"], v))
     return lib, dates, series, cmap
 
 

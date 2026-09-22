@@ -145,6 +145,14 @@ def build():
         curve_out.append({"name": name, "cat": cat_of.get(name, "其他"), "i0": i0, "v": vals})
     curve_out.sort(key=lambda x: (x["cat"], x["name"]))
 
+    # ---------- 现券衍生因子（机构行为三视角变换） ----------
+    derived, dmeta = [], {"institutions": [], "tenors": [], "classes": []}
+    try:
+        import factor_derived
+        derived, dmeta = factor_derived.build(merged, idx, n)
+    except Exception as e:  # 衍生层失败不阻断主流程
+        print("  [warn] 现券衍生因子生成失败：%r" % (e,))
+
     insts = merged["meta"]["institutions"]
     mats = merged["meta"]["maturities"]
 
@@ -166,6 +174,9 @@ def build():
                  "dims": {"institution": insts, "field": [f[1] for f in REPO_FIELDS]}},
                 {"key": "curve", "name": "估值 · 曲线与期货", "count": len(curve_out),
                  "dims": {"cat": list(curve_cats.keys())}},
+                {"key": "derived", "name": "机构行为 · 现券衍生因子", "count": len(derived),
+                 "dims": {"cls": dmeta["classes"], "institution": dmeta["institutions"],
+                          "tenor": dmeta["tenors"]}},
             ],
             "note": "L0 原始序列池。变换（MA / 滚动百分位 / Z-score / 差分）在前端实时计算，不预存。",
         },
@@ -173,6 +184,7 @@ def build():
         "cash": cash,
         "repo": repo_out,
         "curve": curve_out,
+        "derived": derived,
     }
     return payload
 

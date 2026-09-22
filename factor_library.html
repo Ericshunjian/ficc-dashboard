@@ -230,6 +230,10 @@ function buildAll(){
   state.curveList = D.curve.map(function(s){
     return { g:'curve', id:s.name, cat:s.cat, i0:s.i0, v:s.v, name:'曲线·'+s.cat+'·'+s.name, unit:'%' };
   });
+  state.derivedList = (D.derived||[]).map(function(s){
+    return { g:'derived', id:s.op+'/'+s.n+'/'+(s.inst||'-')+'/'+s.tenor, cat:s.cls, op:s.op,
+             inst:s.inst||'', tenor:s.tenor, i0:s.i0, v:s.v, name:s.name, unit:s.unit||'' };
+  });
   // 技术指标：由主力合约收盘价前端派生
   var fut = ['T','TF','TS','TL'].map(function(k){
     var f = state.curveList.filter(function(s){ return s.id===k+'主力'; })[0];
@@ -244,7 +248,7 @@ function buildAll(){
     });
   });
   el('metaInfo').textContent = '更新 ' + D.meta.last_updated + ' · ' + DATES[0] + ' ~ ' + DATES[DATES.length-1]
-    + ' · 共 ' + (state.cashList.length+state.repoList.length+state.curveList.length) + ' 条原始序列 + '
+    + ' · 共 ' + (state.cashList.length+state.repoList.length+state.curveList.length+state.derivedList.length) + ' 条原始/衍生序列 + '
     + state.techList.length + ' 条技术指标';
 }
 
@@ -399,6 +403,7 @@ var GROUPS = [
   { key:'cash', name:'机构行为·现券' },
   { key:'repo', name:'机构行为·回购' },
   { key:'curve', name:'估值·曲线期货' },
+  { key:'derived', name:'机构行为·现券衍生' },
   { key:'tech', name:'技术指标(派生)' }
 ];
 var DIM_DEF = {
@@ -412,6 +417,11 @@ var DIM_DEF = {
     { k:'field', label:'字段', opts:function(){ return D.meta.groups[1].dims.field; } }
   ],
   curve:[ { k:'cat', label:'类别', opts:function(){ return D.meta.groups[2].dims.cat; } } ],
+  derived:[
+    { k:'cat', label:'类别', opts:function(){ return (D.meta.groups[3]||{dims:{}}).dims.cls||[]; } },
+    { k:'inst', label:'机构', opts:function(){ return (D.meta.groups[3]||{dims:{}}).dims.institution||[]; } },
+    { k:'tenor', label:'期限档', opts:function(){ return (D.meta.groups[3]||{dims:{}}).dims.tenor||[]; } }
+  ],
   tech:[ { k:'tech', label:'指标', opts:function(){ return TECH_DEFS.map(function(t){return t.name;}); } } ]
 };
 
@@ -460,6 +470,7 @@ function candidates(){
   if(g==='cash') list = state.cashList;
   else if(g==='repo') list = state.repoList;
   else if(g==='curve') list = state.curveList;
+  else if(g==='derived') list = state.derivedList;
   else list = state.techList;
   var d = state.dims;
   var out = list.filter(function(s){
@@ -507,7 +518,7 @@ function renderCandidates(){
 }
 
 function findSeries(key){
-  var all = state.cashList.concat(state.repoList, state.curveList, state.techList, state.custom);
+  var all = state.cashList.concat(state.repoList, state.curveList, state.derivedList, state.techList, state.custom);
   for(var i=0;i<all.length;i++) if(seriesKey(all[i])===key) return all[i];
   return null;
 }
@@ -722,7 +733,7 @@ fetch('factor_library.json?t=' + Date.now())
     el('loadingBox').style.display='none';
     // 默认示例：基金与保险超长国债净买入
     var defs = ['现券·国债·基金公司及产品·20-30年','现券·国债·保险公司·20-30年'];
-    state.cashList.concat(state.repoList,state.curveList,state.techList).forEach(function(s){
+    state.cashList.concat(state.repoList,state.curveList,state.derivedList,state.techList).forEach(function(s){
       if(defs.indexOf(s.name)>=0) state.selected.push({ key:seriesKey(s) });
     });
     renderCandidates(); renderSel(); renderAll();
