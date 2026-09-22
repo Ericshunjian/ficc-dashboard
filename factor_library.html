@@ -87,6 +87,36 @@
   .loading { padding:40px; text-align:center; color:var(--text-secondary); }
   .warn { background:#fff8e6; border:1px solid #f0d9a0; color:#8a6d3b; padding:8px 12px;
     border-radius:6px; font-size:12px; }
+  .doc-link { display:inline-block; margin-top:2px; font-size:12px; color:var(--primary);
+    cursor:pointer; text-decoration:underline; }
+  .modal-mask { position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(20,28,38,.45);
+    z-index:100; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .modal { background:#fff; border-radius:10px; max-width:1000px; width:100%; max-height:86vh;
+    display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,.18); }
+  .modal-hd { padding:13px 20px; border-bottom:1px solid var(--border); display:flex;
+    align-items:center; justify-content:space-between; flex-shrink:0; }
+  .modal-hd h3 { font-size:15px; font-weight:600; }
+  .modal-hd .src { font-size:11px; color:var(--text-secondary); font-weight:400; margin-left:10px; }
+  .modal-close { cursor:pointer; font-size:18px; color:var(--text-secondary); padding:0 4px; line-height:1; }
+  .modal-close:hover { color:var(--text); }
+  .modal-bd { padding:14px 20px 20px; overflow-y:auto; font-size:12.5px; line-height:1.75; }
+  .modal-bd h4 { font-size:13px; margin:16px 0 6px; }
+  .modal-bd h4:first-child { margin-top:0; }
+  table.doc { width:100%; border-collapse:collapse; font-size:12px; }
+  table.doc th, table.doc td { border:1px solid var(--border); padding:6px 9px;
+    vertical-align:top; text-align:left; }
+  table.doc th { background:#fafbfc; font-weight:600; white-space:nowrap; }
+  table.doc td.f { font-family:Consolas,Monaco,'Courier New',monospace; font-size:11.5px; line-height:1.65; }
+  table.doc tr.hl td { background:#fffbe6; }
+  .tagc { display:inline-block; padding:1px 7px; border-radius:10px; font-size:11px; }
+  .t-trend{background:#e8f3ff;color:#2b6cb0} .t-cross{background:#eaf7ee;color:#2f855a}
+  .t-extreme{background:#fff3e6;color:#c05621} .t-struct{background:#f3e8ff;color:#6b46c1}
+  .kb { background:#fafbfc; border:1px solid var(--border); border-radius:6px; padding:9px 12px;
+    font-size:12px; line-height:1.8; margin:6px 0; }
+  .kb code { font-family:Consolas,Monaco,'Courier New',monospace; font-size:11.5px;
+    background:#eef1f5; padding:1px 4px; border-radius:3px; }
+  .card .frm { margin-top:6px; padding-top:5px; border-top:1px dashed var(--border);
+    font-size:11px; color:var(--text-secondary); line-height:1.6; }
 </style>
 </head>
 <body>
@@ -100,6 +130,7 @@
     <div class="filter-group">
       <div class="filter-label">数据分组</div>
       <div class="chips" id="groupChips"></div>
+      <div id="docLinkBox"></div>
     </div>
     <div class="filter-group" id="dimArea"></div>
     <div class="filter-group">
@@ -197,6 +228,16 @@
     <div class="cards" id="cards"></div>
   </div>
 </main>
+
+<div class="modal-mask" id="docModal" style="display:none">
+  <div class="modal">
+    <div class="modal-hd">
+      <h3>机构行为 · 现券衍生因子 计算方法<span class="src">方法来源：国泰海通《债市因子图鉴（一）（二）》</span></h3>
+      <span class="modal-close" id="docClose">×</span>
+    </div>
+    <div class="modal-bd" id="docBody"></div>
+  </div>
+</div>
 
 <script>
 (function(){
@@ -398,6 +439,140 @@ function transform(a){
   return x;
 }
 
+/* ---------- 衍生因子算法说明 ---------- */
+var CLS_TAG = { '趋势·买在一致':'t-trend', '截面·买在分歧':'t-cross',
+                '极值·卖在一致':'t-extreme', '结构·跨机构':'t-struct' };
+
+/* 每项：op 键 / 类别 / 名称 / 单位 / 公式 / 经济含义 */
+var DERIVED_DOC = [
+  { op:'days_ratio', cls:'趋势·买在一致', nm:'净买入天数占比 N20', unit:'%',
+    f:'DR<sub>t</sub> &nbsp;=&nbsp; #{ k &isin; [t&minus;19, t] : x<sub>k</sub> &gt; 0 } &divide; #{窗口内有效观测} &times; 100',
+    d:'只看方向、不看规模：过去 20 个交易日里净买入为正的天数比例。100 = 天天在买，0 = 天天在卖。'+
+      '对单日巨额交易不敏感，刻画的是「持续买入意愿」而非「买了多少」。研报把它归为趋势类——右侧确认，胜率高但入场晚。' },
+  { op:'accel', cls:'趋势·买在一致', nm:'净买卖加速度 N5−N20', unit:'亿元',
+    f:'ACC<sub>t</sub> &nbsp;=&nbsp; MA<sub>5</sub>(x)<sub>t</sub> &minus; MA<sub>20</sub>(x)<sub>t</sub>',
+    d:'短期均值减长期均值。&gt;0 表示买入在加速（最近 5 天比过去 20 天平均买得更多），&lt;0 表示在减速或转向卖出。'+
+      '相当于净买入序列的「二阶导」，比水平值更早反映拐点，但也更容易被单日大额扰动。' },
+  { op:'slope', cls:'趋势·买在一致', nm:'累积净买入斜率 N10', unit:'亿元/日',
+    f:'c<sub>s</sub> = &Sigma;<sub>k=t&minus;9..s</sub> x<sub>k</sub> &nbsp;(累积路径)<br>'+
+      'SLP<sub>t</sub> = &Sigma;(s&minus;s&#772;)(c<sub>s</sub>&minus;c&#772;) &divide; &Sigma;(s&minus;s&#772;)<sup>2</sup>',
+    d:'对过去 10 天的「累积净买入路径」做 OLS 时间回归取斜率。相比加速度更平滑——它用的是整条路径的形状而非两个均值的差。'+
+      '斜率稳定为正 = 持续单边建仓；接近 0 = 来回拉锯（有量无方向）。' },
+  { op:'rank', cls:'截面·买在分歧', nm:'截面动量排名 N20', unit:'分位(0~100)',
+    f:'m<sub>i</sub> = MA<sub>20</sub>(x<sub>i</sub>)<sub>t</sub> &nbsp;(同期限档 8 家机构)<br>'+
+      'RANK<sub>i</sub> = 平均秩(m<sub>i</sub>) &divide; (有效机构数&minus;1) &times; 100',
+    d:'同一期限档内，把 8 家机构的 20 日动量横截面排序取分位（并列取平均秩，有效机构少于 5 家输出空）。'+
+      '它剥离了「全市场一起买/一起卖」的共同冲击，只留下相对强弱——研报称其为「买在分歧」，左侧、有前瞻性，'+
+      '且类内相关性只有 −0.38~0.18，是三类里年化最高的。' },
+  { op:'pos_util', cls:'极值·卖在一致', nm:'仓位占用度 N20', unit:'%',
+    f:'cum<sub>t</sub> = MA<sub>20</sub>(x)<sub>t</sub> &times; 20 &nbsp;(20 日累计净买入)<br>'+
+      'PU<sub>t</sub> = (cum<sub>t</sub> &minus; min<sub>250</sub>(cum)) &divide; (max<sub>250</sub>(cum) &minus; min<sub>250</sub>(cum)) &times; 100',
+    d:'把累计净买入放在自身过去 250 日的区间里看位置。100 = 处于一年来的最高水位（仓位已重、加仓空间有限），'+
+      '0 = 最低水位。这是极值类指标，用途偏风控：研报用它刻画「卖在一致」——拥挤到极值时风险大于机会。' },
+  { op:'act_anom', cls:'极值·卖在一致', nm:'交易活跃度异常 N20', unit:'倍',
+    f:'act<sub>t</sub> = MA<sub>20</sub>(|x|)<sub>t</sub> &nbsp;(日均买卖量，不看方向)<br>'+
+      'AA<sub>t</sub> = act<sub>t</sub> &divide; MA<sub>250</sub>(act)<sub>t</sub>',
+    d:'当前活跃度相对自身一年常态的倍数。2.0 = 最近 20 天的日均成交量是过去一年的两倍。'+
+      '不管买卖方向，纯粹刻画「异常躁动」。极值类的另一半：异常高活跃常伴随阶段顶部或事件冲击。' },
+  { op:'cons', cls:'结构·跨机构', nm:'方向共识度 N20', unit:'%(−100~100)',
+    f:'up = #{ 20 日动量 &gt; 0 的机构数 }， dn = #{ &lt; 0 的机构数 }<br>'+
+      'CONS<sub>t</sub> = (up &minus; dn) &divide; (up + dn) &times; 100',
+    d:'看 8 家机构有多少在同一边。+100 = 全部在买（一致），−100 = 全部在卖，0 = 多空各半（分歧最大）。'+
+      '注意：这里只能用【方向】计数，不能用加总——见下方零和约束。' },
+  { op:'hhi', cls:'结构·跨机构', nm:'活跃集中度 N20', unit:'%',
+    f:'w<sub>i</sub> = |m<sub>i</sub>| &divide; &Sigma;<sub>j</sub>|m<sub>j</sub>| &nbsp;(各机构成交占比)<br>'+
+      'HHI<sub>t</sub> = &Sigma; w<sub>i</sub><sup>2</sup> &times; 100',
+    d:'赫芬达尔式集中度。8 家均分约 12.5，一家独占为 100。越高说明这一档的交易被少数机构主导，'+
+      '筹码集中、一旦反向容易踩踏；越低说明分散，行情更可能是共识性的。' },
+  { op:'cfg_trd', cls:'结构·跨机构', nm:'配置盘−交易盘 动量差 N20', unit:'亿元',
+    f:'D<sub>t</sub> = &Sigma;<sub>i&isin;配置盘</sub> MA<sub>20</sub>(x<sub>i</sub>)<sub>t</sub> &minus; &Sigma;<sub>i&isin;交易盘</sub> MA<sub>20</sub>(x<sub>i</sub>)<sub>t</sub>',
+    d:'配置盘（保险 / 大行 / 理财子，负债端稳定、买入偏战略）减去交易盘（券商 / 基金 / 货基 / 中小行，波段与流动性博弈）。'+
+      '&gt;0 说明配置盘主导这一期限档——通常是真实需求、行情更可持续；&lt;0 说明是交易盘在推，容易反转。'+
+      '注意两侧共 7 类，「其他」未纳入，所以不会因零和恒等于 0。' },
+  { op:'cfg_trd_accel', cls:'结构·跨机构', nm:'配置盘−交易盘 加速度差', unit:'亿元',
+    f:'先算每家 ACC<sub>i</sub> = MA<sub>5</sub>(x<sub>i</sub>) &minus; MA<sub>20</sub>(x<sub>i</sub>)<br>'+
+      'DA<sub>t</sub> = &Sigma;<sub>i&isin;配置盘</sub> ACC<sub>i</sub> &minus; &Sigma;<sub>i&isin;交易盘</sub> ACC<sub>i</sub>',
+    d:'动量差的「速度版」：不看谁买得多，看谁在加速买。比动量差更早转向，适合做拐点提示。' }
+];
+
+var OP_MAP = {};
+DERIVED_DOC.forEach(function(o){ OP_MAP[o.op] = o; });
+
+/* 卡片/悬浮提示用的短公式 */
+function opShort(op){
+  var o = OP_MAP[op];
+  if(!o) return '';
+  var s = {
+    days_ratio:'20日内净买入为正的天数 ÷ 有效天数 ×100',
+    accel:'MA5(净买入) − MA20(净买入)',
+    slope:'10日累积净买入对时间做OLS的斜率',
+    rank:'同期限档8机构 MA20 动量的横截面分位',
+    pos_util:'(20日累计净买入 − 250日最低) ÷ (250日最高 − 最低) ×100',
+    act_anom:'MA20(|净买入|) ÷ MA250(MA20(|净买入|))',
+    cons:'(动量>0机构数 − <0机构数) ÷ 有效机构数 ×100',
+    hhi:'Σ(各机构|动量|占比²) ×100',
+    cfg_trd:'Σ配置盘 MA20 − Σ交易盘 MA20',
+    cfg_trd_accel:'Σ配置盘(MA5−MA20) − Σ交易盘(MA5−MA20)'
+  }[op];
+  return '算法：' + s;
+}
+
+function openDoc(hlOp){
+  var rows = DERIVED_DOC.map(function(o){
+    return '<tr id="docRow_'+o.op+'"'+(hlOp===o.op?' class="hl"':'')+'>'+
+      '<td><span class="tagc '+CLS_TAG[o.cls]+'">'+o.cls+'</span><br><b>'+o.nm+'</b><br>'+
+      '<span style="color:#7f8c8d">单位 '+o.unit+'</span></td>'+
+      '<td class="f">'+o.f+'</td>'+
+      '<td style="min-width:300px">'+o.d+'</td></tr>';
+  }).join('');
+  el('docBody').innerHTML =
+    '<h4>一、基础序列与符号</h4>'+
+    '<div class="kb">'+
+      '记 <code>x<sub>t</sub></code> = 某个机构在某个期限档上的<b>国债现券净买入</b>（亿元，正=净买入）。<br>'+
+      '<code>MA<sub>n</sub>(x)<sub>t</sub></code> = 截至 t 的 n 日滚动均值（<b>忽略缺失</b>按有效观测求平均）。<br>'+
+      '基础维度 = 8 家机构 × 4 个期限档；'+
+      '期限档划分为：<b>短期</b>=≤1年，<b>中期</b>=1-3年+3-5年，<b>长期</b>=5-7年+7-10年，'+
+      '<b>超长</b>=10-15年+15-20年+20-30年+&gt;30年。<br>'+
+      '<b>配置盘</b> = 保险公司、大型银行、理财子公司及理财类产品；'+
+      '<b>交易盘</b> = 证券公司、基金公司及产品、货币市场基金、中小型银行。'+
+    '</div>'+
+
+    '<h4>二、通用口径（四条，任何一条搞错结论就废）</h4>'+
+    '<div class="kb">'+
+      '1. <b>缺失绝不当 0</b>。某天该机构该档完全没有成交记录即为缺失（null），不参与任何窗口计算。'+
+      '滚动窗口内有效观测不足 <b>70%</b> 时该点输出 null；250 日区间窗口要求有效数 ≥ 60。<br>'+
+      '2. <b>滞后 1 日</b>。机构行为是 T+1 发布的，t 日看到的是 t−1 日的数据。'+
+      '做预测前必须整体右移 1 个交易日，否则是未来函数。<br>'+
+      '3. <b>零和约束</b>。净买入是全市场零和的——有人买就必有人卖，8 类机构加总恒等于 0。'+
+      '因此「全市场加总型」指标（Σ动量、Σ动量/Σ|动量|）分子恒为 0、没有信息量。'+
+      '跨机构指标只能用三种形式：<b>方向计数</b>（共识度）、<b>离散度</b>（集中度）、<b>子集差</b>（配置盘−交易盘）。<br>'+
+      '4. <b>窗口参数</b>：N<sub>快</sub>=5、N<sub>慢</sub>=20、斜率窗口=10、历史区间=250。'+
+    '</div>'+
+
+    '<h4>三、十个衍生原语</h4>'+
+    '<table class="doc"><thead><tr><th style="width:150px">指标</th>'+
+    '<th style="width:290px">计算公式</th><th>含义与用法</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+
+    '<h4>四、这三层怎么用</h4>'+
+    '<div class="kb">'+
+      '研报的核心结论是：<b>同一批净买入数据，不同的结构化变换映射的是不同的微观状态</b>——'+
+      '趋势类 = 买在一致（右侧、胜率高但抱团，2026 急牛里持仓只占 37.7%）；'+
+      '截面类 = 买在分歧（左侧、前瞻，类内相关性低，年化 2.14% 三类最高）；'+
+      '极值类 = 卖在一致（风控，最大回撤 −0.19%）。<br><br>'+
+      '但本站实跑体检的结论要一并记住：衍生层与原始 303 条<b>同源</b>，变换只是换角度看同一批数据，'+
+      '不增加底层信息量。纳入 194 条后全量 30920 套检验，置换 p 中位数 0.502、P(p&lt;0.05)=0.051，'+
+      '仍是均匀分布——<b>不存在系统性信号</b>。<br>'+
+      '所以衍生层的正确用法不是继续挖单因子，而是把「分歧 / 一致 / 拥挤」这些<b>状态</b>变成日频序列，'+
+      '用来切环境、做风控开关、决定什么时候该信哪个单因子。'+
+    '</div>';
+  el('docModal').style.display = 'flex';
+  if(hlOp){
+    var r = el('docRow_'+hlOp);
+    if(r && r.scrollIntoView) r.scrollIntoView({ block:'center' });
+  }
+}
+function closeDoc(){ el('docModal').style.display = 'none'; }
+
 /* ---------- 候选列表 ---------- */
 var GROUPS = [
   { key:'cash', name:'机构行为·现券' },
@@ -437,6 +612,10 @@ function renderGroupChips(){
       renderGroupChips(); renderDims(); renderCandidates();
     };
   });
+  var dl = el('docLinkBox');
+  dl.innerHTML = (state.group==='derived')
+    ? '<a class="doc-link" id="docBtn">查看计算方法（10 个衍生原语）→</a>' : '';
+  if(el('docBtn')) el('docBtn').onclick = function(){ openDoc(); };
 }
 
 function renderDims(){
@@ -505,7 +684,8 @@ function renderCandidates(){
   var html = list.slice(0,maxShow).map(function(s){
     var on = state.selected.filter(function(x){ return x.key===seriesKey(s); }).length>0;
     var ci = state.selected.length % PALETTE.length;
-    return '<div class="cand-item'+(on?' on':'')+'" data-key="'+seriesKey(s)+'">'+
+    var tip = (s.g==='derived') ? opShort(s.op) : s.name;
+    return '<div class="cand-item'+(on?' on':'')+'" data-key="'+seriesKey(s)+'" title="'+tip+'">'+
       '<span class="dot" style="background:'+PALETTE[ci]+'"></span>'+
       '<span class="nm">'+s.name+'</span></div>';
   }).join('');
@@ -664,9 +844,16 @@ function renderCards(sers){
       '<div class="sub">加工值 '+fmt(procLast,2)+
         (pct!==null&&pct!==undefined ? '<br>250日分位 '+fmt(pct,1)+'%' : '')+
         '<br>5日 <span class="'+cls(d5)+'">'+(d5>0?'+':'')+fmt(d5,2)+'</span>'+
-        ' · 20日 <span class="'+cls(d20)+'">'+(d20>0?'+':'')+fmt(d20,2)+'</span></div></div>';
+        ' · 20日 <span class="'+cls(d20)+'">'+(d20>0?'+':'')+fmt(d20,2)+'</span></div>'+
+      (s.g==='derived'
+        ? '<div class="frm">'+opShort(s.op)+
+          ' <a class="doc-link" data-op="'+s.op+'" style="text-decoration:underline">详解</a></div>'
+        : '')+'</div>';
   }).join('');
   el('cards').innerHTML = html;
+  Array.prototype.forEach.call(el('cards').querySelectorAll('a[data-op]'), function(a){
+    a.onclick = function(){ openDoc(a.getAttribute('data-op')); };
+  });
 }
 
 /* ---------- 事件 ---------- */
@@ -701,6 +888,9 @@ function bind(){
     renderCandidates(); renderSel(); renderAll();
   };
   el('exportBtn').onclick = exportCsv;
+  el('docClose').onclick = closeDoc;
+  el('docModal').onclick = function(e){ if(e.target===el('docModal')) closeDoc(); };
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeDoc(); });
 }
 function exportCsv(){
   var w = windowRange();
