@@ -53,8 +53,40 @@ def _load(name):
         return json.load(f)
 
 
+def _load_merged():
+    """现券合并明细。
+
+    优先用本机生成的 `bond_trading_data_merged.json`（~44MB，.gitignore 不入库）。
+    若不存在（例如在家里 clone 的干净工作区），从入库的 `bond_trading_data.json`
+    解码还原——后者是同一份数据的紧凑编码版（idx + 编码 detail），口径完全一致。
+    """
+    p = _p(F_PATH["merged"])
+    if os.path.exists(p):
+        return _load(F_PATH["merged"])
+    alt = "bond_trading_data.json"
+    if not os.path.exists(_p(alt)):
+        raise FileNotFoundError(
+            "缺少 %s（本机生成，不入库）且无 %s（入库）无法还原现券明细" % (F_PATH["merged"], alt)
+        )
+    b = _load(alt)
+    ix = b["idx"]
+    detail = [
+        {
+            "date": ix["dates"][r[0]],
+            "bond_type": ix["bond_types"][r[1]],
+            "institution": ix["institutions"][r[2]],
+            "maturity": ix["maturities"][r[3]],
+            "value": r[4],
+        }
+        for r in b["detail"]
+    ]
+    print("  [info] %s 不在工作区，已从 %s 还原 %d 条明细（同源同口径）"
+          % (F_PATH["merged"], alt, len(detail)))
+    return {"meta": dict(b["meta"]), "detail": detail}
+
+
 def build():
-    merged = _load(F_PATH["merged"])
+    merged = _load_merged()
     repo = _load(F_PATH["repo"])
     curve = _load(F_PATH["curve"])
 
