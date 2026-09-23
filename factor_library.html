@@ -208,6 +208,7 @@
       <select id="overlaySel">
         <option value="">无</option>
         <option value="yld10">10年国债(%)</option>
+        <option value="yld30">30年国债(%)</option>
         <option value="spread3010" selected>30Y−10Y 利差(%)</option>
         <option value="tl3t">3T−TL 价差</option>
       </select>
@@ -486,19 +487,45 @@ var DERIVED_DOC = [
       '筹码集中、一旦反向容易踩踏；越低说明分散，行情更可能是共识性的。' },
   { op:'cfg_trd', cls:'结构·跨机构', nm:'配置盘−交易盘 动量差 N20', unit:'亿元',
     f:'D<sub>t</sub> = &Sigma;<sub>i&isin;配置盘</sub> MA<sub>20</sub>(x<sub>i</sub>)<sub>t</sub> &minus; &Sigma;<sub>i&isin;交易盘</sub> MA<sub>20</sub>(x<sub>i</sub>)<sub>t</sub>',
-    d:'配置盘（保险 / 大行 / 理财子，负债端稳定、买入偏战略）减去交易盘（券商 / 基金 / 货基 / 中小行，波段与流动性博弈）。'+
-      '&gt;0 说明配置盘主导这一期限档——通常是真实需求、行情更可持续；&lt;0 说明是交易盘在推，容易反转。'+
-      '注意两侧共 7 类，「其他」未纳入，所以不会因零和恒等于 0。' },
+    d:'配置盘（负债端稳定、买入偏战略）减去交易盘（波段与流动性博弈）。'+
+      '&gt;0 说明配置盘主导这一期限档——通常是真实需求、行情更可持续；&lt;0 说明是交易盘在推，容易反转。<br>'+
+      '<b>★ 两侧机构归属随期限档变化</b>（见第一节表格）：超长端「其他」是主要交易对手故计入交易盘、'+
+      '理财不参与；其余期限理财是配置主力故计入配置盘。两侧合计不等于全部 8 类，因此不会因零和恒等于 0。' },
   { op:'cfg_trd_accel', cls:'结构·跨机构', nm:'配置盘−交易盘 加速度差', unit:'亿元',
     f:'先算每家 ACC<sub>i</sub> = MA<sub>5</sub>(x<sub>i</sub>) &minus; MA<sub>20</sub>(x<sub>i</sub>)<br>'+
       'DA<sub>t</sub> = &Sigma;<sub>i&isin;配置盘</sub> ACC<sub>i</sub> &minus; &Sigma;<sub>i&isin;交易盘</sub> ACC<sub>i</sub>',
-    d:'动量差的「速度版」：不看谁买得多，看谁在加速买。比动量差更早转向，适合做拐点提示。' }
+    d:'动量差的「速度版」：不看谁买得多，看谁在加速买。比动量差更早转向，适合做拐点提示。'+
+      '机构归属与动量差完全一致（同样按期限档取）。' }
 ];
 
 var OP_MAP = {};
 DERIVED_DOC.forEach(function(o){ OP_MAP[o.op] = o; });
 
 /* 卡片/悬浮提示用的短公式 */
+/* 配置盘/交易盘的机构归属按期限档变化 —— 直接从 JSON meta 渲染，保证与后端一致 */
+function cfgSidesHtml(){
+  var g = (D && D.meta && D.meta.groups) ? (D.meta.groups[3] || {}) : {};
+  var s = g.cfg_sides || {};
+  var keys = ['短期','中期','长期','超长'].filter(function(k){ return !!s[k]; });
+  if(!keys.length){
+    return '<b>配置盘</b>／<b>交易盘</b>的机构归属见后端 factor_derived.sides_for()。';
+  }
+  var rows = keys.map(function(k){
+    return '<tr><td><b>'+k+'</b>（'+TENOR_DESC[k]+'）</td>'+
+      '<td>'+(s[k].config||[]).join('、')+'</td>'+
+      '<td>'+(s[k].trading||[]).join('、')+'</td></tr>';
+  }).join('');
+  return '<b>配置盘</b>与<b>交易盘</b>的机构归属<b>随期限档变化</b>'+
+    '（下表读自线上 factor_library.json，即当前实际生效的分组）：'+
+    '<table class="doc" style="margin-top:6px"><thead><tr>'+
+    '<th style="width:170px">期限档</th><th>配置盘</th><th>交易盘</th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table>'+
+    '<span style="color:#7f8c8d">为什么分档：超长端理财参与度低，资管类（「其他」）才是主要交易对手；'+
+    '中短端理财是配置主力，故归入配置盘。</span>';
+}
+var TENOR_DESC = { '短期':'≤1年', '中期':'1-3年+3-5年', '长期':'5-7年+7-10年',
+                   '超长':'10-15年+15-20年+20-30年+&gt;30年' };
+
 function opShort(op){
   var o = OP_MAP[op];
   if(!o) return '';
@@ -533,8 +560,7 @@ function openDoc(hlOp){
       '基础维度 = 8 家机构 × 4 个期限档；'+
       '期限档划分为：<b>短期</b>=≤1年，<b>中期</b>=1-3年+3-5年，<b>长期</b>=5-7年+7-10年，'+
       '<b>超长</b>=10-15年+15-20年+20-30年+&gt;30年。<br>'+
-      '<b>配置盘</b> = 保险公司、大型银行、理财子公司及理财类产品；'+
-      '<b>交易盘</b> = 证券公司、基金公司及产品、货币市场基金、中小型银行。'+
+      cfgSidesHtml()+
     '</div>'+
 
     '<h4>二、通用口径（四条，任何一条搞错结论就废）</h4>'+
@@ -546,7 +572,10 @@ function openDoc(hlOp){
       '3. <b>零和约束</b>。净买入是全市场零和的——有人买就必有人卖，8 类机构加总恒等于 0。'+
       '因此「全市场加总型」指标（Σ动量、Σ动量/Σ|动量|）分子恒为 0、没有信息量。'+
       '跨机构指标只能用三种形式：<b>方向计数</b>（共识度）、<b>离散度</b>（集中度）、<b>子集差</b>（配置盘−交易盘）。<br>'+
-      '4. <b>窗口参数</b>：N<sub>快</sub>=5、N<sub>慢</sub>=20、斜率窗口=10、历史区间=250。'+
+      '4. <b>窗口参数</b>：N<sub>快</sub>=5、N<sub>慢</sub>=20、斜率窗口=10、历史区间=250。<br>'+
+      '5. <b>数据只覆盖二级现券交易</b>。机构在<b>一级市场的认购不计入</b>本数据集，'+
+      '所以券商、大型银行这类一级参与多的机构，其二级净买入<b>不等于真实配置力度</b>，会被系统性低估。'+
+      '跨机构横向比较、以及用配置盘−交易盘做判断时都要留这个余地。'+
     '</div>'+
 
     '<h4>三、十个衍生原语</h4>'+
@@ -750,6 +779,7 @@ function overlaySeries(){
     return s ? expand(s) : null;
   };
   if(state.overlay==='yld10') return { name:'10年国债(%)', data:get('10年国债') };
+  if(state.overlay==='yld30') return { name:'30年国债(%)', data:get('30年国债') };
   if(state.overlay==='spread3010'){
     var a=get('30年国债'), b=get('10年国债');
     if(!a||!b) return null;

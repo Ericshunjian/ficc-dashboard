@@ -166,7 +166,7 @@ def build():
                 "repo": "repo_trading_data.json（质押式回购，亿元 / %）",
                 "curve": "yield_curve_data.json（%，内部存百分数：123.02 = 1.2302%）",
             },
-            "units": {"cash": "亿元", "repo": "亿元 / 百分点", "curve": "%（百分数存储）"},
+            "units": {"cash": "亿元", "repo": "亿元 / 百分点", "curve": "%（如 1.6829 = 1.6829%）"},
             "groups": [
                 {"key": "cash", "name": "机构行为 · 现券", "count": len(cash),
                  "dims": {"bond_type": CASH_BOND_TYPES, "institution": insts, "maturity": mats}},
@@ -176,7 +176,9 @@ def build():
                  "dims": {"cat": list(curve_cats.keys())}},
                 {"key": "derived", "name": "机构行为 · 现券衍生因子", "count": len(derived),
                  "dims": {"cls": dmeta["classes"], "institution": dmeta["institutions"],
-                          "tenor": dmeta["tenors"]}},
+                          "tenor": dmeta["tenors"]},
+                 # 配置盘/交易盘的机构归属随期限档变化，页面据此展示
+                 "cfg_sides": dmeta.get("cfg_sides", {})},
             ],
             "note": "L0 原始序列池。变换（MA / 滚动百分位 / Z-score / 差分）在前端实时计算，不预存。",
         },

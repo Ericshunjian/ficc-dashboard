@@ -17,8 +17,14 @@
     极值 extreme act_anom_N20     交易活跃度异常：N 日日均买卖量 / 250 日常态（倍）
     结构 struct  cons_N20         共识度：动量>0 与 <0 的机构数净占比（−100~100）
     结构 struct  hhi_N20          活跃集中度：Σ(机构|动量|占比²)×100，越大越被少数机构主导
-    结构 struct  cfg_trd_N20      配置盘 − 交易盘 的 N 日动量差（亿元）
-    结构 struct  cfg_trd_accel    配置盘 − 交易盘 的加速度差（亿元）
+    结构 struct  cfg_trd_N20      配置盘 − 交易盘 的 N 日动量差（亿元，机构归属按期限档）
+    结构 struct  cfg_trd_accel    配置盘 − 交易盘 的加速度差（亿元，同上）
+
+§分组依据（配置盘/交易盘的机构归属随期限档变化，见 sides_for）：
+    超长（>10Y）  配置盘 = 大型银行 + 保险公司      交易盘 = 基金公司及产品 + 其他
+    其余期限      配置盘 = 大型银行 + 理财子公司 + 保险公司  交易盘 = 基金公司及产品
+数据口径提示：本套数据是【二级现券交易】净买入。机构在一级市场的认购不计入，
+因此券商、大型银行等机构的二级净买入并不等于其真实配置力度，解读时需留意。
 
 注意：机构净买入是全市场零和的（买入必有对手方卖出），因此"全市场加总"型
 指标（Σ动量）恒等于 0、无信息量。跨机构指标必须建立在方向、离散度或子集差
@@ -39,8 +45,20 @@ TENORS = [
 ]
 
 # 配置盘：负债端稳定、买入偏战略；交易盘：波段与流动性博弈
-CONFIG_INSTS = ["保险公司", "大型银行", "理财子公司及理财类产品"]
-TRADING_INSTS = ["证券公司", "基金公司及产品", "货币市场基金", "中小型银行"]
+# ★ 配置盘/交易盘的机构归属【随期限档变化】（用户 2026-09-23 指定，见 §分组依据）：
+#   超长（>10Y）  配置盘 = 大行 + 保险      交易盘 = 基金 + 其他（券商资管等资管机构）
+#   其余期限      配置盘 = 大行 + 理财 + 保险  交易盘 = 基金
+#   理由：超长端理财参与度低，资管类（"其他"）反而是主要交易对手；
+#        中短端理财是配置主力，故归入配置盘。
+CONFIG_SIDES = {
+    "超长": (["大型银行", "保险公司"], ["基金公司及产品", "其他"]),
+}
+DEFAULT_SIDES = (["大型银行", "理财子公司及理财类产品", "保险公司"], ["基金公司及产品"])
+
+
+def sides_for(tname):
+    """返回 (配置盘机构列表, 交易盘机构列表)"""
+    return CONFIG_SIDES.get(tname, DEFAULT_SIDES)
 
 N_FAST, N_SLOW = 5, 20
 N_MID = 10
@@ -339,6 +357,7 @@ def build(merged, idx, n_dates):
                 "extreme", "act_anom", N_SLOW, inst, tname, aa))
 
     # ---------- 结构类：跨机构合成 ----------
+    sides_meta = {}
     for tname in tenor_names:
         M = np.vstack([mom[(inst, tname)] for inst in insts])
         # 零和约束下只有方向 / 离散度 / 子集差才有信息量
@@ -365,13 +384,14 @@ def build(merged, idx, n_dates):
             "衍生·%s·%s·全机构·活跃集中度N%d" % (BOND_TYPE, tname, N_SLOW),
             "struct", "hhi", N_SLOW, "全机构", tname, hhi))
 
-        # 配置盘 − 交易盘
-        def _side(names, mat, tname_):
-            rows = [mat[insts.index(x)] for x in names if x in insts]
-            return rows
+        # 配置盘 − 交易盘（机构归属按期限档取，见 sides_for）
+        cfg_names, trd_names = sides_for(tname)
 
-        cfg_rows = _side(CONFIG_INSTS, M, tname)
-        trd_rows = _side(TRADING_INSTS, M, tname)
+        def _side(names, mat):
+            return [mat[insts.index(x)] for x in names if x in insts]
+
+        cfg_rows = _side(cfg_names, M)
+        trd_rows = _side(trd_names, M)
         cfg = np.nansum(np.vstack(cfg_rows), axis=0) if cfg_rows else None
         trd = np.nansum(np.vstack(trd_rows), axis=0) if trd_rows else None
         if cfg is not None and trd is not None:
@@ -384,15 +404,18 @@ def build(merged, idx, n_dates):
             a = base[(inst, tname)]
             acc_rows.append(_roll_mean(a, N_FAST) - _roll_mean(a, N_SLOW))
         A = np.vstack(acc_rows)
-        cfg_a = np.nansum(np.vstack([A[insts.index(x)] for x in CONFIG_INSTS if x in insts]), axis=0)
-        trd_a = np.nansum(np.vstack([A[insts.index(x)] for x in TRADING_INSTS if x in insts]), axis=0)
+        cfg_a = np.nansum(np.vstack([A[insts.index(x)] for x in cfg_names if x in insts]), axis=0)
+        trd_a = np.nansum(np.vstack([A[insts.index(x)] for x in trd_names if x in insts]), axis=0)
         out.append(_pack(
             "衍生·%s·%s·配置盘−交易盘·加速度差" % (BOND_TYPE, tname),
             "struct", "cfg_trd_accel", N_SLOW, "全机构", tname, cfg_a - trd_a))
+        sides_meta[tname] = {"config": cfg_names, "trading": trd_names}
 
     out = [x for x in out if x]
     return out, {
         "institutions": insts,
         "tenors": tenor_names,
         "classes": [CLS_LABEL[c] for c in ("trend", "cross", "extreme", "struct")],
+        # 配置盘/交易盘的实际机构归属（按期限档），供页面与文档展示
+        "cfg_sides": sides_meta,
     }
