@@ -72,12 +72,19 @@ TAIL_Z = 1.5            # 尾部赔率阈值
 RECENT6 = 125           # "近 6 个月"交易日数
 CURVE_PTS = 20          # 详情曲线降采样点数（控制 factor_checkup_detail.json 体积）
 
-# 是否把「机构行为·现券衍生因子」纳入周一全量体检。
-# 默认关闭：衍生层与原始 303 条同源（同一批净买入的变换），纳入后会显著加重
-# 多重检验负担、并把周一耗时从 ~130s 拉长到 ~210s。
-# 需要单独检验衍生层时，用环境变量临时打开，不改代码：
-#     FICC_CHECKUP_DERIVED=1 python prepare_factor_checkup.py
-INCLUDE_DERIVED = os.environ.get("FICC_CHECKUP_DERIVED", "0") == "1"
+# 是否把「机构行为·现券衍生因子」(194 条) 纳入周一全量体检。
+# 默认开启（2026-09-23 用户要求：体检必须覆盖衍生层）。
+#   纳入后规模：303 → 497 条/块，全量 ~31000 套，耗时从 ~130s 拉长到 ~220s。
+# 想退回只看原始 303 条时用环境变量关闭，不改代码：
+#     FICC_CHECKUP_DERIVED=0 python prepare_factor_checkup.py
+INCLUDE_DERIVED = os.environ.get("FICC_CHECKUP_DERIVED", "1") == "1"
+
+# BH-FDR 的校正范围。
+#   "group"：每个 (形态×目标×周期) 块内 **按因子大类分别** 校正（cash/repo/curve/derived 各成一族）。
+#     理由：四类数据不同源，分层校正既不会让衍生层的 194 条稀释原始层的显著性，
+#     也不会让原始层的多重检验负担转嫁到衍生层；加入/移除任一族，其余族的判定不变。
+#   "block"：老口径，整块混在一起校正 —— 加入衍生层后 m 变大，会系统性地压低原始层结论。
+FDR_SCOPE = os.environ.get("FICC_CHECKUP_FDR_SCOPE", "group")
 COND_EDGES = [0, 10, 25, 50, 75, 90, 100]   # 条件分布：滚动经验分位切点
 
 COLS = ["g", "k", "label", "n", "ic", "icp", "icir", "t", "ti", "pind", "win", "wl", "ws",
@@ -285,6 +292,30 @@ def bh_fdr(pvals, alpha=FDR_ALPHA):
     return sig
 
 
+def bh_fdr_by_group(pvals, groups, alpha=FDR_ALPHA):
+    """块内按因子大类分层 BH-FDR：每个大类各自校正一次。
+
+    返回 (sig 布尔数组, 每类的统计量 dict)。
+    分层后任一大类的判定与其他大类的条数无关，加入衍生层不会改变原始三族结论。"""
+    p = np.asarray(pvals, dtype=float)
+    g = np.asarray(groups)
+    sig = np.zeros(len(p), dtype=bool)
+    stat = {}
+    for gv in sorted(set(g.tolist())):
+        idx = np.where(g == gv)[0]
+        if len(idx) == 0:
+            continue
+        s = bh_fdr(p[idx], alpha)
+        sig[idx] = s
+        pv = p[idx][np.isfinite(p[idx])]
+        stat[str(gv)] = {
+            "n": int(len(idx)),
+            "sig": int(s.sum()),
+            "median_p": round(float(np.median(pv)), 4) if len(pv) else None,
+        }
+    return sig, stat
+
+
 # ---------------- 数据装载 ----------------
 
 def load_library():
@@ -317,7 +348,9 @@ def load_library():
             v = np.full(D, np.nan)
             i0, arr = s["i0"], np.asarray(s["v"], dtype=float)
             v[i0:i0 + len(arr)] = arr
-            series.append(("derived", f"{s['op']}|{s['inst']}|{s['tenor']}", s["name"], v))
+            # k 四段：op|机构|期限档|类别 —— 页面二级维度按 (类别, 机构, 期限档) 筛选，
+            # 与因子库页「机构行为·现券衍生」的三维筛选保持一致
+            series.append(("derived", f"{s['op']}|{s['inst']}|{s['tenor']}|{s['cls']}", s["name"], v))
     return lib, dates, series, cmap
 
 
@@ -426,6 +459,10 @@ def make_form(x, form):
     return x
 
 
+GROUP_CN = {"cash": "机构行为·现券", "repo": "机构行为·质押式回购",
+            "curve": "估值·曲线与期货", "derived": "机构行为·现券衍生因子"}
+
+
 # ---------------- 主体 ----------------
 
 def main():
@@ -481,6 +518,7 @@ def main():
 
     blocks = {}
     dblocks = {}
+    fdr_stat = {}
     n_tests = 0
     for fid, _fname in FORMS:
         xlist = forms_cache[fid]
@@ -601,8 +639,24 @@ def main():
                     ic_list.append(ic if np.isfinite(ic) else 0.0)
 
                 # BH-FDR：主判据用不重叠子样本 t 的 p（不依赖渐近假设）
-                sig = bh_fdr(pvals)
-                sigp = bh_fdr(pperms)
+                glist = [r[0] for r in rows]
+                if FDR_SCOPE == "group":
+                    sig, stat_i = bh_fdr_by_group(pvals, glist)
+                    sigp, stat_p = bh_fdr_by_group(pperms, glist)
+                else:
+                    sig, stat_i = bh_fdr(pvals), {}
+                    sigp, stat_p = bh_fdr(pperms), {}
+                    stat_i = {"all": {"n": len(rows), "sig": int(sig.sum())}}
+                    stat_p = {"all": {"n": len(rows), "sig": int(sigp.sum())}}
+                for gv, st in stat_i.items():
+                    fdr_stat.setdefault(gv, {"n": 0, "sig_ind": 0, "sig_perm": 0,
+                                             "median_p": [], "blocks": 0})
+                    fdr_stat[gv]["n"] += st["n"]
+                    fdr_stat[gv]["sig_ind"] += st["sig"]
+                    fdr_stat[gv]["sig_perm"] += stat_p.get(gv, {}).get("sig", 0)
+                    fdr_stat[gv]["blocks"] += 1
+                    if st.get("median_p") is not None:
+                        fdr_stat[gv]["median_p"].append(st["median_p"])
                 aic = np.asarray(ic_list, dtype=float)
                 strong = np.where(np.isfinite(aic), np.abs(aic) >= MIN_IC_STRONG, False)
                 for i in range(len(rows)):
@@ -641,6 +695,9 @@ def main():
         "detail_file": "factor_checkup_detail.json",
         "min_ic_strong": MIN_IC_STRONG,
         "horizons": HORIZONS,
+        "include_derived": INCLUDE_DERIVED,
+        "fdr_scope": FDR_SCOPE,
+        "group_cn": GROUP_CN,
         "notes": [
             "ic = Spearman(因子, 未来N日目标变动)；icp = Pearson",
             "t = Newey-West 修正 t 值（滞后 max(N-1, 自动规则)），功效高但 N 大时易虚高",
@@ -653,6 +710,8 @@ def main():
             "qd = Q5-Q1；qt = Q5-Q1 的 NW-t；mono = 单调性(1递增/-1递减/0非单调)",
             f"因子滞后 {LAG} 日使用（机构行为 T+1 发布）",
             "turn = 持仓方向日均变化频率；kurt/acf 为形态标签，不参与筛选",
+            f"BH-FDR 校正范围 = {FDR_SCOPE}：块内按因子大类分别校正，各大类结论互不影响",
+            f"衍生层纳入 = {INCLUDE_DERIVED}（194 条「机构行为·现券衍生因子」，与原始 303 条同源变换）",
         ],
     }
     # 全局 p 值分布：若均匀则说明整批因子无系统性信号（硬证据）
@@ -679,6 +738,34 @@ def main():
         print(f"\n全局 p(置换) 分布：n={len(allp)}  P(p<0.05)={f05:.3f}  "
               f"P(p<0.10)={f10:.3f}  中位数={med:.3f}")
         print(f"  → {verdict}")
+
+    # 分大类 p 值分布 + FDR 通过数：衍生层是否自带信号，一眼可见
+    gi = 0
+    pbg, fbg = {}, {}
+    for b in blocks.values():
+        for r in b:
+            gv = r[gi]
+            pv = r[pi]
+            pbg.setdefault(gv, []).append(pv)
+    for gv, ps in pbg.items():
+        arr = np.array([x for x in ps if x is not None], dtype=float)
+        if not len(arr):
+            continue
+        fbg[gv] = {
+            "name": GROUP_CN.get(gv, gv),
+            "rows": len(ps),
+            "p_lt_05": round(float((arr < 0.05).mean()), 4),
+            "median": round(float(np.median(arr)), 4),
+        }
+        st = fdr_stat.get(gv)
+        if st:
+            fbg[gv]["sig_ind"] = st["sig_ind"]
+            fbg[gv]["sig_perm"] = st["sig_perm"]
+        print(f"  [{GROUP_CN.get(gv, gv)}] 行 {fbg[gv]['rows']}  "
+              f"P(p<0.05)={fbg[gv]['p_lt_05']}  中位={fbg[gv]['median']}  "
+              f"FDR显著 {fbg[gv].get('sig_ind', 0)}（置换也认可 {fbg[gv].get('sig_perm', 0)}）")
+    if fbg:
+        meta["p_dist_by_group"] = fbg
 
     payload = {"meta": meta, "blocks": blocks}
 

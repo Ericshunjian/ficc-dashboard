@@ -1411,7 +1411,8 @@ def main():
     try:
         import datetime as _dt
         if _dt.datetime.now().weekday() != 0:
-            log.info("[11/11] 因子体检：非周一，跳过（研究性质，每周一全量重算，约 1 分钟）")
+            log.info("[11/11] 因子体检：非周一，跳过（研究性质，每周一全量重算；"
+                     "含衍生层 497 条×6 目标×3 形态×4 周期 ≈ 3.1 万套，约 4 分钟）")
         else:
             log.info("[11/11] 因子体检 (factor_checkup.json)")
             import prepare_factor_checkup

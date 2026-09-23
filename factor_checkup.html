@@ -168,10 +168,11 @@ var S = { tgt:'s3010', N:5, form:'pct', grp:'', dims:{}, sig:0, icmin:0, q:'',
    一级：数据大类（对应 factor_library 的分组）
    二级：组内维度，随一级动态生成下拉；筛选后表格按"第一个未筛选维度"分段折叠   */
 var GROUPS = [
-  {id:'',     name:'全部'},
-  {id:'cash', name:'机构行为·现券'},
-  {id:'repo', name:'机构行为·回购'},
-  {id:'curve',name:'估值·曲线期货'}
+  {id:'',       name:'全部'},
+  {id:'cash',   name:'机构行为·现券'},
+  {id:'repo',   name:'机构行为·回购'},
+  {id:'curve',  name:'估值·曲线期货'},
+  {id:'derived',name:'机构行为·现券衍生'}
 ];
 var FIELD_CN = {net:'净融出', rev_bal:'逆回购余额', repo_bal:'正回购余额', rate_spread:'正回购利率−DR001'};
 
@@ -193,6 +194,12 @@ var DIMS = {
   ],
   curve: [
     {k:'cat', name:'类别', get:function(r){ return String(r[IDX.label]).split('·')[0]; }}
+  ],
+  /* derived 的 k = op|机构|期限档|类别（第四段为研报四分类，供二级筛选用） */
+  derived: [
+    {k:'cls',  name:'类别', get:function(r){ return parts(r)[3]; }},
+    {k:'inst', name:'机构', get:function(r){ return parts(r)[1]; }},
+    {k:'ten',  name:'期限档', get:function(r){ return parts(r)[2]; }}
   ]
 };
 function dimsOf(g){ return DIMS[g] || []; }
@@ -387,8 +394,21 @@ function buildDimBar(){
   var bar = el('dimBar'); bar.innerHTML='';
   if(!CK) return;
   if(!S.grp){
-    bar.innerHTML = '<span class="hint">当前按「大类」分段，每组默认显示前 '+S.topN+
-      ' 条（按当前排序列）· 点上方分组进入组内，可用维度进一步收窄</span>';
+    var h0=document.createElement('span'); h0.className='hint';
+    h0.textContent = '当前按「大类」分段，每组默认显示前 '+S.topN+
+      ' 条（按当前排序列）· 点上方分组进入组内，可用维度进一步收窄';
+    bar.appendChild(h0);
+    /* 各大类的 p 值分布摘要：衍生层有没有自带信号，一眼可见 */
+    var pb = CK.meta.p_dist_by_group;
+    if(pb){
+      Object.keys(pb).forEach(function(g){
+        var d = pb[g];
+        var s = document.createElement('span'); s.className='hint'; s.style.marginLeft='12px';
+        s.textContent = d.name + '：P(p<0.05)=' + d.p_lt_05 + ' · 中位 ' + d.median +
+          (d.sig_ind===undefined ? '' : (' · FDR显著 '+d.sig_ind+'（置换认可 '+d.sig_perm+'）'));
+        bar.appendChild(s);
+      });
+    }
     return;
   }
   dimsOf(S.grp).forEach(function(d){
