@@ -706,11 +706,16 @@ function drawExtras(ri, unit){
   if(DET && DET.blocks[go_key]){ go(DET); return; }
   var df = (CK.detail_files||{})[go_key];
   if(!df){ extrasFail('（无该块的详情文件映射）'); return; }
+  var ps0 = go_key.split('|'), dfm = ps0[0], dtg = ps0[1];
   fetch(df+'?t='+Date.now()).then(function(x){ return x.json(); })
     .then(function(j){
-      if(!DET) DET = {blocks:{}, cond_edges:j.cond_edges, curve_pts:j.curve_pts};
+      if(!DET) DET = {blocks:{}};
+      DET.cond_edges = j.cond_edges || DET.cond_edges || [0,10,25,50,75,90,100];
+      DET.curve_pts = j.curve_pts || DET.curve_pts || 20;
+      // ★ 分片文件内部 blocks 的 key 只有 N，必须与主表一致地补上「形态|目标|」前缀，
+      //   否则 det.blocks[go_key] 永远取不到（所有因子都会显示"该行无详情数据"）
       var b = j.blocks||{};
-      for(var K in b) DET.blocks[K] = b[K];
+      for(var N in b){ DET.blocks[dfm+'|'+dtg+'|'+N] = b[N]; }
       go(DET);
     })
     .catch(function(){ extrasFail('（详情数据加载失败）'); });
