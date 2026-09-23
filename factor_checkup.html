@@ -301,7 +301,7 @@ function load(){
       var m = j.meta;
       el('subtitle').textContent =
         'L2 有效性检验 · ' + m.n_tests + ' 套 · 数据 '+m.date_range[0]+' ~ '+m.date_range[1]+
-        ' · 因子滞后 '+m.lag+' 日 · '+m.bootstrap;
+        ' · 因子滞后 '+m.lag+' 个期货交易日 · '+m.bootstrap;
       if(m.p_dist){
         var pd=m.p_dist;
         el('subtitle').innerHTML += ' <b style="color:#D85A30">｜全局 p(置换) 分布：'+

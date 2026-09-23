@@ -2,13 +2,13 @@
 """L2 因子体检层 —— 对 factor_library 的每条序列做时序有效性检验。
 
 设计要点（防坑清单）：
-1. **机构行为 T+1 发布** → 因子默认 LAG=1 使用，t 日只能看到 t-1 的因子值。
+1. **机构行为当日收盘后可得** → 因子默认滞后 1 个期货交易日使用。
 2. **分组用滚动 250 日 Z-score**，绝不用全样本分位（那是未来函数）。
 3. **t 值一律 Newey-West 修正**（N 日收益相邻样本重叠 N-1/N）。
 4. **显著性用 FFT 循环置换检验**：保留 y 的完整自相关结构，一次算出全部 n 个
    循环移位的分布，得到精确 p 值。确定性、可复现、无随机种子，O(n log n)。
 5. **多重检验 BH-FDR 5%**：每个 (形态×目标×周期) 组合内独立校正。
-6. 目标定义配置化（TARGETS），以后加 4TS-T / TL 单边等只需加一行。
+6. 目标定义配置化（TARGETS）；3T−TL、4TS−T 预测合成价差的原始变动。
 
 输出 factor_checkup.json，列为紧凑数组（列名见 meta.cols）以控制体积。
 """
@@ -44,7 +44,8 @@ FORMS = [("raw", "原值"), ("pct", "MA10→60日百分位"), ("diff", "5日差�
 #   mode=yield   : legs 为 (曲线名, 权重)，y = Σ w·Y，取 N 日变动 ×100 → bp
 #   mode=futures : legs 为 (期货主力名, 手数[, 面值百万])，默认面值 100 万
 #                  y = Σ w·fv·ΔP / Σ|w|·fv·P × 100 → %
-#                  若加 "as": "price"，则直接输出价差报价的点数变动 → 点
+#                  若加 "as": "spread"，则输出合成价差报价的原始变动 → 点
+#                  若加 "as": "price"，则输出按名义金额归一的报价变动 → 点
 #   可选 "maxN"  : 该目标最长预测周期（样本短的品种用它限制，如 TL 仅 2023-04 起）
 # ★ 方向约定：符号必须与该目标对应的收益率利差同向（3T−TL 与「30Y−10Y 走阔」同向）
 TARGETS = [
@@ -53,10 +54,10 @@ TARGETS = [
     {"id": "s3010", "name": "30Y−10Y利差", "mode": "yield",
      "legs": [("30年国债", 1), ("10年国债", -1)], "unit": "bp"},
     {"id": "tl3t", "name": "3T−TL", "mode": "futures",
-     "legs": [("T主力", 3), ("TL主力", -1)], "unit": "%", "maxN": 10},
+     "legs": [("T主力", 3), ("TL主力", -1)], "unit": "点", "as": "spread", "maxN": 10},
     # ★ 4TS−T 的「4」= 名义 400 万 = 2 手 TS(200万/手) − 1 手 T(100万)
     {"id": "ts4t", "name": "4TS−T", "mode": "futures",
-     "legs": [("TS主力", 2, 200), ("T主力", -1, 100)], "unit": "%"},
+     "legs": [("TS主力", 2, 200), ("T主力", -1, 100)], "unit": "点", "as": "spread"},
     {"id": "t", "name": "T单边", "mode": "futures",
      "legs": [("T主力", 1)], "unit": "点", "as": "price"},
     {"id": "tl", "name": "TL单边", "mode": "futures",
@@ -64,7 +65,7 @@ TARGETS = [
 ]
 
 HORIZONS = [1, 5, 10, 20]
-LAG = 1                 # 因子滞后使用天数（机构行为 T+1 发布）
+LAG = 1                 # 当日收盘后数据最早在下一期货交易日使用
 MIN_OBS = 200           # 最小有效样本
 Z_WIN = 250             # 分组所用滚动 Z-score 窗口
 ICIR_WIN = 60           # 滚动 IC 窗口
@@ -75,16 +76,16 @@ TAIL_Z = 1.5            # 尾部赔率阈值
 RECENT6 = 125           # "近 6 个月"交易日数
 CURVE_PTS = 20          # 详情曲线降采样点数（控制 factor_checkup_detail.json 体积）
 
-# 是否把「机构行为·现券衍生因子」(194 条) 纳入周一全量体检。
+# 是否把「机构行为·现券衍生因子」纳入周一全量体检，数量从因子库读取。
 # 默认开启（2026-09-23 用户要求：体检必须覆盖衍生层）。
-#   纳入后规模：303 → 497 条/块，全量 ~31000 套，耗时从 ~130s 拉长到 ~220s。
+#   纳入后计算量随原始期限档的数据覆盖情况变化。
 # 想退回只看原始 303 条时用环境变量关闭，不改代码：
 #     FICC_CHECKUP_DERIVED=0 python prepare_factor_checkup.py
 INCLUDE_DERIVED = os.environ.get("FICC_CHECKUP_DERIVED", "1") == "1"
 
 # BH-FDR 的校正范围。
 #   "group"：每个 (形态×目标×周期) 块内 **按因子大类分别** 校正（cash/repo/curve/derived 各成一族）。
-#     理由：四类数据不同源，分层校正既不会让衍生层的 194 条稀释原始层的显著性，
+#     理由：四类数据不同源，分层校正不会让衍生层的检验数量稀释原始层的显著性，
 #     也不会让原始层的多重检验负担转嫁到衍生层；加入/移除任一族，其余族的判定不变。
 #   "block"：老口径，整块混在一起校正 —— 加入衍生层后 m 变大，会系统性地压低原始层结论。
 FDR_SCOPE = os.environ.get("FICC_CHECKUP_FDR_SCOPE", "group")
@@ -354,6 +355,11 @@ def load_library():
             # k 四段：op|机构|期限档|类别 —— 页面二级维度按 (类别, 机构, 期限档) 筛选，
             # 与因子库页「机构行为·现券衍生」的三维筛选保持一致
             series.append(("derived", f"{s['op']}|{s['inst']}|{s['tenor']}|{s['cls']}", s["name"], v))
+    # 本轮研究的两个价差都含 T：统一按有 T 价格的期货交易日计窗口和滞后。
+    sessions = np.flatnonzero(np.isfinite(cmap["T主力"]))
+    dates = [dates[i] for i in sessions]
+    series = [(g, k, label, values[sessions]) for g, k, label, values in series]
+    cmap = {name: values[sessions] for name, values in cmap.items()}
     return lib, dates, series, cmap
 
 
@@ -375,6 +381,9 @@ def build_target(spec, cmap, D):
             pnl = pnl + w * fv * p
             denom = denom + abs(w) * fv * p
             notional += abs(w) * fv
+        if spec.get("as") == "spread":
+            # 3T−TL 与 4TS−T 都是每百元面值的合成报价。
+            return pnl, np.full(D, 100.0)
         if spec.get("as") == "price":
             # 价差报价（每百元面值）：除以名义金额而非价格加权分母
             return pnl, np.full(D, notional if notional > 0 else np.nan)
@@ -390,7 +399,7 @@ def target_change(spec, lvl, denom, N, D):
     valid = np.isfinite(lvl) & np.isfinite(nxt)
     if spec["mode"] == "yield":
         out[valid] = (nxt[valid] - lvl[valid]) * 100.0      # bp
-    elif spec.get("as") == "price":
+    elif spec.get("as") in ("price", "spread"):
         d = np.where((denom > 0) & np.isfinite(denom), denom, np.nan)
         out[valid] = (nxt[valid] - lvl[valid]) / d[valid]   # 点（价差报价的涨跌，几分几毛）
     else:
@@ -685,6 +694,7 @@ def main():
         "generated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "date_range": [dates[0], dates[-1]],
         "n_dates": D,
+        "calendar": "T主力有价格的期货交易日",
         "lag": LAG,
         "min_obs": MIN_OBS,
         "z_win": Z_WIN,
@@ -718,10 +728,11 @@ def main():
             "t 显著而 ti/p 不显著 ⇒ 信号多半来自共同低频趋势，慎用",
             "q1..q5 = 按滚动250日Z-score 五分组的未来N日平均收益（目标单位）",
             "qd = Q5-Q1；qt = Q5-Q1 的 NW-t；mono = 单调性(1递增/-1递减/0非单调)",
-            f"因子滞后 {LAG} 日使用（机构行为 T+1 发布）",
+            f"机构行为当日收盘后可得，因子滞后 {LAG} 个期货交易日使用",
+            "因子和目标均按期货交易日计；3T−TL、4TS−T 为原始价差的未来变动（点）",
             "turn = 持仓方向日均变化频率；kurt/acf 为形态标签，不参与筛选",
             f"BH-FDR 校正范围 = {FDR_SCOPE}：块内按因子大类分别校正，各大类结论互不影响",
-            f"衍生层纳入 = {INCLUDE_DERIVED}（194 条「机构行为·现券衍生因子」，与原始 303 条同源变换）",
+            f"衍生层纳入 = {INCLUDE_DERIVED}（{len(lib.get('derived', []))} 条「机构行为·现券衍生因子」，与原始现券序列同源变换）",
         ],
     }
     # 全局 p 值分布：若均匀则说明整批因子无系统性信号（硬证据）

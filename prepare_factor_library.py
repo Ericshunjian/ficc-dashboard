@@ -181,7 +181,10 @@ def build():
     derived, dmeta = [], {"institutions": [], "tenors": [], "classes": []}
     try:
         import factor_derived
-        derived, dmeta = factor_derived.build(merged, idx, n)
+        t_ser = curve["series"]["T主力"]
+        futures_dates = [d for d, v in zip(t_ser["dates"], t_ser["values"])
+                         if v is not None]
+        derived, dmeta = factor_derived.build(merged, idx, n, session_dates=futures_dates)
     except Exception as e:  # 衍生层失败不阻断主流程
         print("  [warn] 现券衍生因子生成失败：%r" % (e,))
 

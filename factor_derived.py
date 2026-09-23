@@ -7,7 +7,7 @@
 另加一组跨机构结构指标（分歧度、共识度、配置盘 vs 交易盘），用于刻画
 "一致 / 分歧"这一对状态本身，而不是单家机构的绝对买卖量。
 
-基础序列：国债现券净买入（亿元），按 8 机构 × 4 期限档聚合
+基础序列：国债现券净买入（亿元），按 8 机构 × 9 个原始期限档分别计算
 衍生原语：
     趋势 trend   days_ratio_N20   过去 N 日净买入为正的天数占比（0~100）
     趋势 trend   accel_N5_T20     MA5 − MA20，净买卖加速度（亿元）
@@ -20,9 +20,9 @@
     结构 struct  cfg_trd_N20      配置盘 − 交易盘 的 N 日动量差（亿元，机构归属按期限档）
     结构 struct  cfg_trd_accel    配置盘 − 交易盘 的加速度差（亿元，同上）
 
-§分组依据（配置盘/交易盘的机构归属随期限档变化，见 sides_for）：
-    超长（>10Y）  配置盘 = 大型银行 + 保险公司      交易盘 = 基金公司及产品 + 其他
-    其余期限      配置盘 = 大型银行 + 理财子公司 + 保险公司  交易盘 = 基金公司及产品
+§分组依据（配置盘/交易盘的机构归属随期限变化，见 sides_for）：
+    10 年以上     配置盘 = 大型银行 + 保险公司      交易盘 = 基金公司及产品 + 其他
+    10 年及以下   配置盘 = 大型银行 + 理财子公司 + 保险公司  交易盘 = 基金公司及产品
 数据口径提示：本套数据是【二级现券交易】净买入。机构在一级市场的认购不计入，
 因此券商、大型银行等机构的二级净买入并不等于其真实配置力度，解读时需留意。
 
@@ -30,28 +30,27 @@
 指标（Σ动量）恒等于 0、无信息量。跨机构指标必须建立在方向、离散度或子集差
 之上，本模块的 cons / hhi / cfg_trd 均按此原则设计。
 
-缺失处理：窗口内有效观测不足 70% 时输出 null，绝不把缺失当 0。
-使用前需按既定口径整体右移 1 个交易日（机构行为 T+1 发布）。
+缺失处理：一般窗口内有效观测不足 70% 时输出 null；10 日斜率要求历史完整，绝不把缺失当 0。
+机构净买入当日收盘后可得；用于期货交易时最早从下一期货交易日开始。
 """
 import numpy as np
 
 BOND_TYPE = "国债"
 
-TENORS = [
-    ("短期", ["≤1年"]),
-    ("中期", ["1-3年", "3-5年"]),
-    ("长期", ["5-7年", "7-10年"]),
-    ("超长", ["10-15年", "15-20年", "20-30年", ">30年"]),
-]
+TENORS = [(m, [m]) for m in (
+    "≤1年", "1-3年", "3-5年", "5-7年", "7-10年",
+    "10-15年", "15-20年", "20-30年", ">30年",
+)]
 
 # 配置盘：负债端稳定、买入偏战略；交易盘：波段与流动性博弈
-# ★ 配置盘/交易盘的机构归属【随期限档变化】（用户 2026-09-23 指定，见 §分组依据）：
-#   超长（>10Y）  配置盘 = 大行 + 保险      交易盘 = 基金 + 其他（券商资管等资管机构）
-#   其余期限      配置盘 = 大行 + 理财 + 保险  交易盘 = 基金
+# ★ 配置盘/交易盘的机构归属【随原始期限变化】（用户 2026-09-23 指定，见 §分组依据）：
+#   10 年以上     配置盘 = 大行 + 保险      交易盘 = 基金 + 其他（券商资管等资管机构）
+#   10 年及以下   配置盘 = 大行 + 理财 + 保险  交易盘 = 基金
 #   理由：超长端理财参与度低，资管类（"其他"）反而是主要交易对手；
 #        中短端理财是配置主力，故归入配置盘。
 CONFIG_SIDES = {
-    "超长": (["大型银行", "保险公司"], ["基金公司及产品", "其他"]),
+    m: (["大型银行", "保险公司"], ["基金公司及产品", "其他"])
+    for m in ("10-15年", "15-20年", "20-30年", ">30年")
 }
 DEFAULT_SIDES = (["大型银行", "理财子公司及理财类产品", "保险公司"], ["基金公司及产品"])
 
@@ -143,19 +142,17 @@ def _days_ratio(a, n):
 
 
 def _cum_slope(a, n):
-    """过去 n 日累积净买入路径对时间做 OLS 的斜率（亿元/日）"""
+    """过去 n 日累积净买入路径对时间做 OLS 的斜率；路径缺日则不可计算。"""
     L = len(a)
     out = np.full(L, np.nan)
-    mp = _minp(n)
     x = np.arange(n, dtype=float)
     xm = x.mean()
     den = ((x - xm) ** 2).sum()
     for i in range(n - 1, L):
         w = a[i - n + 1:i + 1]
-        if np.count_nonzero(~np.isnan(w)) < mp:
+        if np.any(np.isnan(w)):
             continue
-        ww = np.where(np.isnan(w), 0.0, w)
-        y = np.cumsum(ww)
+        y = np.cumsum(w)
         out[i] = ((x - xm) * (y - y.mean())).sum() / den
     return out
 
@@ -244,8 +241,14 @@ def _pack(name, cls, op, n, inst, tenor, arr, unit=None):
     }
 
 
-def build(merged, idx, n_dates):
-    """生成衍生因子列表。merged 为 bond_trading_data_merged.json"""
+def build(merged, idx, n_dates, session_dates=None):
+    """生成衍生因子；滚动窗口按期货交易日计，结果仍映射回因子库日期轴。"""
+    global_n_dates = n_dates
+    session_positions = np.asarray(
+        sorted({idx[d] for d in session_dates if d in idx}) if session_dates is not None
+        else range(n_dates), dtype=int)
+    session_lookup = {int(pos): j for j, pos in enumerate(session_positions)}
+    n_dates = len(session_positions)
     mat2tenor = {}
     for tname, mats in TENORS:
         for m in mats:
@@ -270,7 +273,7 @@ def build(merged, idx, n_dates):
         tenor = mat2tenor.get(r["maturity"])
         if not tenor:
             continue
-        i = idx.get(r["date"])
+        i = session_lookup.get(idx.get(r["date"]))
         if i is None:
             continue
         key = (r["institution"], tenor)
@@ -392,8 +395,9 @@ def build(merged, idx, n_dates):
 
         cfg_rows = _side(cfg_names, M)
         trd_rows = _side(trd_names, M)
-        cfg = np.nansum(np.vstack(cfg_rows), axis=0) if cfg_rows else None
-        trd = np.nansum(np.vstack(trd_rows), axis=0) if trd_rows else None
+        # 任一组成机构缺失时，不能把缺口当成 0 净买入。
+        cfg = np.sum(np.vstack(cfg_rows), axis=0) if cfg_rows else None
+        trd = np.sum(np.vstack(trd_rows), axis=0) if trd_rows else None
         if cfg is not None and trd is not None:
             out.append(_pack(
                 "衍生·%s·%s·配置盘−交易盘·动量差N%d" % (BOND_TYPE, tname, N_SLOW),
@@ -404,14 +408,25 @@ def build(merged, idx, n_dates):
             a = base[(inst, tname)]
             acc_rows.append(_roll_mean(a, N_FAST) - _roll_mean(a, N_SLOW))
         A = np.vstack(acc_rows)
-        cfg_a = np.nansum(np.vstack([A[insts.index(x)] for x in cfg_names if x in insts]), axis=0)
-        trd_a = np.nansum(np.vstack([A[insts.index(x)] for x in trd_names if x in insts]), axis=0)
+        cfg_a = np.sum(np.vstack([A[insts.index(x)] for x in cfg_names if x in insts]), axis=0)
+        trd_a = np.sum(np.vstack([A[insts.index(x)] for x in trd_names if x in insts]), axis=0)
         out.append(_pack(
             "衍生·%s·%s·配置盘−交易盘·加速度差" % (BOND_TYPE, tname),
             "struct", "cfg_trd_accel", N_SLOW, "全机构", tname, cfg_a - trd_a))
         sides_meta[tname] = {"config": cfg_names, "trading": trd_names}
 
     out = [x for x in out if x]
+    # JSON 使用现券/回购/曲线日期的并集；非期货交易日的衍生值保持 null。
+    for item in out:
+        first_session = item["i0"]
+        values = item["v"]
+        first_global = int(session_positions[first_session])
+        last_global = int(session_positions[first_session + len(values) - 1])
+        expanded = [None] * (last_global - first_global + 1)
+        for j, value in enumerate(values):
+            if value is not None:
+                expanded[int(session_positions[first_session + j]) - first_global] = value
+        item["i0"], item["v"] = first_global, expanded
     return out, {
         "institutions": insts,
         "tenors": tenor_names,
