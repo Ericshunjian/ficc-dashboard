@@ -81,7 +81,8 @@ DATA_FILES_FOR_VERSION = [
     "stock_bond_data.json",
     "factor_library.json",
     "factor_checkup.json",
-    "factor_checkup_detail.json",
+    # 体检的 36 个分片（checkup_b/）不入版本清单：页面按块按需 fetch 并带时间戳，
+    # 只需保证被 commit/push 即可（见 git_push 里的 json_files）
 ]
 VERSION_OUTPUT = os.path.join(SCRIPT_DIR, "data_version.json")
 
@@ -1585,7 +1586,7 @@ def git_push_data():
         'stock_bond_data.json',
         'factor_library.json',
         'factor_checkup.json',
-        'factor_checkup_detail.json',
+        'checkup_b',          # 体检分片目录（18 数据 + 18 详情，整体 add）
         'data_version.json',
     ]
     for f in json_files:

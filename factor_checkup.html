@@ -261,6 +261,24 @@ var COLS = [
 function el(id){ return document.getElementById(id); }
 /* 每个目标允许的周期：样本短的品种（TL 仅 2023-04 起）用 maxN 限制。
    注意：detail() 内有同名局部变量 tgtObj，故此处不能叫 tgtObj */
+/* 分片按需加载：索引只有几 KB，真正的行数据在 checkup_b/b_<形态>_<目标>.json。
+   每个分片含该 (形态,目标) 下全部周期，切 N 不再重新请求。 */
+function ensureBlock(cb){
+  var key = blockKey();
+  if(CK.blocks[key] || !(CK.block_files||{})[key]){ if(cb) cb(); return; }
+  var ps = key.split('|'), fm = ps[0], tg = ps[1], f = CK.block_files[key];
+  el('loading').style.display='';
+  el('loading').textContent='正在加载「'+fm+' / '+tg+'」这块数据…';
+  fetch(f+'?t='+Date.now()).then(function(x){ return x.json(); }).then(function(j){
+    var b = j.blocks||{};
+    for(var N in b){ CK.blocks[fm+'|'+tg+'|'+N] = b[N]; }
+    if(cb) cb();
+  }).catch(function(){
+    el('loading').textContent='数据加载失败，请刷新页面重试';
+  });
+}
+function reload(){ ensureBlock(render); }
+
 function tgtSpecOf(){ return (CK && CK.meta ? CK.meta.targets||[] : []).filter(function(t){ return t.id===S.tgt; })[0] || {}; }
 function horizonsOf(t){ return ((CK&&CK.meta?CK.meta.horizons:null)||[1,5,10,20]).filter(function(n){ return !t.maxN || n<=t.maxN; }); }
 function fmt(v, nd){
@@ -296,22 +314,21 @@ function load(){
       });
       ts.value = S.tgt;
       buildNSeg();
-      seg('formSeg', m.forms.map(function(f){return {v:f.id, t:f.name};}), 'form', function(v){ S.form=v; render(); });
+      seg('formSeg', m.forms.map(function(f){return {v:f.id, t:f.name};}), 'form', function(v){ S.form=v; reload(); });
       seg('grpSeg', GROUPS.map(function(g){ return {v:g.id, t:g.name}; }), 'grp', function(v){
         S.grp=v; S.dims={}; S.open={}; S.allOpen=false; S.sel=null;
         buildHead(); render();
         el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>';
         killCharts();
       });
-      buildHead();
-      render();
+      reload();
     });
 }
 
 function buildNSeg(){
   var hs = horizonsOf(tgtSpecOf());
   if(hs.indexOf(S.N) < 0) S.N = hs[hs.length-1] || 5;
-  seg('nSeg', hs.map(function(n){ return {v:n, t:'N='+n}; }), 'N', function(v){ S.N=+v; render(); });
+  seg('nSeg', hs.map(function(n){ return {v:n, t:'N='+n}; }), 'N', function(v){ S.N=+v; reload(); });
 }
 
 function seg(id, items, key, cb){
@@ -473,6 +490,16 @@ function rowEl(r, tb){
 }
 
 function render(){
+  if(!CK.blocks[blockKey()]){
+    /* 该块尚未加载：显示 loading，由 ensureBlock 拉取后回调本函数 */
+    el('tbl').style.display='none';
+    el('loading').style.display='';
+    el('loading').textContent='正在加载该块数据…';
+    el('stat').textContent='';
+    return;
+  }
+  el('tbl').style.display='';
+  el('loading').style.display='none';
   var rs = rows();
   var tb = el('tb'); tb.innerHTML='';
   el('stat').textContent = rs.length + ' 行';
@@ -663,22 +690,29 @@ function detail(r){
   drawExtras(ri, unit);
 }
 
-/* ---------- 详情扩展：懒加载 factor_checkup_detail.json ---------- */
+/* ---------- 详情扩展：按块懒加载 checkup_b/d_<形态>_<目标>.json ---------- */
 var DET = null;
 function drawExtras(ri, unit){
   if(ri < 0){ extrasFail('（未定位到该行）'); return; }
-  var key = S.form+'|'+S.tgt+'|'+S.N;
+  var go_key = S.form+'|'+S.tgt+'|'+S.N;
   var go = function(det){
-    var rows = (det.blocks||{})[key] || [];
+    var rows = (det.blocks||{})[go_key] || [];
     var d = rows[ri];
     if(!d){ extrasFail('（该行无详情数据）'); return; }
     drawCumIC(d[0][0]||[]);
     drawPnl(d[0][1]||[], unit);
     drawCond(d[1]||[], unit);
   };
-  if(DET){ go(DET); return; }
-  fetch('factor_checkup_detail.json?t='+Date.now()).then(function(x){ return x.json(); })
-    .then(function(j){ DET=j; go(j); })
+  if(DET && DET.blocks[go_key]){ go(DET); return; }
+  var df = (CK.detail_files||{})[go_key];
+  if(!df){ extrasFail('（无该块的详情文件映射）'); return; }
+  fetch(df+'?t='+Date.now()).then(function(x){ return x.json(); })
+    .then(function(j){
+      if(!DET) DET = {blocks:{}, cond_edges:j.cond_edges, curve_pts:j.curve_pts};
+      var b = j.blocks||{};
+      for(var K in b) DET.blocks[K] = b[K];
+      go(DET);
+    })
     .catch(function(){ extrasFail('（详情数据加载失败）'); });
 }
 function extrasFail(m){
@@ -843,7 +877,7 @@ function rollingPct(a,w){
 }
 
 /* ---------------- 事件 ---------------- */
-el('tgtSel').onchange = function(){ S.tgt=this.value; S.sel=null; S.open={}; buildNSeg(); render(); el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>'; killCharts(); };
+el('tgtSel').onchange = function(){ S.tgt=this.value; S.sel=null; S.open={}; buildNSeg(); reload(); el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>'; killCharts(); };
 el('sigSel').onchange = function(){ S.sig=+this.value; S.open={}; render(); };
 el('icMin').oninput  = function(){ S.icmin=+this.value||0; S.open={}; render(); };
 el('search').oninput = function(){ S.q=this.value.trim(); S.open={}; render(); };
@@ -860,7 +894,7 @@ el('resetBtn').onclick = function(){
       function(v){ S.grp=v; S.dims={}; S.open={}; render(); });
   el('sigSel').value='0'; el('icMin').value='0'; el('search').value='';
   el('absSort').checked=false; el('absSort').parentNode.className='fld abs-sort';
-  buildHead(); render();
+  buildHead(); reload();
   el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>';
   killCharts();
 };

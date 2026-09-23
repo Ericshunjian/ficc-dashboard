@@ -31,7 +31,10 @@ except Exception:
 
 LIB_PATH = os.path.join(BASE, "factor_library.json")
 OUT_PATH = os.path.join(BASE, "factor_checkup.json")
-DETAIL_PATH = os.path.join(BASE, "factor_checkup_detail.json")
+# 分片输出目录：单文件 10.8MB（gzip 3.1MB）从 GitHub Pages 拉要 ~30s，首屏体验很差。
+# 页面一次只渲染一个 (形态×目标×周期) 块，故按 (形态×目标) 切成 18 片按需 fetch，
+# 每片 ~600KB（gzip ~150KB），秒开。factor_checkup.json 退化为索引（只含 meta + 文件映射）。
+BLOCK_DIR = os.path.join(BASE, "checkup_b")
 
 # ---------------- 配置 ----------------
 
@@ -518,6 +521,10 @@ def main():
 
     blocks = {}
     dblocks = {}
+    # 分片容器：(形态, 目标) -> {N: rows}
+    from collections import defaultdict
+    bgrp = defaultdict(dict)
+    dgrp = defaultdict(dict)
     fdr_stat = {}
     n_tests = 0
     for fid, _fname in FORMS:
@@ -666,8 +673,11 @@ def main():
                     else:
                         rows[i][28] = 2 if sigp[i] else (1 if sig[i] else 0)
                 key = f"{fid}|{spec['id']}|{N}"
-                blocks[key] = [[_r(c, 4) if isinstance(c, float) else c for c in r] for r in rows]
+                rows = [[_r(c, 4) if isinstance(c, float) else c for c in r] for r in rows]
+                blocks[key] = rows
                 dblocks[key] = drows
+                bgrp[(fid, spec['id'])][str(N)] = rows
+                dgrp[(fid, spec['id'])][str(N)] = drows
                 n_tests += len(rows)
                 print(f"  {key:16s} {len(rows):4d} 行，独立样本显著 {int(sig.sum())}，置换也认可 {int(sigp.sum())}")
 
@@ -692,7 +702,7 @@ def main():
                      "maxN": t.get("maxN"), "as": t.get("as")} for t in TARGETS],
         "cond_edges": COND_EDGES,
         "curve_pts": CURVE_PTS,
-        "detail_file": "factor_checkup_detail.json",
+        "detail_file": "checkup_b/d_<形态>_<目标>.json（按块按需加载，映射见 detail_files）",
         "min_ic_strong": MIN_IC_STRONG,
         "horizons": HORIZONS,
         "include_derived": INCLUDE_DERIVED,
@@ -767,7 +777,42 @@ def main():
     if fbg:
         meta["p_dist_by_group"] = fbg
 
-    payload = {"meta": meta, "blocks": blocks}
+    # ---- 分片输出 ----
+    os.makedirs(BLOCK_DIR, exist_ok=True)
+    block_files, detail_files = {}, {}
+    nshard = 0
+    for (fid, tid) in sorted(bgrp.keys()):
+        fn = f"b_{fid}_{tid}.json"
+        p = os.path.join(BLOCK_DIR, fn)
+        if jsonio is not None:
+            ch = jsonio.write_json_skip_unchanged(p, {"blocks": bgrp[(fid, tid)]})
+        else:
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump({"blocks": bgrp[(fid, tid)]}, f, ensure_ascii=False, separators=(",", ":"))
+            ch = True
+        size = os.path.getsize(p) / 1e6
+        print(f"  分片 b_{fid}_{tid}.json  {size:.2f} MB  {'[已更新]' if ch else '[无变化]'}")
+        for N in bgrp[(fid, tid)]:
+            block_files[f"{fid}|{tid}|{N}"] = f"checkup_b/{fn}"
+        nshard += 1
+
+    for (fid, tid) in sorted(dgrp.keys()):
+        fn = f"d_{fid}_{tid}.json"
+        p = os.path.join(BLOCK_DIR, fn)
+        dpayload = {"cond_edges": COND_EDGES, "curve_pts": CURVE_PTS, "blocks": dgrp[(fid, tid)]}
+        if jsonio is not None:
+            dch = jsonio.write_json_skip_unchanged(p, dpayload)
+        else:
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(dpayload, f, ensure_ascii=False, separators=(",", ":"))
+            dch = True
+        for N in dgrp[(fid, tid)]:
+            detail_files[f"{fid}|{tid}|{N}"] = f"checkup_b/{fn}"
+
+    # ---- 索引（页面首个请求，只有几 KB）----
+    meta["sharded"] = True
+    meta["n_shards"] = nshard
+    payload = {"meta": meta, "blocks": {}, "block_files": block_files, "detail_files": detail_files}
 
     if jsonio is not None:
         changed = jsonio.write_json_skip_unchanged(OUT_PATH, payload)
@@ -777,23 +822,8 @@ def main():
         changed = True
 
     size = os.path.getsize(OUT_PATH) / 1e6
-    print(f"\n输出 {OUT_PATH}  {size:.2f} MB  {'[已更新]' if changed else '[无变化，跳过重写]'}")
-
-    # 详情（累计 IC / 信号累计净值 / 分位条件分布）：独立文件，前端按需 fetch，主表不膨胀
-    dpayload = {
-        "generated": meta["generated"],
-        "cond_edges": COND_EDGES,
-        "curve_pts": CURVE_PTS,
-        "blocks": dblocks,
-    }
-    if jsonio is not None:
-        dch = jsonio.write_json_skip_unchanged(DETAIL_PATH, dpayload)
-    else:
-        with open(DETAIL_PATH, "w", encoding="utf-8") as f:
-            json.dump(dpayload, f, ensure_ascii=False, separators=(",", ":"))
-        dch = True
-    dsize = os.path.getsize(DETAIL_PATH) / 1e6
-    print(f"输出 {DETAIL_PATH}  {dsize:.2f} MB  {'[已更新]' if dch else '[无变化，跳过重写]'}")
+    print(f"\n索引 {OUT_PATH}  {size:.2f} MB（{nshard} 个数据分片 + {nshard} 个详情分片）"
+          f"  {'[已更新]' if changed else '[无变化，跳过重写]'}")
 
     print(f"总检验 {n_tests} 套，耗时 {time.time()-t0:.1f}s")
     return payload
