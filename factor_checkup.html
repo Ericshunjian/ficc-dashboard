@@ -18,10 +18,12 @@
     background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column;
     overflow:hidden; font-size:13px; }
   header { background:var(--panel-bg); border-bottom:1px solid var(--border); padding:12px 18px;
-    display:flex; align-items:center; gap:14px; flex-shrink:0; position:relative; }
-  header h2 { font-size:17px; font-weight:600; }
-  header .subtitle { font-size:12px; color:var(--text-secondary); }
-  .back-home { position:absolute; top:12px; right:18px; font-size:12px; color:var(--text-secondary);
+    display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center;
+    gap:14px; flex-shrink:0; }
+  header h2 { font-size:17px; font-weight:600; white-space:nowrap; }
+  header .subtitle { min-width:0; font-size:12px; line-height:1.5; color:var(--text-secondary); }
+  header .subtitle .quality-note { display:block; color:#b84b25; }
+  .back-home { font-size:12px; color:var(--text-secondary); white-space:nowrap;
     text-decoration:none; padding:3px 8px; border:1px solid var(--border); border-radius:4px; }
   .back-home:hover { color:var(--primary); border-color:var(--primary); }
   .jump { font-size:12px; color:var(--text-secondary); text-decoration:none; padding:3px 8px;
@@ -51,6 +53,10 @@
     padding:7px 14px; background:#fafbfc; border-bottom:1px solid var(--border); font-size:12px; }
   .dimbar .hint { color:var(--text-secondary); font-size:11px; }
   .dimbar .dimsep { width:1px; height:16px; background:var(--border); }
+  .group-audit { flex-basis:100%; color:var(--text-secondary); font-size:11px; }
+  .group-audit summary { cursor:pointer; color:var(--primary); }
+  .group-audit .audit-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+    gap:4px 16px; margin-top:7px; }
   tr.grp-row { background:#eef2f7; cursor:pointer; }
   tr.grp-row td { text-align:left; font-weight:600; font-size:11px; color:var(--text-secondary);
     padding:5px 8px; border-top:1px solid var(--border); border-bottom:1px solid var(--border);
@@ -62,23 +68,31 @@
   .abs-sort input { cursor:pointer; }
   .abs-sort.on { color:var(--primary); font-weight:600; }
 
-  .main { flex:1; display:flex; overflow:hidden; }
-  .table-wrap { flex:1; overflow:auto; }
-  table { border-collapse:collapse; width:100%; font-size:12px; }
-  thead th { position:sticky; top:0; background:#fafbfc; border-bottom:1px solid var(--border);
+  .main { flex:1; display:flex; min-height:0; overflow:hidden; }
+  .table-wrap { flex:1; min-width:0; overflow:auto; }
+  .table-wrap table { border-collapse:collapse; width:max-content; min-width:100%; font-size:12px; }
+  .table-wrap thead th { position:sticky; top:0; background:#fafbfc; border-bottom:1px solid var(--border);
     padding:7px 6px; text-align:right; font-weight:600; font-size:11px; color:var(--text-secondary);
-    cursor:pointer; white-space:nowrap; z-index:2; }
-  thead th:hover { background:var(--primary-light); }
-  thead th.l { text-align:left; }
-  thead th .ar { color:var(--primary); margin-left:2px; }
-  tbody td { padding:5px 6px; border-bottom:1px solid #f0f2f5; text-align:right;
+    cursor:pointer; white-space:nowrap; min-width:72px; z-index:2; }
+  .table-wrap thead th:hover { background:var(--primary-light); }
+  .table-wrap thead th.l { text-align:left; }
+  .table-wrap thead th .ar { color:var(--primary); margin-left:2px; }
+  .table-wrap tbody td { padding:5px 6px; border-bottom:1px solid #f0f2f5; text-align:right;
     white-space:nowrap; font-variant-numeric:tabular-nums; }
-  tbody td.l { text-align:left; }
-  tbody tr { cursor:pointer; }
-  tbody tr:hover { background:var(--primary-light); }
-  tbody tr.sel { background:#dce6ff; }
-  tbody tr.sig1 td:first-child { box-shadow:inset 3px 0 0 var(--primary); }
-  tbody tr.sig2 td:first-child { box-shadow:inset 3px 0 0 #1D9E75; }
+  .table-wrap tr.grp-row td { text-align:left; }
+  .table-wrap tbody td.l { text-align:left; }
+  .table-wrap tbody tr { cursor:pointer; }
+  .table-wrap tbody tr:hover { background:var(--primary-light); }
+  .table-wrap tbody tr.sel { background:#dce6ff; }
+  .table-wrap tbody tr.sig1 td:first-child { box-shadow:inset 3px 0 0 var(--primary); }
+  .table-wrap tbody tr.sig2 td:first-child { box-shadow:inset 3px 0 0 #1D9E75; }
+  .table-wrap thead th:first-child, .table-wrap tbody tr:not(.grp-row) td:first-child {
+    width:340px; min-width:340px; max-width:340px; position:sticky; left:0; }
+  .table-wrap thead th:first-child { z-index:4; }
+  .table-wrap tbody tr:not(.grp-row) td:first-child {
+    z-index:1; background:var(--panel-bg); white-space:normal; line-height:1.35; }
+  .table-wrap tbody tr:hover td:first-child { background:var(--primary-light); }
+  .table-wrap tbody tr.sel td:first-child { background:#dce6ff; }
   .yr { display:inline-flex; gap:2px; }
   .yr i { width:13px; height:13px; border-radius:2px; display:inline-block; background:#eef1f5; }
   .mono { font-weight:600; }
@@ -86,6 +100,10 @@
 
   aside.detail { width:var(--detail-w); background:var(--panel-bg); border-left:1px solid var(--border);
     overflow-y:auto; padding:16px 18px; flex-shrink:0; }
+  aside.detail:not(.open) { display:none; }
+  .detail-top { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+  .detail-top h3 { min-width:0; overflow-wrap:anywhere; }
+  .detail-top .btn { flex-shrink:0; }
   aside.detail h3 { font-size:14px; font-weight:600; margin-bottom:4px; line-height:1.4; }
   aside.detail .meta { font-size:11px; color:var(--text-secondary); margin-bottom:12px; }
   .kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:14px; }
@@ -100,6 +118,16 @@
   .empty { color:var(--text-secondary); font-size:13px; padding:40px; text-align:center; }
   .loading { padding:40px; text-align:center; color:var(--text-secondary); }
   table.tinytip td { text-align:left; }
+  .cond-scroll { max-width:100%; overflow-x:auto; }
+  .cond-scroll table { min-width:610px; }
+  @media (max-width:900px) {
+    header { grid-template-columns:minmax(0,1fr) auto; }
+    header .subtitle { grid-column:1 / -1; grid-row:2; }
+    .main { flex-direction:column; }
+    .table-wrap { min-height:35%; }
+    aside.detail.open { width:100%; height:45%; min-height:260px; border-left:none;
+      border-top:1px solid var(--border); }
+  }
 </style>
 </head>
 <body>
@@ -161,7 +189,7 @@ var IDX = {g:0,k:1,label:2,n:3,ic:4,icp:5,icir:6,t:7,ti:8,pind:9,win:10,wl:11,ws
 var YRKEYS = ['yr21','yr22','yr23','yr24','yr25','yr26'];
 var YRLABEL = ['21','22','23','24','25','26'];
 
-var S = { tgt:'s3010', N:5, form:'pct', grp:'', dims:{}, sig:0, icmin:0, q:'',
+var S = { tgt:'s3010', N:5, form:'raw', grp:'', dims:{}, sig:0, icmin:0, q:'',
           sort:'t', desc:true, absSort:false, sel:null, open:{}, allOpen:false, topN:10 };
 
 /* ---------------- 因子分类 ----------------
@@ -277,7 +305,13 @@ function ensureBlock(cb){
     el('loading').textContent='数据加载失败，请刷新页面重试';
   });
 }
-function reload(){ ensureBlock(render); }
+function hideDetail(){
+  S.sel=null;
+  el('detail').classList.remove('open');
+  el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>';
+  killCharts();
+}
+function reload(){ hideDetail(); ensureBlock(render); }
 
 function tgtSpecOf(){ return (CK && CK.meta ? CK.meta.targets||[] : []).filter(function(t){ return t.id===S.tgt; })[0] || {}; }
 function horizonsOf(t){ return ((CK&&CK.meta?CK.meta.horizons:null)||[1,5,10,20]).filter(function(n){ return !t.maxN || n<=t.maxN; }); }
@@ -301,11 +335,13 @@ function load(){
       var m = j.meta;
       el('subtitle').textContent =
         'L2 有效性检验 · ' + m.n_tests + ' 套 · 数据 '+m.date_range[0]+' ~ '+m.date_range[1]+
-        ' · 因子滞后 '+m.lag+' 个期货交易日 · '+m.bootstrap;
+        ' · 因子滞后 '+m.lag+' 个期货交易日 · 循环置换检验';
       if(m.p_dist){
         var pd=m.p_dist;
-        el('subtitle').innerHTML += ' <b style="color:#D85A30">｜全局 p(置换) 分布：'+
-          'P(p&lt;0.05)='+pd.p_lt_05+'（期望 0.05）· 中位数 '+pd.median+' → '+pd.verdict+'</b>';
+        var note=document.createElement('span'); note.className='quality-note';
+        note.textContent='全局置换检验：P(p<0.05)='+pd.p_lt_05+
+          '（期望 0.05）· 中位数 '+pd.median+' · '+pd.verdict;
+        el('subtitle').appendChild(note);
       }
       var ts = el('tgtSel');
       m.targets.forEach(function(t){
@@ -317,10 +353,9 @@ function load(){
       seg('formSeg', m.forms.map(function(f){return {v:f.id, t:f.name};}), 'form', function(v){ S.form=v; reload(); });
       seg('grpSeg', GROUPS.map(function(g){ return {v:g.id, t:g.name}; }), 'grp', function(v){
         S.grp=v; S.dims={}; S.open={}; S.allOpen=false; S.sel=null;
-        buildHead(); render();
-        el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>';
-        killCharts();
+        hideDetail(); buildHead(); render();
       });
+      buildHead();
       reload();
     });
 }
@@ -413,18 +448,22 @@ function buildDimBar(){
   if(!S.grp){
     var h0=document.createElement('span'); h0.className='hint';
     h0.textContent = '当前按「大类」分段，每组默认显示前 '+S.topN+
-      ' 条（按当前排序列）· 点上方分组进入组内，可用维度进一步收窄';
+      ' 条（按当前排序列）· 点上方分组进入组内；表格可左右滚动查看全部指标';
     bar.appendChild(h0);
-    /* 各大类的 p 值分布摘要：衍生层有没有自带信号，一眼可见 */
+    /* 各大类的 p 值摘要按需展开，避免挤占表格可视高度。 */
     var pb = CK.meta.p_dist_by_group;
     if(pb){
+      var audit=document.createElement('details'); audit.className='group-audit';
+      var summary=document.createElement('summary'); summary.textContent='查看各类置换检验摘要';
+      var grid=document.createElement('div'); grid.className='audit-grid';
       Object.keys(pb).forEach(function(g){
         var d = pb[g];
-        var s = document.createElement('span'); s.className='hint'; s.style.marginLeft='12px';
+        var s = document.createElement('span'); s.className='hint';
         s.textContent = d.name + '：P(p<0.05)=' + d.p_lt_05 + ' · 中位 ' + d.median +
           (d.sig_ind===undefined ? '' : (' · FDR显著 '+d.sig_ind+'（置换认可 '+d.sig_perm+'）'));
-        bar.appendChild(s);
+        grid.appendChild(s);
       });
+      audit.appendChild(summary); audit.appendChild(grid); bar.appendChild(audit);
     }
     return;
   }
@@ -563,12 +602,14 @@ var baseOpt = { responsive:true, maintainAspectRatio:false,
            y:{grid:{color:'#f0f2f5'}, ticks:{font:{size:10}}} } };
 
 function detail(r){
+  el('detail').classList.add('open');
   killCharts();
   var tgtName = (CK.meta.targets.filter(function(t){return t.id===S.tgt;})[0]||{}).name||S.tgt;
   var unit = (CK.meta.targets.filter(function(t){return t.id===S.tgt;})[0]||{}).unit||'';
   var formName = (CK.meta.forms.filter(function(f){return f.id===S.form;})[0]||{}).name||S.form;
   var h = '';
-  h += '<h3>'+r[IDX.label]+'</h3>';
+  h += '<div class="detail-top"><h3>'+r[IDX.label]+'</h3>'+
+    '<button class="btn" id="detailClose" type="button">关闭详情</button></div>';
   h += '<div class="meta">目标 '+tgtName+' · N='+S.N+' 日 · 形态 '+formName+' · 样本 '+r[IDX.n]+' 天</div>';
   h += '<div class="kpis">';
   function kpi(v,k,nd){ h+='<div class="kpi"><div class="v '+cls(v)+'">'+fmt(v,nd===undefined?3:nd)+'</div><div class="k">'+k+'</div></div>'; }
@@ -577,7 +618,7 @@ function detail(r){
   kpi(r[IDX.ti],'独立样本 t',2);
   kpi(r[IDX.pind],'p(独立)',3);
   kpi(r[IDX.p],'p 置换',3);
-  kpi(r[IDX.icir],'ICIR');
+  kpi(r[IDX.icir],'ICIR (滚动 Pearson)');
   kpi(r[IDX.win],'胜率',3);
   kpi(r[IDX.pl],'盈亏比',2);
   kpi(r[IDX.tail],'尾部赔率',2);
@@ -589,7 +630,12 @@ function detail(r){
   h += '</div>';
 
   h += '<div class="sec"><h4>分组收益 Q1→Q5（按滚动 250 日 Z-score 五等分，单位 '+unit+'）</h4>';
-  h += '<div class="chart-box"><canvas id="cGroup"></canvas></div></div>';
+  h += '<div class="chart-box"><canvas id="cGroup"></canvas></div>'+
+    '<div class="hint">先看五组是否单调；U 形、只在极端区间变化的关系，整体 IC 可能接近 0。</div></div>';
+
+  h += '<div class="sec"><h4>分位区间条件分布（按滚动 250 日经验分位切区）</h4>';
+  h += '<div class="chart-box"><canvas id="cCond"></canvas></div>';
+  h += '<div id="condBox"><div class="hint">加载中…</div></div></div>';
 
   h += '<div class="sec"><h4>分年 IC</h4>';
   h += '<div class="chart-box"><canvas id="cYear"></canvas></div></div>';
@@ -607,10 +653,6 @@ function detail(r){
   h += '<div class="sec"><h4>信号累计净值（|Z|&gt;1 才持仓，未扣成本）</h4>';
   h += '<div class="chart-box"><canvas id="cPnl"></canvas></div>';
   h += '<div class="hint" id="pnlHint">加载中…</div></div>';
-
-  h += '<div class="sec"><h4>分位区间条件分布（按滚动 250 日经验分位切区）</h4>';
-  h += '<div class="chart-box"><canvas id="cCond"></canvas></div>';
-  h += '<div id="condBox"><div class="hint">加载中…</div></div></div>';
 
   h += '<div class="sec"><h4>因子走势</h4>';
   h += '<div class="chart-box tall"><canvas id="cSeries"></canvas></div>';
@@ -636,6 +678,7 @@ function detail(r){
   h += '</div></div>';
 
   el('detail').innerHTML = h;
+  el('detailClose').onclick=function(){ hideDetail(); render(); };
 
   // 分组收益
   var qv = [r[IDX.q1],r[IDX.q2],r[IDX.q3],r[IDX.q4],r[IDX.q5]];
@@ -791,7 +834,7 @@ function drawCond(cond, unit){
                   title:{display:true, text:'未来 '+S.N+' 日变动均值（'+unit+'）', font:{size:10}}},
                y1:{position:'right', grid:{display:false}, ticks:{font:{size:10}},
                   title:{display:true, text:'上行概率 %', font:{size:10}}} } } });
-  var h = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">'
+  var h = '<div class="cond-scroll"><table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">'
     + '<thead><tr style="color:#888;border-bottom:1px solid #eee">'
     + '<th style="text-align:left;padding:4px">分位区间</th><th style="padding:4px">n</th>'
     + '<th style="padding:4px">均值</th><th style="padding:4px">中位</th><th style="padding:4px">标准差</th>'
@@ -807,12 +850,13 @@ function drawCond(cond, unit){
       + '<td style="padding:4px;text-align:right">'+fmt(q[4],1)+'%</td>'
       + '<td style="padding:4px;text-align:right">'+fmt(q[5],3)+'</td></tr>';
   }
-  h += '</tbody></table>';
+  h += '</tbody></table></div>';
   var spread = (mean[0]!==null && mean[mean.length-1]!==null) ? Math.abs(mean[0]-mean[mean.length-1]) : null;
   var mxu = Math.max.apply(null, up.filter(function(v){return v!==null;}));
   var mnu = Math.min.apply(null, up.filter(function(v){return v!==null;}));
-  var tip = '这张表用来捞 <b>B 类（区域）因子</b>和 <b>C 类（风险）因子</b>：'
-    + '线性 IC 检验只看均值单调性，会漏掉「非单调但区间差异大」和「均值无差异但尾部/波动差异大」的因子。';
+  var tip = '这里检查 <b>阈值、U 形和尾部差异</b>：'
+    + '整体 Spearman IC 能识别单调关系，但非单调形状可能互相抵消；'
+    + '各区间的均值、中位数、上行概率与 5% 分位需要结合样本数看。';
   if(mxu-mnu >= 10) tip += ' ⚠ 各区间上行概率极差 '+(mxu-mnu).toFixed(1)+' 个百分点，'
     + '存在明显的区域效应，建议按阈值触发而非线性打分。';
   var sds = sd.filter(function(v){return v!==null;});
@@ -882,7 +926,7 @@ function rollingPct(a,w){
 }
 
 /* ---------------- 事件 ---------------- */
-el('tgtSel').onchange = function(){ S.tgt=this.value; S.sel=null; S.open={}; buildNSeg(); reload(); el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>'; killCharts(); };
+el('tgtSel').onchange = function(){ S.tgt=this.value; S.open={}; buildNSeg(); reload(); };
 el('sigSel').onchange = function(){ S.sig=+this.value; S.open={}; render(); };
 el('icMin').oninput  = function(){ S.icmin=+this.value||0; S.open={}; render(); };
 el('search').oninput = function(){ S.q=this.value.trim(); S.open={}; render(); };
@@ -900,8 +944,6 @@ el('resetBtn').onclick = function(){
   el('sigSel').value='0'; el('icMin').value='0'; el('search').value='';
   el('absSort').checked=false; el('absSort').parentNode.className='fld abs-sort';
   buildHead(); reload();
-  el('detail').innerHTML='<div class="empty">点击表格任意一行<br>查看该因子的完整体检报告</div>';
-  killCharts();
 };
 el('csvBtn').onclick = function(){
   var rs = rows(), hdr = COLS.map(function(c){return c.t;}).join(',');

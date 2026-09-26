@@ -111,6 +111,7 @@
   .tagc { display:inline-block; padding:1px 7px; border-radius:10px; font-size:11px; }
   .t-trend{background:#e8f3ff;color:#2b6cb0} .t-cross{background:#eaf7ee;color:#2f855a}
   .t-extreme{background:#fff3e6;color:#c05621} .t-struct{background:#f3e8ff;color:#6b46c1}
+  .t-tenor{background:#e5f5f4;color:#147d76}
   .kb { background:#fafbfc; border:1px solid var(--border); border-radius:6px; padding:9px 12px;
     font-size:12px; line-height:1.8; margin:6px 0; }
   .kb code { font-family:Consolas,Monaco,'Courier New',monospace; font-size:11.5px;
@@ -442,7 +443,8 @@ function transform(a){
 
 /* ---------- 衍生因子算法说明 ---------- */
 var CLS_TAG = { '趋势·买在一致':'t-trend', '截面·买在分歧':'t-cross',
-                '极值·卖在一致':'t-extreme', '结构·跨机构':'t-struct' };
+                '极值·卖在一致':'t-extreme', '结构·跨机构':'t-struct',
+                '结构·跨期限':'t-tenor' };
 
 /* 每项：op 键 / 类别 / 名称 / 单位 / 公式 / 经济含义 */
 var DERIVED_DOC = [
@@ -495,7 +497,20 @@ var DERIVED_DOC = [
     f:'先算每家 ACC<sub>i</sub> = MA<sub>5</sub>(x<sub>i</sub>) &minus; MA<sub>20</sub>(x<sub>i</sub>)<br>'+
       'DA<sub>t</sub> = &Sigma;<sub>i&isin;配置盘</sub> ACC<sub>i</sub> &minus; &Sigma;<sub>i&isin;交易盘</sub> ACC<sub>i</sub>',
     d:'动量差的「速度版」：不看谁买得多，看谁在加速买。比动量差更早转向，适合做拐点提示。'+
-      '机构归属与动量差完全一致（同样按期限档取）。' }
+      '机构归属与动量差完全一致（同样按期限档取）。' },
+  { op:'tenor_diff', cls:'结构·跨期限', nm:'跨期限 5 日净买入差', unit:'亿元',
+    f:'S<sub>m,t</sub> = &Sigma;<sub>k=0..4</sub> x<sub>m,t−k</sub><br>'+
+      'D<sub>t</sub> = S<sub>近端,t</sub> &minus; S<sub>远端,t</sub>',
+    d:'同一家机构比较两个原始期限档，不合并其他期限。3T−TL 用 7-10年−20-30年；'+
+      '4TS−T 用 1-3年−7-10年。任一端 5 日内有缺失则输出空。'+
+      '原额差保留亿元规模，但成交规模较大的期限可能主导数值。' },
+  { op:'tenor_zdiff', cls:'结构·跨期限', nm:'跨期限 5 日净买入标准化差', unit:'标准差',
+    f:'Z<sub>m,t</sub> = (S<sub>m,t</sub> &minus; MA<sub>60</sub>(S<sub>m</sub>)<sub>t</sub>)'+
+      ' &divide; SD<sub>60</sub>(S<sub>m</sub>)<sub>t</sub><br>'+
+      'D<sup>Z</sup><sub>t</sub> = Z<sub>近端,t</sub> &minus; Z<sub>远端,t</sub>',
+    d:'先对每一端自身的 5 日累计净买入做过去 60 个期货交易日 Z-score，再相减。'+
+      '60 日窗口至少 42 个有效值、标准差非零，且当天两端都有值；只用截至当天收盘可得的数据。'+
+      '它表示相对各自常态的需求偏移，不是两端买入金额之差。' }
 ];
 
 var OP_MAP = {};
@@ -537,7 +552,9 @@ function opShort(op){
     cons:'(动量>0机构数 − <0机构数) ÷ 有效机构数 ×100',
     hhi:'Σ(各机构|动量|占比²) ×100',
     cfg_trd:'Σ配置盘 MA20 − Σ交易盘 MA20',
-    cfg_trd_accel:'Σ配置盘(MA5−MA20) − Σ交易盘(MA5−MA20)'
+    cfg_trd_accel:'Σ配置盘(MA5−MA20) − Σ交易盘(MA5−MA20)',
+    tenor_diff:'同机构：近端严格5日累计净买入 − 远端严格5日累计净买入',
+    tenor_zdiff:'同机构：Z60(近端5日累计) − Z60(远端5日累计)'
   }[op];
   return '算法：' + s;
 }
@@ -555,7 +572,7 @@ function openDoc(hlOp){
     '<div class="kb">'+
       '记 <code>x<sub>t</sub></code> = 某个机构在某个期限档上的<b>国债现券净买入</b>（亿元，正=净买入）。<br>'+
       '<code>MA<sub>n</sub>(x)<sub>t</sub></code> = 截至 t 的 n 日滚动均值（<b>忽略缺失</b>按有效观测求平均）。<br>'+
-      '基础维度 = 8 家机构 × 9 个原始期限档，逐档计算，不合并；'+
+      '基础维度 = 8 家机构 × 9 个原始期限档，逐档计算，不合并；另有同机构跨期限差。'+
       '期限为 ≤1年、1-3年、3-5年、5-7年、7-10年、10-15年、15-20年、20-30年、&gt;30年。<br>'+
       cfgSidesHtml()+
     '</div>'+
@@ -569,13 +586,13 @@ function openDoc(hlOp){
       '3. <b>零和约束</b>。净买入是全市场零和的——有人买就必有人卖，8 类机构加总恒等于 0。'+
       '因此「全市场加总型」指标（Σ动量、Σ动量/Σ|动量|）分子恒为 0、没有信息量。'+
       '跨机构指标只能用三种形式：<b>方向计数</b>（共识度）、<b>离散度</b>（集中度）、<b>子集差</b>（配置盘−交易盘）。<br>'+
-      '4. <b>窗口参数</b>：N<sub>快</sub>=5、N<sub>慢</sub>=20、斜率窗口=10、历史区间=250。<br>'+
+      '4. <b>窗口参数</b>：N<sub>快</sub>=5、N<sub>慢</sub>=20、斜率窗口=10、历史区间=250；跨期限标准化窗口=60。<br>'+
       '5. <b>数据只覆盖二级现券交易</b>。机构在<b>一级市场的认购不计入</b>本数据集，'+
       '所以券商、大型银行这类一级参与多的机构，其二级净买入<b>不等于真实配置力度</b>，会被系统性低估。'+
       '跨机构横向比较、以及用配置盘−交易盘做判断时都要留这个余地。'+
     '</div>'+
 
-    '<h4>三、十个衍生原语</h4>'+
+    '<h4>三、十二个衍生原语</h4>'+
     '<table class="doc"><thead><tr><th style="width:150px">指标</th>'+
     '<th style="width:290px">计算公式</th><th>含义与用法</th></tr></thead><tbody>'+rows+'</tbody></table>'+
 
@@ -638,7 +655,7 @@ function renderGroupChips(){
   });
   var dl = el('docLinkBox');
   dl.innerHTML = (state.group==='derived')
-    ? '<a class="doc-link" id="docBtn">查看计算方法（10 个衍生原语）→</a>' : '';
+    ? '<a class="doc-link" id="docBtn">查看计算方法（12 个衍生原语）→</a>' : '';
   if(el('docBtn')) el('docBtn').onclick = function(){ openDoc(); };
 }
 

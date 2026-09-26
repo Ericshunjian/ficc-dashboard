@@ -19,6 +19,8 @@
     结构 struct  hhi_N20          活跃集中度：Σ(机构|动量|占比²)×100，越大越被少数机构主导
     结构 struct  cfg_trd_N20      配置盘 − 交易盘 的 N 日动量差（亿元，机构归属按期限档）
     结构 struct  cfg_trd_accel    配置盘 − 交易盘 的加速度差（亿元，同上）
+    跨期限 tenor  tenor_diff_N5    同机构两期限严格 5 日累计净买入之差（亿元）
+    跨期限 tenor  tenor_zdiff     上述两端分别做 60 日 Z-score，再相减
 
 §分组依据（配置盘/交易盘的机构归属随期限变化，见 sides_for）：
     10 年以上     配置盘 = 大型银行 + 保险公司      交易盘 = 基金公司及产品 + 其他
@@ -41,6 +43,11 @@ TENORS = [(m, [m]) for m in (
     "≤1年", "1-3年", "3-5年", "5-7年", "7-10年",
     "10-15年", "15-20年", "20-30年", ">30年",
 )]
+TENOR_PAIRS = (
+    ("7-10年", "20-30年", "3T−TL"),
+    ("1-3年", "7-10年", "4TS−T"),
+)
+TENOR_Z_WIN = 60
 
 # 配置盘：负债端稳定、买入偏战略；交易盘：波段与流动性博弈
 # ★ 配置盘/交易盘的机构归属【随原始期限变化】（用户 2026-09-23 指定，见 §分组依据）：
@@ -69,6 +76,7 @@ CLS_LABEL = {
     "cross": "截面·买在分歧",
     "extreme": "极值·卖在一致",
     "struct": "结构·跨机构",
+    "tenor": "结构·跨期限",
 }
 
 _OP_LABEL = {
@@ -82,6 +90,8 @@ _OP_LABEL = {
     "hhi": "活跃集中度",
     "cfg_trd": "配置盘−交易盘",
     "cfg_trd_accel": "配置盘−交易盘加速度",
+    "tenor_diff": "跨期限净买入差",
+    "tenor_zdiff": "跨期限标准化需求差",
 }
 
 _OP_UNIT = {
@@ -95,6 +105,8 @@ _OP_UNIT = {
     "hhi": "%",
     "cfg_trd": "亿元",
     "cfg_trd_accel": "亿元",
+    "tenor_diff": "亿元",
+    "tenor_zdiff": "标准差",
 }
 
 
@@ -123,6 +135,34 @@ def _roll_mean(a, n):
 def _roll_absum(a, n):
     """滚动 Σ|x| / n，即日均买卖量"""
     return _roll_mean(np.abs(a), n)
+
+
+def _roll_sum_strict(a, n):
+    """严格累计净买入：窗口内任一天缺失则整点缺失，不把缺失补零。"""
+    out = np.full(len(a), np.nan)
+    if len(a) >= n:
+        from numpy.lib.stride_tricks import sliding_window_view
+        out[n - 1:] = np.sum(sliding_window_view(a, n), axis=1)
+    return out
+
+
+def _roll_z(a, n):
+    """当前值相对含当天的过去 n 个交易日均值/样本标准差；至少 70% 有效。"""
+    out = np.full(len(a), np.nan)
+    if len(a) < n:
+        return out
+    from numpy.lib.stride_tricks import sliding_window_view
+    windows = sliding_window_view(a, n)
+    valid = np.isfinite(windows)
+    count = valid.sum(axis=1)
+    safe = np.where(valid, windows, 0.0)
+    mean = safe.sum(axis=1) / np.maximum(count, 1)
+    var = np.sum(np.where(valid, (windows - mean[:, None]) ** 2, 0.0), axis=1) / np.maximum(count - 1, 1)
+    current = a[n - 1:]
+    ok = (count >= _minp(n)) & np.isfinite(current) & (var > 1e-12)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        out[n - 1:] = np.where(ok, (current - mean) / np.sqrt(var), np.nan)
+    return out
 
 
 def _days_ratio(a, n):
@@ -415,6 +455,24 @@ def build(merged, idx, n_dates, session_dates=None):
             "struct", "cfg_trd_accel", N_SLOW, "全机构", tname, cfg_a - trd_a))
         sides_meta[tname] = {"config": cfg_names, "trading": trd_names}
 
+    # ---------- 结构类：同机构跨期限需求差 ----------
+    # 先按期限各算严格 5 日累计；标准化版本逐端做 60 日 Z-score 后相减。
+    # 此处不做 DV01 配比：它是需求强弱因子，并非期货头寸。
+    for inst in insts:
+        nm = label_short.get(inst, inst)
+        for near, far, target in TENOR_PAIRS:
+            pair = near + "−" + far
+            near_sum = _roll_sum_strict(base[(inst, near)], N_FAST)
+            far_sum = _roll_sum_strict(base[(inst, far)], N_FAST)
+            out.append(_pack(
+                "衍生·%s·%s·%s·5日累计净买入差（%s）" % (BOND_TYPE, nm, pair, target),
+                "tenor", "tenor_diff", N_FAST, inst, pair, near_sum - far_sum))
+            out.append(_pack(
+                "衍生·%s·%s·%s·5日累计净买入标准化差Z%d（%s）" %
+                (BOND_TYPE, nm, pair, TENOR_Z_WIN, target),
+                "tenor", "tenor_zdiff", TENOR_Z_WIN, inst, pair,
+                _roll_z(near_sum, TENOR_Z_WIN) - _roll_z(far_sum, TENOR_Z_WIN)))
+
     out = [x for x in out if x]
     # JSON 使用现券/回购/曲线日期的并集；非期货交易日的衍生值保持 null。
     for item in out:
@@ -429,8 +487,8 @@ def build(merged, idx, n_dates, session_dates=None):
         item["i0"], item["v"] = first_global, expanded
     return out, {
         "institutions": insts,
-        "tenors": tenor_names,
-        "classes": [CLS_LABEL[c] for c in ("trend", "cross", "extreme", "struct")],
+        "tenors": tenor_names + [a + "−" + b for a, b, _ in TENOR_PAIRS],
+        "classes": [CLS_LABEL[c] for c in ("trend", "cross", "extreme", "struct", "tenor")],
         # 配置盘/交易盘的实际机构归属（按期限档），供页面与文档展示
         "cfg_sides": sides_meta,
     }

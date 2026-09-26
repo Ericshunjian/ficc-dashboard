@@ -68,6 +68,64 @@ class DerivedFactorTenorTests(unittest.TestCase):
         self.assertIsNone(ratio["v"][25 - ratio["i0"]])
         self.assertEqual(ratio["v"][-1], 100.0)
 
+    def test_cross_tenor_pairs_use_five_day_sums_and_separate_z_scores(self):
+        dates = [f"d{i}" for i in range(80)]
+        maturities = ("1-3年", "7-10年", "20-30年")
+
+        def flow(inst_i, maturity, t):
+            if maturity == "1-3年":
+                return 0.3 * t + inst_i + 2 * np.sin(t / 4)
+            if maturity == "7-10年":
+                return 0.2 * t + inst_i + 3 * np.cos(t / 5)
+            return 0.1 * t + inst_i + 4 * np.sin(t / 6)
+
+        records = [
+            {"date": date, "bond_type": "国债", "institution": inst,
+             "maturity": maturity, "value": flow(inst_i, maturity, t)}
+            for t, date in enumerate(dates)
+            for inst_i, inst in enumerate(INSTITUTIONS)
+            for maturity in maturities
+            # 最后一天一家机构远端缺数，不能补 0 算差。
+            if not (t == 79 and inst_i == 0 and maturity == "20-30年")
+        ]
+        factors, meta = factor_derived.build(
+            {"meta": {"institutions": INSTITUTIONS}, "detail": records},
+            dict(zip(dates, range(80))), 80)
+        pairs = [f for f in factors if f["op"] in ("tenor_diff", "tenor_zdiff")]
+        self.assertEqual(len(pairs), 32)
+        self.assertEqual({f["tenor"] for f in pairs},
+                         {"7-10年−20-30年", "1-3年−7-10年"})
+        self.assertIn("结构·跨期限", meta["classes"])
+
+        def value_at(factor, day):
+            offset = day - factor["i0"]
+            return factor["v"][offset] if 0 <= offset < len(factor["v"]) else None
+
+        bank = INSTITUTIONS[0]
+        missing_pair = next(f for f in pairs if f["inst"] == bank
+                            and f["op"] == "tenor_diff"
+                            and f["tenor"] == "7-10年−20-30年")
+        self.assertIsNone(value_at(missing_pair, 79))
+
+        valid_pair = next(f for f in pairs if f["inst"] == bank
+                          and f["op"] == "tenor_diff"
+                          and f["tenor"] == "1-3年−7-10年")
+        near = np.array([flow(0, maturities[0], t) for t in range(80)])
+        far = np.array([flow(0, maturities[1], t) for t in range(80)])
+        near_sums = np.convolve(near, np.ones(5), mode="valid")
+        far_sums = np.convolve(far, np.ones(5), mode="valid")
+        self.assertAlmostEqual(value_at(valid_pair, 79),
+                               near_sums[-1] - far_sums[-1], places=3)
+
+        z_pair = next(f for f in pairs if f["inst"] == bank
+                      and f["op"] == "tenor_zdiff"
+                      and f["tenor"] == "1-3年−7-10年")
+        expected = ((near_sums[-1] - near_sums[-60:].mean()) /
+                    near_sums[-60:].std(ddof=1) -
+                    (far_sums[-1] - far_sums[-60:].mean()) /
+                    far_sums[-60:].std(ddof=1))
+        self.assertAlmostEqual(value_at(z_pair, 79), expected, places=3)
+
 
 if __name__ == "__main__":
     unittest.main()
