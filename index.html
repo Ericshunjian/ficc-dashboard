@@ -258,8 +258,8 @@
       <div class="card-icon">🧩</div>
       <div class="card-title">因子库（原始池 + 实时变换）</div>
       <div class="card-desc">
-        303 条原始序列：机构行为（现券 219 / 回购 32）、估值曲线与期货 52、技术指标 32 条派生。
-        前端实时做 MA / 滚动百分位 / Z-score / 差分，支持序列相减构造分歧度类复合因子。
+        机构现券净买入、回购、估值曲线与期货原始序列，以及按机构和原始期限档生成的衍生因子。
+        支持跨期限需求差及 MA / 滚动百分位 / Z-score / 差分等变换。
       </div>
       <div class="card-meta">
         <span>数据：现券 + 质押式回购 + 曲线 + 期货</span>
@@ -271,7 +271,7 @@
       <div class="card-icon">🩺</div>
       <div class="card-title">因子体检（L2 有效性检验）</div>
       <div class="card-desc">
-        1 万套检验：303 条因子 × 3 种形态 × 3 个目标 × 4 个周期。Newey-West、独立样本 t、
+        数万套检验：原始与衍生因子 × 3 种形态 × 多个目标及周期。Newey-West、独立样本 t、
         循环置换检验三重判据 + BH-FDR 校正，配分组收益 / 分年 IC / regime 稳定性 / 衰减曲线。
         因子默认滞后 1 日使用（机构行为 T+1 发布）。
       </div>
