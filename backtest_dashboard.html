@@ -141,6 +141,9 @@
   td:first-child, th:first-child { text-align: left; }
   tr:hover td { background: var(--bg); }
 
+  #factor-extra { display:flex; flex-direction:column; gap:12px; }
+  #factor-extra .chart-box { min-height:220px; }
+  #factor-extra .trade-table-box { max-height:240px; }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -152,6 +155,7 @@
   <div class="tabs">
     <button class="tab active" id="tab-cta" onclick="switchTab('cta')">CTA 趋势追踪</button>
     <button class="tab" id="tab-arb" onclick="switchTab('arb')">价差套利</button>
+    <button class="tab" id="tab-factor" onclick="switchTab('factor')">因子信号回测</button>
   </div>
 </div>
 
@@ -239,6 +243,78 @@
       <button class="btn-run" onclick="runArbBacktest()">运行回测</button>
       <button class="btn-reset" onclick="resetArb()">重置参数</button>
     </div>
+
+    <!-- Factor Signal Config -->
+    <div id="factor-config" class="hidden">
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>预测目标</label>
+        <select id="f-tgt"></select>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>持仓周期</label>
+        <select id="f-n"></select>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>候选因子（来自因子体检）</label>
+        <select id="f-rank" onchange="fillFactorList()">
+          <option value="ic">按 |IC| 排序（A 方向）</option>
+          <option value="sig">按显著度排序</option>
+          <option value="crange">按区间极差排序（B 区域）</option>
+          <option value="cvr">按波动比排序（C 风险）</option>
+          <option value="tr">按尾赔率排序（C 风险）</option>
+        </select>
+        <select id="f-factor" style="margin-top:6px"></select>
+        <div class="hint" id="f-factor-hint">加载中…</div>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>因子形态</label>
+        <select id="f-form" onchange="loadCheckupBlock(fillFactorList)">
+          <option value="raw">原值</option>
+          <option value="pct">MA10→60日百分位</option>
+          <option value="diff">5日差分</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>信号映射</label>
+        <select id="f-mode" onchange="toggleFactorParams()">
+          <option value="thresh">阈值：|Z|&gt;k 才持仓</option>
+          <option value="linear">线性：clip(Z,−2,2)/2</option>
+          <option value="zone">分位区间（B 类区域信号）</option>
+        </select>
+        <div class="param-row" id="f-thr-box"><label>阈值 k</label>
+          <input type="number" id="f-thr" value="1" step="0.1" min="0"><span class="unit">σ</span></div>
+        <div class="param-row hidden" id="f-zone-box"><label>开仓区间</label>
+          <select id="f-zone">
+            <option value="lo10">最低 10% 分位</option>
+            <option value="lo25">最低 25% 分位</option>
+            <option value="hi25">最高 25% 分位</option>
+            <option value="hi10">最高 10% 分位</option>
+            <option value="ends">两端（0–10% 与 90–100%）</option>
+          </select></div>
+        <div class="param-row"><label>方向</label>
+          <select id="f-dir">
+            <option value="auto">按样本内 IC 符号自动</option>
+            <option value="1">因子高 → 做多目标</option>
+            <option value="-1">因子高 → 做空目标</option>
+          </select></div>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label"><span class="dot"></span>回测设置</label>
+        <div class="param-row"><label>起始</label><input type="date" id="f-start"></div>
+        <div class="param-row"><label>结束</label><input type="date" id="f-end"></div>
+        <div class="param-row"><label>样本外</label><input type="date" id="f-oos"
+          title="该日之后算样本外；切点前后各 N 天为 purge/embargo 区，不下注"></div>
+        <div class="param-row"><label>成本</label><input type="number" id="f-cost" value="0" step="0.05" min="0"><span class="unit">/次</span></div>
+      </div>
+
+      <button class="btn-run" onclick="runFactorBacktest()">运行回测</button>
+      <button class="btn-reset" onclick="resetFactor()">重置参数</button>
+    </div>
   </div>
 
   <div class="main">
@@ -248,7 +324,11 @@
       <div class="kpi"><div class="kpi-label">最大回撤</div><div class="kpi-value" id="kpi-dd">--</div></div>
       <div class="kpi"><div class="kpi-label">夏普比率</div><div class="kpi-value" id="kpi-sharpe">--</div></div>
       <div class="kpi"><div class="kpi-label">胜率</div><div class="kpi-value" id="kpi-winrate">--</div></div>
-      <div class="kpi"><div class="kpi-label">交易次数</div><div class="kpi-value" id="kpi-trades">--</div></div>
+      <div class="kpi"><div class="kpi-label" id="lbl-trades">交易次数</div><div class="kpi-value" id="kpi-trades">--</div></div>
+      <div class="kpi f-only hidden"><div class="kpi-label">下注次数</div><div class="kpi-value" id="kpi-bets">--</div></div>
+      <div class="kpi f-only hidden"><div class="kpi-label">样本外年化</div><div class="kpi-value" id="kpi-oos">--</div></div>
+      <div class="kpi f-only hidden"><div class="kpi-label">样本外夏普</div><div class="kpi-value" id="kpi-oossharpe">--</div></div>
+      <div class="kpi f-only hidden"><div class="kpi-label">盈亏比</div><div class="kpi-value" id="kpi-pl">--</div></div>
     </div>
 
     <div class="chart-area">
@@ -263,14 +343,14 @@
         </div>
       </div>
       <div class="chart-box flex-2">
-        <div class="chart-label">策略净值（累计 bp）</div>
+        <div class="chart-label" id="label-equity">策略净值（累计 bp）</div>
         <div class="chart-wrap" id="wrap-equity">
           <div class="status-msg"><span class="icon">📋</span><span>运行回测后显示</span></div>
           <canvas id="chart-equity" style="display:none;"></canvas>
         </div>
       </div>
       <div class="chart-box">
-        <div class="chart-label">回撤曲线（bp）</div>
+        <div class="chart-label" id="label-dd">回撤曲线（bp）</div>
         <div class="chart-wrap" id="wrap-dd">
           <div class="status-msg"><span class="icon">📋</span><span>运行回测后显示</span></div>
           <canvas id="chart-dd" style="display:none;"></canvas>
@@ -278,7 +358,38 @@
       </div>
     </div>
 
-    <div class="trade-table-box">
+    <div id="factor-extra" class="hidden">
+      <div class="chart-box" style="min-height:auto;padding:10px 16px">
+        <div class="chart-label">结论提示</div>
+        <div class="hint" id="f-note" style="font-size:12px">运行回测后显示</div>
+        <div class="hint" style="font-size:11px;margin-top:6px;color:#95a5a6">
+          口径：日期轴 = T 主力有价格的期货交易日；因子滞后 1 个交易日（机构行为 T+1 发布）；
+          信号一律用滚动 250 日 Z / 滚动分位（全样本分位是未来函数）。
+          净值 = 总名义敞口固定 1 单位、每期用 1/N 资金新开一笔并持有 N 天
+          ⇒ 相邻日收益重叠 N 倍，日度夏普会被自相关抬高，<b>统计显著性只看「非重叠下注」的胜率/盈亏比</b>；
+          下注明细按交易日步长 N 抽稀，各期近似独立（与体检详情的抽稀基准略有差异，属正常）。
+        </div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-label">分年盈亏</div>
+        <div class="chart-wrap" id="wrap-year"><canvas id="chart-year"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-label">滚动 250 日 Z-score 与仓位</div>
+        <div class="chart-wrap" id="wrap-pos"><canvas id="chart-pos"></canvas></div>
+      </div>
+      <div class="trade-table-box">
+        <h3>非重叠下注明细（步长 = N 日，最近 40 笔）</h3>
+        <table id="bet-table">
+          <thead>
+            <tr><th>下注日</th><th>到期日</th><th>Z</th><th>仓位</th><th>目标变动</th><th>盈亏</th></tr>
+          </thead>
+          <tbody id="bet-tbody"><tr><td colspan="6" style="text-align:center;color:#999;padding:12px">运行回测后显示</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="trade-table-box" id="trade-box">
       <h3>交易明细</h3>
       <table id="trade-table">
         <thead>
@@ -302,7 +413,7 @@
 let curveData = null;
 let bondData = null;
 let allTargets = [];
-let chartPrice = null, chartEquity = null, chartDd = null;
+let chartPrice = null, chartEquity = null, chartDd = null, chartYear = null, chartPos = null;
 
 // ============================================
 // Init
@@ -323,6 +434,7 @@ async function init() {
     setDefaultDates();
 
     document.getElementById('status-price').innerHTML = '<span class="icon">📊</span><span>选择标的和参数后点击"运行回测"</span>';
+    initFromUrl();      // URL 带 tab=factor（体检页跳转过来）时自动切过去并跑一次
   } catch (err) {
     console.error('[backtest] init error:', err);
     document.getElementById('status-price').innerHTML = '<span class="icon">⚠️</span><span class="error-msg">数据加载失败: ' + err.message + '</span>';
@@ -373,23 +485,27 @@ function setDefaultDates() {
 // ============================================
 // Tab switching
 // ============================================
+var TAB_META = {
+  cta:    {sub:'CTA 趋势追踪 · 单标的',   top:'标的走势 + 开仓标记'},
+  arb:    {sub:'价差套利 · 双标的',       top:'价差走势 + 开仓标记'},
+  factor: {sub:'因子信号回测 · 体检结果直连', top:'目标走势'}
+};
 function switchTab(tab) {
-  const ctaCfg = document.getElementById('cta-config');
-  const arbCfg = document.getElementById('arb-config');
-  if (tab === 'cta') {
-    ctaCfg.classList.remove('hidden');
-    arbCfg.classList.add('hidden');
-    document.getElementById('tab-cta').classList.add('active');
-    document.getElementById('tab-arb').classList.remove('active');
-    document.getElementById('sidebar-subtitle').textContent = 'CTA 趋势追踪 · 单标的';
-    document.getElementById('label-top').textContent = '标的走势 + 开仓标记';
-  } else {
-    ctaCfg.classList.add('hidden');
-    arbCfg.classList.remove('hidden');
-    document.getElementById('tab-cta').classList.remove('active');
-    document.getElementById('tab-arb').classList.add('active');
-    document.getElementById('sidebar-subtitle').textContent = '价差套利 · 双标的';
-    document.getElementById('label-top').textContent = '价差走势 + 开仓标记';
+  ['cta','arb','factor'].forEach(function(t){
+    document.getElementById(t+'-config').classList.toggle('hidden', t !== tab);
+    document.getElementById('tab-'+t).classList.toggle('active', t === tab);
+  });
+  document.getElementById('sidebar-subtitle').textContent = TAB_META[tab].sub;
+  document.getElementById('label-top').textContent = TAB_META[tab].top;
+  document.getElementById('factor-extra').classList.toggle('hidden', tab !== 'factor');
+  document.getElementById('trade-box').classList.toggle('hidden', tab === 'factor');
+  Array.prototype.forEach.call(document.querySelectorAll('.f-only'),
+    function(e){ e.classList.toggle('hidden', tab !== 'factor'); });
+  if (tab === 'factor'){ ensureFactor(); }
+  else {
+    document.getElementById('lbl-trades').textContent = '交易次数';
+    document.getElementById('label-equity').textContent = '策略净值（累计 bp）';
+    document.getElementById('label-dd').textContent = '回撤曲线（bp）';
   }
 }
 
@@ -816,6 +932,645 @@ function resetCta() {
   document.getElementById('cta-reverse').checked = false;
   document.getElementById('cta-cost').value = 0;
   toggleCtaParams();
+}
+
+// ============================================
+// 因子信号回测（Tab 3）
+// 口径与 factor_checkup 完全一致，才能把体检结论直接变成策略：
+//   ① 日期轴按「T 主力有价格」的期货交易日（session）
+//   ② 因子滞后 1 个期货交易日（机构行为 T+1 发布）
+//   ③ 分组/信号用滚动 250 日 Z-score 与滚动经验分位（禁止全样本分位 = 未来函数）
+//   ④ 标签重叠 N 倍 ⇒ 统计显著性一律用「非重叠抽稀」（步长 N）
+//   ⑤ 样本切分处做 purge/embargo：切点前后各 N 天不下注
+// ============================================
+var LIB = null, CK = null, CKBLOCK = null, SES = null, SDATES = null, CMAP = null;
+var FTGT = [
+  {id:'y10',   name:'10Y国债',     mode:'yield',   legs:[['10年国债',1]], unit:'bp'},
+  {id:'s3010', name:'30Y−10Y利差', mode:'yield',   legs:[['30年国债',1],['10年国债',-1]], unit:'bp'},
+  {id:'tl3t',  name:'3T−TL',       mode:'futures', legs:[['T主力',3,100],['TL主力',-1,100]], unit:'点', as:'spread', maxN:10},
+  {id:'ts4t',  name:'4TS−T',       mode:'futures', legs:[['TS主力',2,200],['T主力',-1,100]], unit:'点', as:'spread'},
+  {id:'t',     name:'T单边',       mode:'futures', legs:[['T主力',1,100]], unit:'点', as:'price'},
+  {id:'tl',    name:'TL单边',      mode:'futures', legs:[['TL主力',1,100]], unit:'点', as:'price', maxN:10}
+];
+/* 与 prepare_factor_checkup.py 的 COLS 对齐（只取本页用到的） */
+var FIDX = {g:0, k:1, label:2, n:3, ic:4, sig:28, crange:40, cprange:41, cmono:42, cvr:43, tr:44};
+var F = { tgt:'s3010', N:5, form:'raw', g:'', k:'', mode:'thresh', thr:1, zone:'lo10',
+          dir:'auto', cost:0, start:'', end:'', oos:'', rank:'ic' };
+
+function fnum(v){ return (v === null || v === undefined || isNaN(v)) ? null : Number(v); }
+function fSpec(){ return FTGT.filter(function(t){ return t.id === F.tgt; })[0] || FTGT[1]; }
+function fHorizons(s){ return [1,5,10,20].filter(function(n){ return !s.maxN || n <= s.maxN; }); }
+
+function expandSeries(s, D){
+  var v = new Array(D).fill(null);
+  for (var i = 0; i < s.v.length; i++) v[s.i0 + i] = s.v[i];
+  return v;
+}
+/* 只在切到本 Tab 时才拉因子库（6MB）与体检索引，避免拖慢前两个 Tab。
+   ★ 用 FLOAD 缓存同一个 promise：switchTab 和 initFromUrl 都会调本函数，
+     没有缓存就会并发发两遍 6MB 请求。 */
+var FLOAD = null;
+function ensureFactor(cb){
+  if (!FLOAD){
+    FLOAD = Promise.all([
+      fetch('factor_library.json', {cache:'no-cache'}).then(function(r){ return r.json(); })
+        .then(function(j){ LIB = j; prepLib(); }),
+      fetch('factor_checkup.json', {cache:'no-cache'}).then(function(r){ return r.json(); })
+        .then(function(j){ CK = j; initFactorSelects(); })
+    ]);
+  }
+  FLOAD.then(function(){
+    loadCheckupBlock(function(){ fillFactorList(); if (cb) cb(); });
+  }).catch(function(e){
+    var h = document.getElementById('f-factor-hint');
+    if (h) h.textContent = '数据加载失败：' + e.message;
+  });
+}
+function prepLib(){
+  var D = LIB.dates.length;
+  CMAP = {};
+  (LIB.curve || []).forEach(function(s){ CMAP[s.name] = expandSeries(s, D); });
+  SES = [];
+  var t0 = CMAP['T主力'] || [];
+  for (var i = 0; i < D; i++) if (t0[i] !== null && !isNaN(t0[i])) SES.push(i);
+  SDATES = SES.map(function(i){ return LIB.dates[i]; });
+  for (var n in CMAP) CMAP[n] = SES.map(function(i){ return CMAP[n][i]; });
+}
+function initFactorSelects(){
+  var ts = document.getElementById('f-tgt');
+  ts.innerHTML = '';
+  FTGT.forEach(function(t){
+    var o = document.createElement('option');
+    o.value = t.id; o.textContent = t.name + '（' + t.unit + '）';
+    ts.appendChild(o);
+  });
+  ts.value = F.tgt;
+  ts.onchange = function(){ F.tgt = this.value; buildFNSel(); loadCheckupBlock(fillFactorList); };
+  buildFNSel();
+  document.getElementById('f-n').onchange = function(){ F.N = +this.value; loadCheckupBlock(fillFactorList); };
+  document.getElementById('f-factor').onchange = function(){
+    var v = this.value; if (!v) return;
+    var ps = v.split('::'); F.g = ps[0]; F.k = ps[1];
+    runFactorBacktest();
+  };
+  var sf = document.getElementById('f-start'), se = document.getElementById('f-end');
+  if (!sf.value) sf.value = '2022-01-01';
+  if (!se.value) se.value = SDATES && SDATES.length ? SDATES[SDATES.length - 1] : '';
+}
+function buildFNSel(){
+  var s = fSpec(), hs = fHorizons(s), sel = document.getElementById('f-n');
+  sel.innerHTML = '';
+  hs.forEach(function(n){
+    var o = document.createElement('option'); o.value = n; o.textContent = 'N=' + n + ' 日';
+    sel.appendChild(o);
+  });
+  if (hs.indexOf(F.N) < 0) F.N = hs[hs.length - 1];
+  sel.value = F.N;
+}
+/* 取当前 (形态, 目标, N) 这块体检结果，作为候选因子榜 */
+function loadCheckupBlock(cb){
+  var key = F.form + '|' + F.tgt + '|' + F.N;
+  if (CKBLOCK && CKBLOCK.key === key){ if (cb) cb(); return; }
+  var f = (CK.block_files || {})[key];
+  if (!f){ document.getElementById('f-factor-hint').textContent = '（该块无体检数据）'; if (cb) cb(); return; }
+  document.getElementById('f-factor-hint').textContent = '正在加载体检结果…';
+  fetch(f + '?t=' + Date.now()).then(function(r){ return r.json(); }).then(function(j){
+    CKBLOCK = { key: key, rows: (j.blocks || {})[String(F.N)] || [] };
+    if (cb) cb();
+  }).catch(function(){ document.getElementById('f-factor-hint').textContent = '（体检数据加载失败）'; });
+}
+function fillFactorList(){
+  var sel = document.getElementById('f-factor'), hint = document.getElementById('f-factor-hint');
+  if (!CKBLOCK){ return; }
+  var rows = CKBLOCK.rows.slice(), rank = document.getElementById('f-rank').value;
+  var val = function(r){
+    var v = r[FIDX[rank]];
+    if (rank === 'ic') v = Math.abs(r[FIDX.ic] || 0);
+    return (v === null || v === undefined || isNaN(v)) ? -9e9 : v;
+  };
+  rows.sort(function(a, b){ return val(b) - val(a); });
+  var top = rows.slice(0, 30);
+  /* URL 直接带进来的因子可能不在前 30，强制置顶，否则选不中 */
+  if (F.k && !top.some(function(r){ return r[FIDX.g] === F.g && r[FIDX.k] === F.k; })){
+    var hit = rows.filter(function(r){ return r[FIDX.g] === F.g && r[FIDX.k] === F.k; })[0];
+    if (hit) top.unshift(hit);
+  }
+  sel.innerHTML = '';
+  top.forEach(function(r){
+    var o = document.createElement('option');
+    o.value = r[FIDX.g] + '::' + r[FIDX.k];
+    var extra = rank === 'ic' ? ('IC ' + fmtF(r[FIDX.ic], 3))
+              : rank === 'sig' ? ('sig ' + r[FIDX.sig] + ' / IC ' + fmtF(r[FIDX.ic], 3))
+              : rank === 'crange' ? ('极差 ' + fmtF(r[FIDX.crange], 2) + ' / ρ ' + fmtF(r[FIDX.cmono], 2))
+              : rank === 'cvr' ? ('波动比 ' + fmtF(r[FIDX.cvr], 2))
+              : ('尾赔率 ' + fmtF(r[FIDX.tr], 2));
+    o.textContent = r[FIDX.label] + '　｜　' + extra;
+    sel.appendChild(o);
+  });
+  if (F.k){
+    var want = F.g + '::' + F.k;
+    if (top.some(function(r){ return r[FIDX.g] + '::' + r[FIDX.k] === want; })) sel.value = want;
+  }
+  hint.textContent = '共 ' + rows.length + ' 条（' + F.form + ' / ' + F.tgt + ' / N=' + F.N + '），列出前 ' + top.length + ' 条';
+}
+function fmtF(v, nd){ return fnum(v) === null ? '—' : Number(v).toFixed(nd === undefined ? 3 : nd); }
+
+function toggleFactorParams(){
+  var m = document.getElementById('f-mode').value;
+  document.getElementById('f-thr-box').classList.toggle('hidden', m !== 'thresh');
+  document.getElementById('f-zone-box').classList.toggle('hidden', m !== 'zone');
+}
+
+/* ---------- 序列工具（与体检口径一致） ---------- */
+function getFactorSeries(g, k){
+  var arr = LIB[g] || [], s = null;
+  for (var i = 0; i < arr.length; i++){
+    var kk = g === 'cash' ? (arr[i].bt + '|' + arr[i].inst + '|' + arr[i].mat)
+           : g === 'repo' ? (arr[i].inst + '|' + arr[i].field)
+           : g === 'derived' ? (arr[i].op + '|' + arr[i].inst + '|' + arr[i].tenor + '|' + arr[i].cls)
+           : arr[i].name;
+    if (kk === k){ s = arr[i]; break; }
+  }
+  if (!s) return null;
+  var full = expandSeries(s, LIB.dates.length);
+  return SES.map(function(i){ return full[i]; });
+}
+function maNan(a, w){
+  var n = a.length, out = new Array(n).fill(null), s = 0, c = 0;
+  for (var i = 0; i < n; i++){
+    if (i >= w && a[i - w] !== null && !isNaN(a[i - w])){ s -= a[i - w]; c--; }
+    if (a[i] !== null && !isNaN(a[i])){ s += a[i]; c++; }
+    if (i >= w - 1 && c >= w * 0.7) out[i] = s / c;
+  }
+  return out;
+}
+function rollingPctF(a, w){
+  var n = a.length, out = new Array(n).fill(null);
+  for (var i = w - 1; i < n; i++){
+    var cur = a[i];
+    if (cur === null || isNaN(cur)) continue;
+    var le = 0, eq = 0, cnt = 0;
+    for (var j = i - w + 1; j <= i; j++){
+      var x = a[j]; if (x === null || isNaN(x)) continue;
+      cnt++; if (x < cur) le++; else if (x === cur) eq++;
+    }
+    if (cnt > 0) out[i] = (le + 0.5 * eq) / cnt * 100;
+  }
+  return out;
+}
+function rollingZ(a, w){
+  var n = a.length, out = new Array(n).fill(null);
+  for (var i = w - 1; i < n; i++){
+    var s = 0, c = 0, j;
+    for (j = i - w + 1; j <= i; j++){ var v = a[j]; if (v !== null && !isNaN(v)){ s += v; c++; } }
+    if (c < 2 || a[i] === null || isNaN(a[i])) continue;
+    var m = s / c, ss = 0;
+    for (j = i - w + 1; j <= i; j++){ var u = a[j]; if (u !== null && !isNaN(u)) ss += (u - m) * (u - m); }
+    var sd = Math.sqrt(ss / (c - 1));
+    if (sd > 0) out[i] = (a[i] - m) / sd;
+  }
+  return out;
+}
+function makeFormF(a, form){
+  if (form === 'raw') return a.slice();
+  if (form === 'pct') return rollingPctF(maNan(a, 10), 60);
+  var out = new Array(a.length).fill(null);
+  for (var t = 5; t < a.length; t++){
+    if (a[t] !== null && !isNaN(a[t]) && a[t - 5] !== null && !isNaN(a[t - 5])) out[t] = a[t] - a[t - 5];
+  }
+  return out;
+}
+function ranksF(a){
+  var idx = [], n = a.length, i;
+  for (i = 0; i < n; i++) idx.push(i);
+  idx.sort(function(x, y){ return a[x] - a[y]; });
+  var r = new Array(n);
+  i = 0;
+  while (i < n){
+    var j = i;
+    while (j + 1 < n && a[idx[j + 1]] === a[idx[i]]) j++;
+    var avg = (i + j) / 2 + 1;
+    for (var k2 = i; k2 <= j; k2++) r[idx[k2]] = avg;
+    i = j + 1;
+  }
+  return r;
+}
+function pearsonF(x, y){
+  var n = Math.min(x.length, y.length), sx = 0, sy = 0, i;
+  for (i = 0; i < n; i++){ sx += x[i]; sy += y[i]; }
+  var mx = sx / n, my = sy / n, sxy = 0, sxx = 0, syy = 0;
+  for (i = 0; i < n; i++){ var a = x[i] - mx, b = y[i] - my; sxy += a * b; sxx += a * a; syy += b * b; }
+  return (sxx > 0 && syy > 0) ? sxy / Math.sqrt(sxx * syy) : NaN;
+}
+function spearmanF(x, y){ return pearsonF(ranksF(x), ranksF(y)); }
+
+/* ---------- 目标构造（复刻 Python build_target / target_change） ---------- */
+function buildLevel(spec){
+  var D = SDATES.length, lvl = new Array(D).fill(NaN), denom = null, i, j;
+  if (spec.mode === 'yield'){
+    for (i = 0; i < D; i++){
+      var s = 0, ok = true;
+      for (j = 0; j < spec.legs.length; j++){
+        var v = CMAP[spec.legs[j][0]][i];
+        if (v === null || isNaN(v)){ ok = false; break; }
+        s += spec.legs[j][1] * v;
+      }
+      lvl[i] = ok ? s : NaN;
+    }
+  } else {
+    var notional = 0;
+    for (j = 0; j < spec.legs.length; j++) notional += Math.abs(spec.legs[j][1]) * (spec.legs[j][2] || 100);
+    var dn = spec.as === 'spread' ? 100 : (spec.as === 'price' ? notional : NaN);
+    denom = new Array(D).fill(dn);
+    for (i = 0; i < D; i++){
+      var p = 0, ok2 = true;
+      for (j = 0; j < spec.legs.length; j++){
+        var w = CMAP[spec.legs[j][0]][i];
+        if (w === null || isNaN(w)){ ok2 = false; break; }
+        p += spec.legs[j][1] * (spec.legs[j][2] || 100) * w;
+      }
+      lvl[i] = ok2 ? p : NaN;
+    }
+  }
+  return {lvl: lvl, denom: denom};
+}
+function fwdChange(spec, lv, N){
+  var L = lv.lvl, D = L.length, out = new Array(D).fill(null);
+  for (var t = 0; t + N < D; t++){
+    var a = L[t], b = L[t + N];
+    if (a === null || b === null || isNaN(a) || isNaN(b)) continue;
+    var d = b - a;
+    if (spec.mode === 'yield') out[t] = d * 100;
+    else {
+      var dn = lv.denom ? lv.denom[t] : NaN;
+      out[t] = (dn && !isNaN(dn) && dn > 0) ? d / dn : null;
+    }
+  }
+  return out;
+}
+function deltaSeries(spec, lv){
+  var L = lv.lvl, D = L.length, out = new Array(D).fill(null);
+  for (var j = 1; j < D; j++){
+    var a = L[j - 1], b = L[j];
+    if (a === null || b === null || isNaN(a) || isNaN(b)) continue;
+    var d = b - a;
+    if (spec.mode === 'yield') out[j] = d * 100;
+    else {
+      var dn = lv.denom ? lv.denom[j] : NaN;
+      out[j] = (dn && !isNaN(dn) && dn > 0) ? d / dn : null;
+    }
+  }
+  return out;
+}
+
+/* ---------- 主回测 ---------- */
+function runFactorBacktest(){
+  if (!LIB || !CMAP){ alert('因子库仍在加载，请稍候再试'); return; }
+  var selv = document.getElementById('f-factor').value;
+  if (!selv){ alert('请先在「候选因子」里选一条'); return; }
+  var ps = selv.split('::'); F.g = ps[0]; F.k = ps[1];
+  var spec = fSpec();
+  F.N = +document.getElementById('f-n').value;
+  F.form = document.getElementById('f-form').value;
+  F.mode = document.getElementById('f-mode').value;
+  F.thr = parseFloat(document.getElementById('f-thr').value) || 0;
+  F.zone = document.getElementById('f-zone').value;
+  F.dir = document.getElementById('f-dir').value;
+  F.cost = parseFloat(document.getElementById('f-cost').value) || 0;
+  F.start = document.getElementById('f-start').value;
+  F.end = document.getElementById('f-end').value;
+  F.oos = document.getElementById('f-oos').value;
+
+  var x = getFactorSeries(F.g, F.k);
+  if (!x){ alert('因子库中找不到该序列：' + F.k); return; }
+  var D = SDATES.length;
+  var xf = makeFormF(x, F.form);
+  var z = rollingZ(xf, 250), pct = rollingPctF(xf, 250);
+  /* 滞后 1 个期货交易日：t 时刻只能用 t-1 收盘后的因子值 */
+  var zl = new Array(D).fill(null), pl = new Array(D).fill(null);
+  for (var t = 1; t < D; t++){ zl[t] = z[t - 1]; pl[t] = pct[t - 1]; }
+
+  var lv = buildLevel(spec);
+  var fwd = fwdChange(spec, lv, F.N);
+  var dlt = deltaSeries(spec, lv);
+
+  /* 区间截断 */
+  var i0 = 0, i1 = D - 1;
+  for (var i = 0; i < D; i++){ if (SDATES[i] >= F.start){ i0 = i; break; } }
+  for (var i = D - 1; i >= 0; i--){ if (SDATES[i] <= F.end){ i1 = i; break; } }
+  /* 样本外切点 + purge/embargo：切点前后各 N 天不下注（标签重叠 N 倍，否则会漏未来信息） */
+  var oosIdx = null;
+  if (F.oos){ for (var i = 0; i < D; i++){ if (SDATES[i] >= F.oos){ oosIdx = i; break; } } }
+
+  /* 方向：样本内（purge 之前）的 Spearman 符号，避免用全样本偷看未来 */
+  var sign = 1;
+  if (F.dir === 'auto'){
+    var xs = [], ys = [];
+    var lim = oosIdx === null ? D : Math.max(0, oosIdx - F.N);
+    for (var t = 0; t < lim; t++){
+      if (xf[t] === null || isNaN(xf[t]) || fwd[t] === null || isNaN(fwd[t])) continue;
+      if (t < i0 || t > i1) continue;
+      xs.push(xf[t]); ys.push(fwd[t]);
+    }
+    var ic0 = xs.length >= 60 ? spearmanF(xs, ys) : NaN;
+    sign = (!isNaN(ic0) && ic0 < 0) ? -1 : 1;
+    F._ic0 = ic0;
+  } else {
+    sign = +F.dir;
+    F._ic0 = NaN;
+  }
+
+  /* 逐日目标仓位 w（未滞后前已滞后过，zl/pl 就是可用信号） */
+  var W = new Array(D).fill(0), Zs = new Array(D).fill(null);
+  for (var t = 0; t < D; t++){
+    if (t < i0 || t > i1){ continue; }
+    var w = 0;
+    if (F.mode === 'thresh'){
+      var zz = fnum(zl[t]);
+      if (zz !== null) w = zz > F.thr ? 1 : (zz < -F.thr ? -1 : 0);
+      Zs[t] = zz;
+    } else if (F.mode === 'linear'){
+      var zl2 = fnum(zl[t]);
+      if (zl2 !== null) w = Math.max(-2, Math.min(2, zl2)) / 2;
+      Zs[t] = zl2;
+    } else {
+      var p = fnum(pl[t]);
+      if (p !== null){
+        if (F.zone === 'ends') w = p <= 10 ? -1 : (p >= 90 ? 1 : 0);
+        else if (F.zone === 'lo10') w = p <= 10 ? -1 : 0;
+        else if (F.zone === 'lo25') w = p <= 25 ? -1 : 0;
+        else if (F.zone === 'hi25') w = p >= 75 ? 1 : 0;
+        else if (F.zone === 'hi10') w = p >= 90 ? 1 : 0;
+      }
+      Zs[t] = p;
+    }
+    if (fwd[t] === null || isNaN(fwd[t])) w = 0;                 /* 没有到期收益就不下注 */
+    if (oosIdx !== null && t >= oosIdx - F.N && t <= oosIdx + F.N) w = 0;  /* purge/embargo */
+    W[t] = w * sign;
+  }
+
+  /* 日度净值：总名义敞口固定 1 单位，每期用 1/N 资金新开一笔、持有 N 天
+     ⇒ 第 j 日仓位 = 近 N 笔下注仓位的均值；日盈亏 = 仓位 × 当日目标变动 */
+  var pos = new Array(D).fill(0), daily = new Array(D).fill(0);
+  for (var j = 1; j < D; j++){
+    var s = 0;
+    for (var t = Math.max(0, j - F.N); t <= j - 1; t++) s += W[t];
+    pos[j] = s / F.N;
+    var d = fnum(dlt[j]);
+    if (d === null) continue;
+    daily[j] = pos[j] * d;
+    if (j > 1) daily[j] -= Math.abs(pos[j] - pos[j - 1]) * F.cost;
+  }
+  var equity = new Array(D).fill(0), cum = 0;
+  for (var j = 0; j < D; j++){ cum += (daily[j] || 0); equity[j] = cum; }
+  var dd = new Array(D).fill(0), peak = -1e18;
+  for (var j = 0; j < D; j++){ peak = Math.max(peak, equity[j]); dd[j] = equity[j] - peak; }
+
+  /* 基线：一直做多 / 一直做空（同样口径，只是 w 恒为 ±1） */
+  function baseline(sgn){
+    var eq = new Array(D).fill(0), c = 0, pprev = 0;
+    for (var j = 1; j < D; j++){
+      var d = fnum(dlt[j]); if (d === null){ eq[j] = c; continue; }
+      var inR = (j >= i0 && j <= i1);
+      var p = inR ? sgn : 0;
+      c += p * d;
+      if (j > 1) c -= Math.abs(p - pprev) * F.cost;
+      pprev = p;
+      eq[j] = c;
+    }
+    return eq;
+  }
+  var eqLong = baseline(1), eqShort = baseline(-1);
+
+  /* 非重叠下注（步长 N）：各期近似独立，统计显著性只认这一组 */
+  var bets = [];
+  for (var t = i0; t + F.N < D && t <= i1; t += F.N){
+    if (!W[t]) continue;
+    var fv = fnum(fwd[t]);
+    if (fv === null) continue;
+    var pnl = W[t] * fv - (F.cost || 0);
+    bets.push({ d: SDATES[t], d2: SDATES[t + F.N], z: Zs[t], w: W[t], fwd: fv, pnl: pnl });
+  }
+  var pnls = bets.map(function(b){ return b.pnl; });
+  var wins = pnls.filter(function(v){ return v > 0; });
+  var loss = pnls.filter(function(v){ return v <= 0; });
+  var mean = function(a){ return a.length ? a.reduce(function(x, y){ return x + y; }, 0) / a.length : 0; };
+  var sd = function(a){ if (a.length < 2) return 0; var m = mean(a);
+    return Math.sqrt(a.reduce(function(x, y){ return x + (y - m) * (y - m); }, 0) / (a.length - 1)); };
+  var winRate = pnls.length ? wins.length / pnls.length * 100 : 0;
+  var pl = (wins.length && loss.length) ? (mean(wins) / Math.abs(mean(loss))) : null;
+  var perYear = 252 / F.N;
+  var sharpeBets = sd(pnls) > 0 ? (mean(pnls) / sd(pnls)) * Math.sqrt(perYear) : 0;
+
+  /* 日度口径（实盘 CTA 口径） */
+  var dEff = [], oosDaily = [];
+  for (var j = i0; j <= i1; j++){
+    dEff.push(daily[j] || 0);
+    if (oosIdx !== null && j > oosIdx + F.N) oosDaily.push(daily[j] || 0);
+  }
+  var nDays = dEff.length || 1;
+  var total = equity[i1] - equity[Math.max(0, i0 - 1)];
+  var annual = total / nDays * 252;
+  var maxDd = Math.min.apply(null, dd.slice(i0, i1 + 1).concat([0]));
+  var sharpeD = sd(dEff) > 0 ? (mean(dEff) / sd(dEff)) * Math.sqrt(252) : 0;
+  var oosAnnual = oosDaily.length ? mean(oosDaily) * 252 : null;
+  var oosSharp = sd(oosDaily) > 0 ? (mean(oosDaily) / sd(oosDaily)) * Math.sqrt(252) : null;
+
+  /* 分年 */
+  var yrMap = {}, yrOrder = [];
+  for (var j = i0; j <= i1; j++){
+    var y = SDATES[j].slice(0, 4);
+    if (!yrMap[y]){ yrMap[y] = 0; yrOrder.push(y); }
+    yrMap[y] += (daily[j] || 0);
+  }
+
+  var res = {
+    spec: spec, D: D, i0: i0, i1: i1, oosIdx: oosIdx,
+    dates: SDATES.slice(i0, i1 + 1), z: Zs.slice(i0, i1 + 1), pos: pos.slice(i0, i1 + 1),
+    lvl: lv.lvl.slice(i0, i1 + 1),
+    equity: equity.slice(i0, i1 + 1), dd: dd.slice(i0, i1 + 1),
+    eqLong: eqLong.slice(i0, i1 + 1), eqShort: eqShort.slice(i0, i1 + 1),
+    bets: bets,
+    kpi: { total: total, annual: annual, maxDd: maxDd, sharpe: sharpeD, winRate: winRate,
+           pl: pl, bets: bets.length, oosAnnual: oosAnnual, oosSharp: oosSharp,
+           sharpeBets: sharpeBets, turn: mean(dEff.map(function(v, i){ return i ? Math.abs(pos[i0 + i] - pos[i0 + i - 1]) : 0; })) },
+    years: yrOrder.map(function(y){ return {y: y, v: yrMap[y]}; }),
+    label: (CKBLOCK ? (CKBLOCK.rows.filter(function(r){ return r[FIDX.g] === F.g && r[FIDX.k] === F.k; })[0] || null) : null)
+  };
+  renderFactor(res);
+}
+
+/* ---------- 渲染 ---------- */
+function renderFactor(res){
+  var k = res.kpi, u = res.spec.unit;
+  var set = function(id, v, cls){ var e = document.getElementById(id); e.textContent = v; e.className = 'kpi-value' + (cls ? ' ' + cls : ''); };
+  set('kpi-total', k.total.toFixed(1) + ' ' + u, k.total >= 0 ? 'pos' : 'neg');
+  set('kpi-annual', k.annual.toFixed(1) + ' ' + u, k.annual >= 0 ? 'pos' : 'neg');
+  set('kpi-dd', k.maxDd.toFixed(1) + ' ' + u, 'neg');
+  set('kpi-sharpe', k.sharpe.toFixed(2));
+  set('kpi-winrate', k.winRate.toFixed(1) + '%');
+  /* 本模式里 kpi-trades 复用为「日均换手」，避免与 kpi-bets 重复 */
+  document.getElementById('lbl-trades').textContent = '日均换手';
+  set('kpi-trades', (k.turn * 100).toFixed(1) + '%');
+  set('kpi-bets', k.bets + ' 笔');
+  set('kpi-oos', k.oosAnnual === null ? '未设样本外' : (k.oosAnnual.toFixed(1) + ' ' + u),
+      k.oosAnnual === null ? '' : (k.oosAnnual >= 0 ? 'pos' : 'neg'));
+  set('kpi-oossharpe', k.oosSharp === null ? '—' : k.oosSharp.toFixed(2));
+  set('kpi-pl', k.pl === null ? '—' : k.pl.toFixed(2));
+
+  var labels = res.dates;
+  document.getElementById('label-equity').textContent = '策略净值（累计 ' + u + '）· 虚线为基线';
+  document.getElementById('label-dd').textContent = '回撤曲线（' + u + '）';
+  /* 目标走势 */
+  if (chartPrice) chartPrice.destroy();
+  showCanvas('wrap-price', 'chart-price');
+  chartPrice = new Chart(document.getElementById('chart-price'), {
+    type: 'line',
+    data: { labels: labels, datasets: [{ label: res.spec.name, data: res.lvl,
+      borderColor: '#5470c6', borderWidth: 1.4, pointRadius: 0, tension: 0.1 }] },
+    options: baseChartOpt('目标水平（' + (res.spec.mode === 'yield' ? '%' : '报价') + '）')
+  });
+  /* 净值：策略 + 两个基线 */
+  if (chartEquity) chartEquity.destroy();
+  showCanvas('wrap-equity', 'chart-equity');
+  chartEquity = new Chart(document.getElementById('chart-equity'), {
+    type: 'line',
+    data: { labels: labels, datasets: [
+      { label: '策略', data: res.equity, borderColor: '#5470c6', borderWidth: 1.8, pointRadius: 0, tension: 0.1 },
+      { label: '一直做多', data: res.eqLong, borderColor: '#ee6666', borderWidth: 1, borderDash: [4,3], pointRadius: 0 },
+      { label: '一直做空', data: res.eqShort, borderColor: '#91cc75', borderWidth: 1, borderDash: [4,3], pointRadius: 0 }
+    ]},
+    options: Object.assign(baseChartOpt('累计盈亏（' + u + '）'), {
+      plugins: { legend: { display: true, position: 'top', labels: { usePointStyle: true, padding: 10, font: { size: 10 } } },
+                 tooltip: { callbacks: { label: function(c){ return c.dataset.label + ' ' + c.parsed.y.toFixed(1) + ' ' + u; } } } }
+    })
+  });
+  /* 回撤 */
+  if (chartDd) chartDd.destroy();
+  showCanvas('wrap-dd', 'chart-dd');
+  chartDd = new Chart(document.getElementById('chart-dd'), {
+    type: 'line',
+    data: { labels: labels, datasets: [{ label: '回撤', data: res.dd, borderColor: '#ee6666',
+      backgroundColor: 'rgba(238,102,102,0.15)', borderWidth: 1, pointRadius: 0, fill: true, tension: 0.1 }] },
+    options: baseChartOpt('回撤（' + u + '）')
+  });
+  /* 分年 */
+  if (chartYear) chartYear.destroy();
+  chartYear = new Chart(document.getElementById('chart-year'), {
+    type: 'bar',
+    data: { labels: res.years.map(function(y){ return y.y; }),
+      datasets: [{ data: res.years.map(function(y){ return y.v; }),
+        backgroundColor: res.years.map(function(y){ return y.v >= 0 ? '#ee6666' : '#91cc75'; }), borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(c){ return c.parsed.y.toFixed(1) + ' ' + u; } } } },
+      scales: { x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                y: { grid: { color: '#f0f0f0' }, ticks: { font: { size: 10 } } } } }
+  });
+  /* Z 与仓位 */
+  if (chartPos) chartPos.destroy();
+  var zName = F.mode === 'zone' ? '滚动分位' : '滚动 Z';
+  chartPos = new Chart(document.getElementById('chart-pos'), {
+    type: 'line',
+    data: { labels: labels, datasets: [
+      { label: zName, data: res.z, borderColor: '#9a60b4', borderWidth: 1, pointRadius: 0, yAxisID: 'y', spanGaps: true },
+      { label: '仓位', data: res.pos, borderColor: '#fac858', backgroundColor: 'rgba(250,200,88,0.18)',
+        borderWidth: 1.2, pointRadius: 0, fill: true, yAxisID: 'y1', stepped: true }
+    ]},
+    options: { responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: true, position: 'top', labels: { usePointStyle: true, padding: 10, font: { size: 10 } } } },
+      scales: { x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 12 } },
+                y: { grid: { color: '#f0f0f0' }, ticks: { font: { size: 10 } } },
+                y1: { position: 'right', grid: { display: false }, ticks: { font: { size: 10 } } } } }
+  });
+  /* 下注明细 */
+  var tb = document.getElementById('bet-tbody');
+  if (!res.bets.length){
+    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:12px">无下注记录</td></tr>';
+  } else {
+    tb.innerHTML = res.bets.slice(-40).reverse().map(function(b){
+      var c = b.pnl >= 0 ? '#ee6666' : '#91cc75';
+      return '<tr><td>' + b.d + '</td><td>' + b.d2 + '</td><td>' + fmtF(b.z, 2) + '</td>' +
+        '<td>' + (b.w > 0 ? '多' : '空') + ' ' + Math.abs(b.w).toFixed(2) + '</td>' +
+        '<td>' + b.fwd.toFixed(2) + '</td>' +
+        '<td style="color:' + c + ';font-weight:600">' + b.pnl.toFixed(2) + '</td></tr>';
+    }).join('');
+  }
+  renderFactorNote(res);
+}
+function baseChartOpt(yTitle){
+  return { responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { display: false },
+      tooltip: { backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#2c3e50',
+        bodyColor: '#2c3e50', borderColor: '#e8ecf1', borderWidth: 1 } },
+    scales: { x: { ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 12 }, grid: { display: false } },
+              y: { ticks: { font: { size: 10 } }, grid: { color: '#f0f0f0' },
+                   title: { display: !!yTitle, text: yTitle || '', font: { size: 10 } } } } };
+}
+/* 结论提示：把体检里的坑在回测结果旁边再说一遍，防止把噪声当信号 */
+function renderFactorNote(res){
+  var box = document.getElementById('f-note');
+  if (!box) return;
+  var m = [], r = res.label, k = res.kpi;
+  var spec = res.spec;
+  /* 期货主力价格 ↔ 同期限债券收益率是同一标的的两种报价（反向），
+     这类因子对收益率目标的 IC 是机械恒等，不是增量信息 —— 必须显式标出来 */
+  var FUT2BOND = {'T主力':'10年国债', 'TF主力':'5年国债', 'TS主力':'2年国债', 'TL主力':'30年国债'};
+  if (r){
+    var sameSrc = (spec.legs || []).some(function(l){ return r[FIDX.label].indexOf(l[0]) >= 0; });
+    var mech = null;
+    (spec.legs || []).forEach(function(l){
+      for (var f in FUT2BOND){
+        if (r[FIDX.label].indexOf(f) >= 0 && FUT2BOND[f] === l[0]) mech = f + ' ↔ ' + l[0];
+      }
+    });
+    if (sameSrc) m.push('⚠ 该因子就是目标标的本身或其组成部分（' + spec.name + '），IC 与净值只反映标的自身的动量/均值回复，不是外部增量信息。');
+    else if (mech) m.push('⚠ 机械恒等：' + mech + ' 是同一标的的两种报价（价格与收益率反向）。'
+      + '这类因子的 IC 天然很高，但不含增量信息，实盘无法用——请换一个真正外部的因子。');
+    if (r[FIDX.sig] === 0) m.push('× 体检里该因子未通过 FDR 校正（sig=0），样本内结果大概率是多重检验下的巧合。');
+    else if (r[FIDX.sig] === 1) m.push('○ 体检里仅「独立样本 t」判据通过，置换检验未认可，需谨慎。');
+    else m.push('✓ 体检里连置换检验也显著（sig=2），是本批最可信的一档。');
+    if (r[FIDX.cmono] !== null && Math.abs(r[FIDX.cmono]) < 0.6 && r[FIDX.crange] !== null)
+      m.push('○ B 类区域因子（区单调 ρ=' + r[FIDX.cmono] + '）：线性持仓会互相抵消，建议改用「分位区间」信号模式。');
+    if (r[FIDX.cvr] !== null && r[FIDX.cvr] > 1.5)
+      m.push('○ C 类风险因子（波动比 ' + r[FIDX.cvr] + '）：更像决定仓位与止损的指标，不该当方向信号。');
+  }
+  if (k.bets < 30) m.push('⚠ 非重叠下注只有 ' + k.bets + ' 笔（N=' + F.N + ' 日一期），统计上几乎无法区分运气与信号；'
+    + '日度夏普是按重叠日收益算的，会被自相关抬高，请以「非重叠下注」的胜率/盈亏比为准。');
+  if (res.oosIdx === null) m.push('○ 未设样本外起点：当前全是样本内结果，参数（方向/阈值）是用全样本定的，不能直接外推。');
+  else m.push('○ 样本外从 ' + SDATES[res.oosIdx] + ' 起，切点前后各 ' + F.N + ' 天已做 purge/embargo（不下注）。');
+  if (isFinite(F._ic0)) m.push('· 方向由样本内 Spearman IC=' + F._ic0.toFixed(3) + ' 的符号决定（' + (F._ic0 >= 0 ? '因子高→做多' : '因子高→做空') + '）。');
+  box.innerHTML = m.filter(function(x){ return x; }).join('<br>');
+}
+function resetFactor(){
+  document.getElementById('f-mode').value = 'thresh';
+  document.getElementById('f-thr').value = 1;
+  document.getElementById('f-zone').value = 'lo10';
+  document.getElementById('f-dir').value = 'auto';
+  document.getElementById('f-cost').value = 0;
+  document.getElementById('f-oos').value = '';
+  toggleFactorParams();
+}
+/* 体检页「→ 策略回测」按钮跳转过来时，自动选因子并跑一次 */
+function initFromUrl(){
+  var q = new URLSearchParams(location.search);
+  if (q.get('tab') !== 'factor') return;
+  if (q.get('tgt')) F.tgt = q.get('tgt');
+  if (q.get('form')) F.form = q.get('form');
+  if (q.get('n')) F.N = +q.get('n');
+  if (q.get('g')) F.g = q.get('g');
+  if (q.get('k')) F.k = q.get('k');
+  switchTab('factor');
+  ensureFactor(function(){
+    var ts = document.getElementById('f-tgt'); if (ts) ts.value = F.tgt;
+    var fs = document.getElementById('f-form'); if (fs) fs.value = F.form;
+    buildFNSel();
+    loadCheckupBlock(function(){
+      fillFactorList();
+      if (F.k) runFactorBacktest();
+    });
+  });
 }
 
 function resetArb() {

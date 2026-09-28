@@ -154,6 +154,14 @@
       <option value="2">置换检验也认可</option>
     </select>
   </div>
+  <div class="fld" title="因子三分法：A 方向因子（均值单调差异，看 IC）／B 区域因子（非单调但区间分布差异大）／C 风险赔率因子（均值无差异但波动与尾部差异大）">类型
+    <select id="lensSel">
+      <option value="">全部</option>
+      <option value="A">A 方向（|区单调|≥0.8）</option>
+      <option value="B">B 区域（非线性 |区单调|&lt;0.6）</option>
+      <option value="C">C 风险/赔率（波动比≥1.5）</option>
+    </select>
+  </div>
   <div class="fld">|IC| ≥ <input type="number" id="icMin" value="0" step="0.01" min="0" max="1"></div>
   <div class="fld"><input type="text" id="search" placeholder="搜索因子名"></div>
   <label class="fld abs-sort" title="数值列按绝对值大小排序（不论正负，找最强信号）">
@@ -185,11 +193,15 @@ var CK = null, LIB = null;
 var IDX = {g:0,k:1,label:2,n:3,ic:4,icp:5,icir:6,t:7,ti:8,pind:9,win:10,wl:11,ws:12,pl:13,
   tail:14,q1:15,q2:16,q3:17,q4:18,q5:19,qd:20,qt:21,mono:22,turn:23,kurt:24,acf:25,
   p:26,pb:27,sig:28,h6:29,yr21:30,yr22:31,yr23:32,yr24:33,yr25:34,yr26:35,
-  rgu:36,rgd:37,rghv:38,rglv:39};
+  rgu:36,rgd:37,rghv:38,rglv:39,
+  /* B/C 类（2026-09-28 加）：老数据没有这几列，读到 undefined 会显示「—」，不影响旧块 */
+  crange:40,cprange:41,cmono:42,cvr:43,tr:44};
+/* B 类=区域/非线性，C 类=风险/赔率；A 类（方向）看 IC 与单调性 */
+var BC_COLS = ['crange','cprange','cmono','cvr','tr'];
 var YRKEYS = ['yr21','yr22','yr23','yr24','yr25','yr26'];
 var YRLABEL = ['21','22','23','24','25','26'];
 
-var S = { tgt:'s3010', N:5, form:'raw', grp:'', dims:{}, sig:0, icmin:0, q:'',
+var S = { tgt:'s3010', N:5, form:'raw', grp:'', dims:{}, sig:0, icmin:0, q:'', lens:'',
           sort:'t', desc:true, absSort:false, sel:null, open:{}, allOpen:false, topN:10 };
 
 /* ---------------- 因子分类 ----------------
@@ -258,7 +270,7 @@ function dimValues(dimKey){
 /* 数值列才参与「按 |x| 排」；label 为字符串列，yr 不可排序 */
 var NUMERIC_COLS = ['n','ic','icp','icir','t','ti','pind','p','win','pl','tail',
                     'q1','q2','q3','q4','q5','qd','qt','mono','turn','kurt','acf',
-                    'pb','h6','rgu','rgd','rghv','rglv'];
+                    'pb','h6','rgu','rgd','rghv','rglv','crange','cprange','cmono','cvr','tr'];
 function isNumericCol(k){ return NUMERIC_COLS.indexOf(k) >= 0; }
 function invalid(v){
   if(v===null||v===undefined||v==='') return true;
@@ -281,6 +293,12 @@ var COLS = [
   {k:'qd',    t:'Q5−Q1'},
   {k:'qt',    t:'Q差t'},
   {k:'mono',  t:'单调'},
+  /* ↓ B/C 类：线性 IC 抓不到的区域效应与尾部差异（2026-09-28 加） */
+  {k:'crange',t:'区间极差', h:'B 类效应量：6 个分位区条件均值的极差（目标单位），不看正负'},
+  {k:'cprange',t:'概率差', h:'B 类：各分位区上行概率的极差（百分点）'},
+  {k:'cmono', t:'区单调', h:'区序号对条件均值的 Spearman：|值|≈1 单调（A 类）；接近 0 但区间极差大 ⇒ U 形/阈值型（B 类）'},
+  {k:'cvr',   t:'波动比', h:'C 类：各区间标准差 max/min，>1.5 更像风险因子，别当方向信号'},
+  {k:'tr',    t:'尾赔率', h:'C 类：最好上尾(95%分位) / |最坏下尾(5%分位)|'},
   {k:'turn',  t:'换手'},
   {k:'h6',    t:'近6月'},
   {k:'yr',    t:'分年 IC', cls:'l'},
@@ -387,6 +405,7 @@ function buildHead(){
   COLS.forEach(function(c){
     var th=document.createElement('th');
     th.textContent=c.t;
+    if(c.h) th.title=c.h;
     if(c.cls) th.className=c.cls;
     if(S.sort===c.k){
       var ab = S.absSort && isNumericCol(c.k);
@@ -411,6 +430,14 @@ function rows(){
     if(S.sig && (r[IDX.sig]||0) < S.sig) return false;
     if(S.icmin && Math.abs(r[IDX.ic]||0) < S.icmin) return false;
     if(S.q && r[IDX.label].indexOf(S.q)<0) return false;
+    /* 三分法筛选：B/C 类因子整体 IC 可能接近 0，只能按条件分布的形状捞 */
+    if(S.lens){
+      var cm = r[IDX.cmono], cr = r[IDX.crange], cv = r[IDX.cvr];
+      if(cm===null || cm===undefined) return false;
+      if(S.lens==='A'){ if(Math.abs(cm) < 0.8 || cr===null || cr===undefined) return false; }
+      else if(S.lens==='B'){ if(Math.abs(cm) >= 0.6 || cr===null || cr===undefined) return false; }
+      else if(S.lens==='C'){ if(cv===null || cv===undefined || cv < 1.5) return false; }
+    }
     for(var i=0;i<ds.length;i++){
       var v = S.dims[ds[i].k];
       if(v && ds[i].get(r)!==v) return false;
@@ -512,6 +539,9 @@ function rowEl(r, tb){
         if(c.k==='p'||c.k==='pnw') td.textContent = fmt(v,3);
         else if(c.k==='mono'){ td.innerHTML = v===1?'<span class="mono pos">↑</span>':(v===-1?'<span class="mono neg">↓</span>':'—'); }
         else if(c.k==='turn') td.textContent = fmt(v,2);
+        else if(c.k==='crange') td.textContent = fmt(v,3);
+        else if(c.k==='cprange') td.textContent = fmt(v,1);
+        else if(BC_COLS.indexOf(c.k)>=0) td.textContent = fmt(v,2);
         else td.textContent = fmt(v);
         if(c.k==='ic'||c.k==='t'||c.k==='qd'||c.k==='h6') td.className=(td.className+' '+cls(v)).trim();
       }
@@ -609,7 +639,9 @@ function detail(r){
   var formName = (CK.meta.forms.filter(function(f){return f.id===S.form;})[0]||{}).name||S.form;
   var h = '';
   h += '<div class="detail-top"><h3>'+r[IDX.label]+'</h3>'+
-    '<button class="btn" id="detailClose" type="button">关闭详情</button></div>';
+    '<span style="display:flex;gap:6px;flex-shrink:0">'+
+    '<button class="btn" id="toBt" type="button" title="把该因子原样带到回测页：滚动 250 日 Z 构造信号，对当前目标做 N 日持仓回测">→ 策略回测</button>'+
+    '<button class="btn" id="detailClose" type="button">关闭</button></span></div>';
   h += '<div class="meta">目标 '+tgtName+' · N='+S.N+' 日 · 形态 '+formName+' · 样本 '+r[IDX.n]+' 天</div>';
   h += '<div class="kpis">';
   function kpi(v,k,nd){ h+='<div class="kpi"><div class="v '+cls(v)+'">'+fmt(v,nd===undefined?3:nd)+'</div><div class="k">'+k+'</div></div>'; }
@@ -627,6 +659,12 @@ function detail(r){
   kpi(r[IDX.h6],'近6月 IC');
   kpi(r[IDX.qt],'Q差 t',2);
   kpi(r[IDX.acf],'ACF(1)',2);
+  /* B/C 类：整体 IC 抓不到的区域效应与尾部差异 */
+  kpi(r[IDX.crange],'区间极差 ('+unit+')',3);
+  kpi(r[IDX.cprange],'上行概率差 (pp)',1);
+  kpi(r[IDX.cmono],'区单调 ρ',2);
+  kpi(r[IDX.cvr],'波动比 max/min',2);
+  kpi(r[IDX.tr],'尾赔率 上尾/|下尾|',2);
   h += '</div>';
 
   h += '<div class="sec"><h4>分组收益 Q1→Q5（按滚动 250 日 Z-score 五等分，单位 '+unit+'）</h4>';
@@ -662,7 +700,14 @@ function detail(r){
   var msg = [];
   var tgtObj = CK.meta.targets.filter(function(t){return t.id===S.tgt;})[0]||{};
   var sameSrc = (tgtObj.legs||[]).some(function(n){ return r[IDX.label].indexOf(n)>=0; });
+  /* 期货主力价格 ↔ 同期限债券收益率：同一标的的两种报价，IC 天然高但是恒等关系（伪信号） */
+  var FUT2BOND = {'T主力':'10年国债','TF主力':'5年国债','TS主力':'2年国债','TL主力':'30年国债'};
+  var mechSrc = null;
+  (tgtObj.legs||[]).forEach(function(n){
+    for(var f in FUT2BOND){ if(r[IDX.label].indexOf(f)>=0 && FUT2BOND[f]===n) mechSrc = f+' ↔ '+n; }
+  });
   if(sameSrc) msg.push('⚠ 该因子就是预测目标的标的本身（或其组成部分），IC 只反映标的自身的均值回复/动量特性，不是外部增量信息。');
+  else if(mechSrc) msg.push('⚠ 机械恒等：'+mechSrc+' 是同一标的的两种报价（价格与收益率反向），IC 天然很高但不是增量信息，实盘不可用。');
   if(Math.abs(r[IDX.ic]) < CK.meta.min_ic_strong && Math.abs(r[IDX.t])>2)
     msg.push('⚠ |IC| 低于门槛 '+CK.meta.min_ic_strong+' 但 t 值偏高：多半是极端值驱动的假信号，勿采信。');
   if(r[IDX.sig]===2) msg.push('✓ 通过最严格的置换检验（保留 y 全部自相关结构后仍显著），可信度最高。');
@@ -679,6 +724,11 @@ function detail(r){
 
   el('detail').innerHTML = h;
   el('detailClose').onclick=function(){ hideDetail(); render(); };
+  /* 带着 因子/形态/目标/周期 去回测页，窗口新开，体检页状态不丢 */
+  var btUrl = 'backtest_dashboard.html?tab=factor&g='+encodeURIComponent(r[IDX.g])+
+    '&k='+encodeURIComponent(r[IDX.k])+'&form='+encodeURIComponent(S.form)+
+    '&tgt='+encodeURIComponent(S.tgt)+'&n='+S.N;
+  el('toBt').onclick=function(){ window.open(btUrl, '_blank'); };
 
   // 分组收益
   var qv = [r[IDX.q1],r[IDX.q2],r[IDX.q3],r[IDX.q4],r[IDX.q5]];
@@ -838,7 +888,8 @@ function drawCond(cond, unit){
     + '<thead><tr style="color:#888;border-bottom:1px solid #eee">'
     + '<th style="text-align:left;padding:4px">分位区间</th><th style="padding:4px">n</th>'
     + '<th style="padding:4px">均值</th><th style="padding:4px">中位</th><th style="padding:4px">标准差</th>'
-    + '<th style="padding:4px">上行概率</th><th style="padding:4px">5% 分位</th></tr></thead><tbody>';
+    + '<th style="padding:4px">上行概率</th><th style="padding:4px">5% 分位</th>'
+    + '<th style="padding:4px">95% 分位</th></tr></thead><tbody>';
   for(var j=0;j<cond.length;j++){
     var q=cond[j];
     h += '<tr style="border-bottom:1px solid #fafafa">'
@@ -848,7 +899,8 @@ function drawCond(cond, unit){
       + '<td style="padding:4px;text-align:right">'+fmt(q[2],3)+'</td>'
       + '<td style="padding:4px;text-align:right">'+fmt(q[3],3)+'</td>'
       + '<td style="padding:4px;text-align:right">'+fmt(q[4],1)+'%</td>'
-      + '<td style="padding:4px;text-align:right">'+fmt(q[5],3)+'</td></tr>';
+      + '<td style="padding:4px;text-align:right">'+fmt(q[5],3)+'</td>'
+      + '<td style="padding:4px;text-align:right">'+fmt(q[6],3)+'</td></tr>';
   }
   h += '</tbody></table></div>';
   var spread = (mean[0]!==null && mean[mean.length-1]!==null) ? Math.abs(mean[0]-mean[mean.length-1]) : null;
@@ -872,10 +924,12 @@ function drawSeries(g, k){
   var draw = function(){
     if(!LIB){ el('serHint').textContent='（因子库未加载）'; return; }
     var s = null;
-    var arr = LIB[g==='cash'?'cash':(g==='repo'?'repo':'curve')] || [];
+    var arr = LIB[g] || [];
     for(var i=0;i<arr.length;i++){
       var kk = g==='cash' ? (arr[i].bt+'|'+arr[i].inst+'|'+arr[i].mat)
-             : g==='repo' ? (arr[i].inst+'|'+arr[i].field) : arr[i].name;
+             : g==='repo' ? (arr[i].inst+'|'+arr[i].field)
+             : g==='derived' ? (arr[i].op+'|'+arr[i].inst+'|'+arr[i].tenor+'|'+arr[i].cls)
+             : arr[i].name;
       if(kk===k){ s=arr[i]; break; }
     }
     if(!s){ el('serHint').textContent='（未找到该序列）'; return; }
@@ -928,6 +982,17 @@ function rollingPct(a,w){
 /* ---------------- 事件 ---------------- */
 el('tgtSel').onchange = function(){ S.tgt=this.value; S.open={}; buildNSeg(); reload(); };
 el('sigSel').onchange = function(){ S.sig=+this.value; S.open={}; render(); };
+/* 切视角时顺手把排序列换成该类的主判据，省得再点一次表头 */
+el('lensSel').onchange = function(){
+  S.lens=this.value; S.open={};
+  if(S.lens==='A'){ S.sort='ic'; S.desc=true; S.absSort=true; el('absSort').checked=true;
+                    el('absSort').parentNode.className='fld abs-sort on'; }
+  else if(S.lens==='B'){ S.sort='crange'; S.desc=true; S.absSort=false; el('absSort').checked=false;
+                         el('absSort').parentNode.className='fld abs-sort'; }
+  else if(S.lens==='C'){ S.sort='cvr'; S.desc=true; S.absSort=false; el('absSort').checked=false;
+                         el('absSort').parentNode.className='fld abs-sort'; }
+  buildHead(); render();
+};
 el('icMin').oninput  = function(){ S.icmin=+this.value||0; S.open={}; render(); };
 el('search').oninput = function(){ S.q=this.value.trim(); S.open={}; render(); };
 el('absSort').onchange = function(){
@@ -937,11 +1002,11 @@ el('absSort').onchange = function(){
 };
 el('resetBtn').onclick = function(){
   S.grp=''; S.dims={}; S.open={}; S.allOpen=false;
-  S.sig=0; S.icmin=0; S.q=''; S.absSort=false;
+  S.sig=0; S.icmin=0; S.q=''; S.absSort=false; S.lens='';
   S.sort='t'; S.desc=true; S.sel=null;
   seg('grpSeg', GROUPS.map(function(g){ return {v:g.id, t:g.name}; }), 'grp',
       function(v){ S.grp=v; S.dims={}; S.open={}; render(); });
-  el('sigSel').value='0'; el('icMin').value='0'; el('search').value='';
+  el('sigSel').value='0'; el('icMin').value='0'; el('search').value=''; el('lensSel').value='';
   el('absSort').checked=false; el('absSort').parentNode.className='fld abs-sort';
   buildHead(); reload();
 };

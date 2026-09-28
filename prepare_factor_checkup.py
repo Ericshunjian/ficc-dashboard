@@ -91,11 +91,15 @@ INCLUDE_DERIVED = os.environ.get("FICC_CHECKUP_DERIVED", "1") == "1"
 FDR_SCOPE = os.environ.get("FICC_CHECKUP_FDR_SCOPE", "group")
 COND_EDGES = [0, 10, 25, 50, 75, 90, 100]   # 条件分布：滚动经验分位切点
 
+# ★ 列顺序即写入顺序。新增列只能 append 到末尾：主循环里 rows[i][28] = sig 等
+#   硬编码索引依赖既有 0..39 的位置，插队在中间会静默写错列。
 COLS = ["g", "k", "label", "n", "ic", "icp", "icir", "t", "ti", "pind", "win", "wl", "ws",
         "pl", "tail", "q1", "q2", "q3", "q4", "q5", "qd", "qt", "mono", "turn",
         "kurt", "acf", "p", "pb", "sig", "h6",
         "yr21", "yr22", "yr23", "yr24", "yr25", "yr26",
-        "rgu", "rgd", "rghv", "rglv"]
+        "rgu", "rgd", "rghv", "rglv",
+        # --- B/C 类（2026-09-28 加）：线性 IC 抓不到的区域效应与尾部/波动差异 ---
+        "crange", "cprange", "cmono", "cvr", "tr"]
 
 
 # ---------------- 基础工具 ----------------
@@ -437,20 +441,64 @@ def curve_pair(xs, ys, z, N):
 
 def cond_dist(p, ys):
     """按滚动经验分位切 6 区间的条件分布：
-    每区间 [n, 均值, 中位, 标准差, 上行概率%, 5%分位]
-    用于捞 B/C 类因子：线性 IC 不显著，但区间间分布差异可能很大（非单调或尾部差异）。"""
+    每区间 [n, 均值, 中位, 标准差, 上行概率%, 5%分位, 95%分位]
+    用于捞 B/C 类因子：线性 IC 不显著，但区间间分布差异可能很大（非单调或尾部差异）。
+    95% 分位是 2026-09-28 补的：C 类的「尾部赔率」需要上下两个尾，只给 5% 分位算不出来。"""
     out = []
     for i in range(len(COND_EDGES) - 1):
         lo, hi = COND_EDGES[i], COND_EDGES[i + 1]
         s = (p >= lo) & ((p < hi) if hi < 100 else (p <= 100))
         yy = ys[s & np.isfinite(ys)]
         if len(yy) < 10:
-            out.append([0, None, None, None, None, None])
+            out.append([0, None, None, None, None, None, None])
             continue
         out.append([int(len(yy)), round(float(yy.mean()), 3), round(float(np.median(yy)), 3),
                     round(float(yy.std(ddof=1)), 3), round(float((yy > 0).mean() * 100), 1),
-                    round(float(np.percentile(yy, 5)), 3)])
+                    round(float(np.percentile(yy, 5)), 3),
+                    round(float(np.percentile(yy, 95)), 3)])
     return out
+
+
+def bc_stats(cond, min_bins=4):
+    """从 6 区条件分布里提取 B/C 类检验量（线性 IC 看不见的那部分信息）。
+
+    B 类（区域/非线性因子）：均值无差异不代表没用，U 形、阈值型关系整体 IC≈0。
+        crange  = 各区条件均值的极差（目标单位）——效应量本身，不看正负
+        cprange = 各区上行概率的极差（百分点）——交易上最直观的"胜率差"
+        cmono   = 区序号对条件均值的 Spearman：|cmono|≈1 单调（A 类就够），
+                  接近 0 而 crange 大 ⇒ 非单调，必须按区间/阈值用
+    C 类（风险/赔率因子）：均值差不多，但波动和尾部差很多，决定的是仓位和止损。
+        cvr = 条件标准差 max/min（>1.5 通常是"波动率因子"，不该当方向信号）
+        tr  = 最好的上尾(max p95) / |最坏的下尾(min p05)|——赔率比
+
+    有效区间不足 min_bins 个时全返回 None（样本太少，极值不可信）。"""
+    none5 = [None] * 5
+    means, ups, sds, p05, p95 = [], [], [], [], []
+    for row in cond:
+        if not row or row[0] < 10:
+            continue
+        if row[1] is None or row[3] is None:
+            continue
+        means.append(row[1])
+        ups.append(row[4] if row[4] is not None else np.nan)
+        sds.append(row[3])
+        p05.append(row[5] if row[5] is not None else np.nan)
+        p95.append(row[6] if row[6] is not None else np.nan)
+    if len(means) < min_bins:
+        return none5
+    ma = np.array(means, dtype=float)
+    crange = float(np.nanmax(ma) - np.nanmin(ma))
+    ua = np.array(ups, dtype=float)
+    cprange = float(np.nanmax(ua) - np.nanmin(ua)) if np.isfinite(ua).any() else None
+    order = np.arange(1, len(ma) + 1, dtype=float)
+    cmono = spearman(order, ma)
+    sa = np.array(sds, dtype=float)
+    smin = float(np.nanmin(sa))
+    cvr = float(np.nanmax(sa) / smin) if smin > 0 else None
+    lo = np.nanmin(np.array(p05, dtype=float))
+    hi = np.nanmax(np.array(p95, dtype=float))
+    tr = float(hi / abs(lo)) if np.isfinite(lo) and np.isfinite(hi) and lo < 0 and hi > 0 else None
+    return [crange, cprange, cmono, cvr, tr]
 
 
 def horizons_for(spec):
@@ -642,14 +690,16 @@ def main():
 
                     tind, m_ind = indep_t(xs, ys, N)
                     pind = float(2 * tdist.sf(abs(tind), max(m_ind - 2, 1))) if np.isfinite(tind) else np.nan
+                    # 6 区条件分布：详情页画图用，同时派生 B/C 类检验量（主表列，见 bc_stats）
+                    cdist = cond_dist(pctl, ys)
                     rows.append([
                         g, k, label, n, ic, icp, icir, tval, tind, pind, win, wl, ws, pl, tail,
                         qs[0], qs[1], qs[2], qs[3], qs[4], qd, qt, mono, turn, kt, acf,
                         pv, None, 0, h6,
                         yrd[2021], yrd[2022], yrd[2023], yrd[2024], yrd[2025], yrd[2026],
                         rgu, rgd, rghv, rglv,
-                    ])
-                    drows.append([curve_pair(xs, ys, z, N), cond_dist(pctl, ys)])
+                    ] + bc_stats(cdist))
+                    drows.append([curve_pair(xs, ys, z, N), cdist])
                     pvals.append(pind)
                     pperms.append(pv)
                     ic_list.append(ic if np.isfinite(ic) else 0.0)
@@ -731,6 +781,10 @@ def main():
             f"机构行为当日收盘后可得，因子滞后 {LAG} 个期货交易日使用",
             "因子和目标均按期货交易日计；3T−TL、4TS−T 为原始价差的未来变动（点）",
             "turn = 持仓方向日均变化频率；kurt/acf 为形态标签，不参与筛选",
+            "★ 因子三分法：A 方向因子看 IC/单调性；B 区域因子看 crange/cprange/cmono；C 风险赔率因子看 cvr/tr",
+            "crange = 6 个分位区条件均值的极差（目标单位）——B 类效应量，不看正负",
+            "cprange = 各区上行概率极差（百分点）；cmono = 区序号对条件均值的 Spearman（|cmono|小但 crange 大 ⇒ U 形/阈值型）",
+            "cvr = 条件标准差 max/min（>1.5 多为波动率因子，不该当方向信号）；tr = 最好上尾(p95) / |最坏下尾(p05)|",
             f"BH-FDR 校正范围 = {FDR_SCOPE}：块内按因子大类分别校正，各大类结论互不影响",
             f"衍生层纳入 = {INCLUDE_DERIVED}（{len(lib.get('derived', []))} 条「机构行为·现券衍生因子」，与原始现券序列同源变换）",
         ],
