@@ -1399,28 +1399,45 @@ def main():
         log.warning(f"股债相关性数据更新失败，保留现有数据: {e}")
         ok9 = False
 
-    ok10 = True
-    try:
-        log.info("[10/10] 因子库原始序列池 (factor_library.json)")
-        import prepare_factor_library
-        prepare_factor_library.main()
-    except Exception as e:
-        log.warning(f"因子库生成失败，保留现有数据: {e}")
-        ok10 = False
+    # ---- 因子层（L1 因子库 / L2 因子体检）----
+    # 2026-09-28 起**默认都不跑**：日常更新只要「机构行为 / 质押式回购 / 现券 / 收益率曲线 /
+    # 个券 / 偏离度」这些行情数据，因子层是研究性质、且体检很慢（802 条×3 形态×6 目标×周期
+    # ≈ 5 万套、约 5 分钟），没必要每天占时间。
+    # 需要时临时打开（不用改代码）：
+    #     FICC_UPDATE_LIBRARY=1 python daily_update.py      # 因子库（约 5 秒）
+    #     FICC_UPDATE_CHECKUP=1 python daily_update.py      # 因子体检（约 5 分钟，仅周一生效）
+    RUN_LIBRARY = os.environ.get("FICC_UPDATE_LIBRARY", "0") == "1"
+    RUN_CHECKUP = os.environ.get("FICC_UPDATE_CHECKUP", "0") == "1"
 
-    ok11 = True
-    try:
-        import datetime as _dt
-        if _dt.datetime.now().weekday() != 0:
-            log.info("[11/11] 因子体检：非周一，跳过（研究性质，每周一全量重算；"
-                     "含衍生层 497 条×6 目标×3 形态×4 周期 ≈ 3.1 万套，约 4 分钟）")
-        else:
-            log.info("[11/11] 因子体检 (factor_checkup.json)")
-            import prepare_factor_checkup
-            prepare_factor_checkup.main()
-    except Exception as e:
-        log.warning(f"因子体检生成失败，保留现有数据: {e}")
-        ok11 = False
+    ok10, st10 = True, "跳过"
+    if not RUN_LIBRARY:
+        log.info("[10/12] 因子库原始序列池：跳过（研究性质，按需手动跑 prepare_factor_library.py）")
+    else:
+        try:
+            log.info("[10/12] 因子库原始序列池 (factor_library.json)")
+            import prepare_factor_library
+            prepare_factor_library.main()
+            st10 = "成功"
+        except Exception as e:
+            log.warning(f"因子库生成失败，保留现有数据: {e}")
+            ok10, st10 = False, "保留旧数据"
+
+    ok11, st11 = True, "跳过"
+    if not RUN_CHECKUP:
+        log.info("[11/12] 因子体检：跳过（研究性质，按需手动跑 prepare_factor_checkup.py）")
+    else:
+        try:
+            import datetime as _dt
+            if _dt.datetime.now().weekday() != 0:
+                log.info("[11/12] 因子体检：非周一，跳过（每周一全量重算）")
+            else:
+                log.info("[11/12] 因子体检 (factor_checkup.json + checkup_b/)")
+                import prepare_factor_checkup
+                prepare_factor_checkup.main()
+                st11 = "成功"
+        except Exception as e:
+            log.warning(f"因子体检生成失败，保留现有数据: {e}")
+            ok11, st11 = False, "保留旧数据"
 
     log.info("=" * 50)
     log.info(f"完成: 预处理={'成功' if ok0 else '失败'}, "
@@ -1433,8 +1450,8 @@ def main():
              f"沪深300波动率={'成功' if ok7 else '保留旧数据'}, "
              f"质押式回购={'成功' if ok8 else '保留旧数据'}, "
              f"股债相关性={'成功' if ok9 else '保留旧数据'}, "
-             f"因子库={'成功' if ok10 else '保留旧数据'}, "
-             f"因子体检={'成功' if ok11 else '保留旧数据'}")
+             f"因子库={st10}, "
+             f"因子体检={st11}")
 
     # 更新数据版本清单（前端据此跳过未变更文件的下载）
     try:
