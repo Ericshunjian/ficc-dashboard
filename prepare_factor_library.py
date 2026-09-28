@@ -43,6 +43,49 @@ F_PATH = {
     "out": "factor_library.json",
 }
 
+# ---------------- Carry 结构因子定义（2026-09-28 加） ----------------
+# 含义：按期货组合的 **名义金额** 加权的「券面收益 − 融资成本」。
+#   期货价格 = 现货 − 持有成本 ⇒ carry 决定期货相对现货的贴水幅度，
+#   也就给出了价差随时间漂移的方向。这是价差类目标唯一有明确理论依据的驱动项。
+#
+#   4TS−T：名义 400 万 TS（2 手 × 200 万/手） − 100 万 T，故权重 4 : 1；
+#          T 的可交割券里 CTD 通常在 7 年附近，故用 7 年国债代表 T 腿。
+#   3T−TL ：3 手 T − 1 手 TL，权重 3 : 1，腿分别取 10 年 / 30 年国债。
+#
+# 融资利率默认 **DR001-MA10**（用户指定：用平滑后的资金成本，剔除单日脉冲）。
+# 4TS−T 额外给一份 DR001 原值版本，用于检验「MA10 平滑是否必要」。
+# 单边界（TS/T/TL/10Y）是价差腿的分解，用来定位 carry 变化来自哪一端。
+#
+# 输出单位 **bp**（百分点 ×100）。
+CARRY_DEFS = [
+    ("ts4t", "价差", "Carry·4TS−T（DR001-MA10）",
+     "4×(2年国债−DR001_MA10) − (7年国债−DR001_MA10)",
+     [("2年国债", 4), ("7年国债", -1)], "DR001-MA10"),
+    ("ts4t_raw", "价差", "Carry·4TS−T（DR001原值）",
+     "4×(2年国债−DR001) − (7年国债−DR001)",
+     [("2年国债", 4), ("7年国债", -1)], "DR001"),
+    ("tl3t", "价差", "Carry·3T−TL（DR001-MA10）",
+     "3×(10年国债−DR001_MA10) − (30年国债−DR001_MA10)",
+     [("10年国债", 3), ("30年国债", -1)], "DR001-MA10"),
+    ("s3010", "价差", "Carry·30Y−10Y（融资项抵消）",
+     "(30年国债−DR001_MA10) − (10年国债−DR001_MA10)  ⇒ 等于期限利差",
+     [("30年国债", 1), ("10年国债", -1)], "DR001-MA10"),
+    # 分解项（2026-09-28 实测补入）：carry = (4y2 − y7) − 3r，两项对 4TS−T 的贡献相反，
+    # 融资项实测为负贡献（IC −0.02 ~ −0.08），故单独入库以便直接对比"带融资 / 不带融资"。
+    ("ts4t_curve", "分解", "Carry·4TS−T 曲线项（无融资）",
+     "4×2年国债 − 7年国债", [("2年国债", 4), ("7年国债", -1)], None),
+    ("tl3t_curve", "分解", "Carry·3T−TL 曲线项（无融资）",
+     "3×10年国债 − 30年国债", [("10年国债", 3), ("30年国债", -1)], None),
+    ("ts", "单边", "Carry·TS单边（2年−DR_MA10）",
+     "2年国债 − DR001_MA10", [("2年国债", 1)], "DR001-MA10"),
+    ("t", "单边", "Carry·T单边（7年−DR_MA10）",
+     "7年国债 − DR001_MA10", [("7年国债", 1)], "DR001-MA10"),
+    ("y10", "单边", "Carry·10Y单边（10年−DR_MA10）",
+     "10年国债 − DR001_MA10", [("10年国债", 1)], "DR001-MA10"),
+    ("tl", "单边", "Carry·TL单边（30年−DR_MA10）",
+     "30年国债 − DR001_MA10", [("30年国债", 1)], "DR001-MA10"),
+]
+
 
 def _p(name):
     return os.path.join(BASE, name)
@@ -177,6 +220,59 @@ def build():
         curve_out.append({"name": name, "cat": cat_of.get(name, "其他"), "i0": i0, "v": vals})
     curve_out.sort(key=lambda x: (x["cat"], x["name"]))
 
+    # ---------- Carry 结构因子 ----------
+    # 纯 Python 实现（不引 numpy）：n≈1500、8 条定义，逐日循环开销可忽略。
+    _cache = {}
+
+    def _series(name):
+        """把 curve_out 的紧凑序列展开成全轴列表，缺日为 None"""
+        if name in _cache:
+            return _cache[name]
+        full = None
+        for s in curve_out:
+            if s["name"] == name:
+                full = [None] * n
+                for i, v in enumerate(s["v"]):
+                    full[s["i0"] + i] = v
+                break
+        _cache[name] = full
+        return full
+
+    carry_out = []
+    for key, cat, cname, formula, legs, fund_name in CARRY_DEFS:
+        if fund_name is None:          # 纯曲线项：不减融资成本
+            fund = [0.0] * n
+        else:
+            fund = _series(fund_name)
+            if fund is None:
+                print("  [warn] carry 融资序列缺失：%s" % fund_name)
+                continue
+        acc = [None] * n
+        ok = True
+        for nm, w in legs:
+            s = _series(nm)
+            if s is None:
+                print("  [warn] carry 腿缺失：%s" % nm)
+                ok = False
+                break
+            for i in range(n):
+                # 任一腿缺失该日即不可算（缺失不当 0）
+                if s[i] is None or fund[i] is None:
+                    acc[i] = None
+                else:
+                    d = w * (s[i] - fund[i]) * 100      # 百分点 → bp
+                    acc[i] = d if acc[i] is None else acc[i] + d
+        if not ok:
+            continue
+        idxs = [i for i, v in enumerate(acc) if v is not None]
+        if len(idxs) < 30:
+            continue
+        i0 = idxs[0]
+        vals = [None if v is None else round(v, 4) for v in acc[i0:idxs[-1] + 1]]
+        carry_out.append({"key": key, "cat": cat, "name": cname, "formula": formula,
+                          "i0": i0, "v": vals})
+    print("  carry 因子 %d 条" % len(carry_out))
+
     # ---------- 现券衍生因子（机构行为三视角变换） ----------
     derived, dmeta = [], {"institutions": [], "tenors": [], "classes": []}
     try:
@@ -201,7 +297,8 @@ def build():
                 "repo": "repo_trading_data.json（质押式回购，亿元 / %）",
                 "curve": "yield_curve_data.json（%，内部存百分数：123.02 = 1.2302%）",
             },
-            "units": {"cash": "亿元", "repo": "亿元 / 百分点", "curve": "%（如 1.6829 = 1.6829%）"},
+            "units": {"cash": "亿元", "repo": "亿元 / 百分点", "curve": "%（如 1.6829 = 1.6829%）",
+                      "carry": "bp（券面收益 − 融资成本，按期货组合名义金额加权）"},
             "groups": [
                 {"key": "cash", "name": "机构行为 · 现券", "count": len(cash),
                  "dims": {"bond_type": CASH_BOND_TYPES, "institution": insts, "maturity": mats}},
@@ -214,6 +311,9 @@ def build():
                           "tenor": dmeta["tenors"]},
                  # 配置盘/交易盘的机构归属随期限档变化，页面据此展示
                  "cfg_sides": dmeta.get("cfg_sides", {})},
+                # ★ carry 追加在末尾：页面多处按 groups[0..3] 硬编码取前四组，插队会错位
+                {"key": "carry", "name": "估值 · Carry 结构", "count": len(carry_out),
+                 "dims": {"cat": ["价差", "单边", "分解"]}},
             ],
             "note": "L0 原始序列池。变换（MA / 滚动百分位 / Z-score / 差分）在前端实时计算，不预存。",
         },
@@ -222,6 +322,7 @@ def build():
         "repo": repo_out,
         "curve": curve_out,
         "derived": derived,
+        "carry": carry_out,
     }
     return payload
 

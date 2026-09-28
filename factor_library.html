@@ -277,6 +277,10 @@ function buildAll(){
     return { g:'derived', id:s.op+'/'+s.n+'/'+(s.inst||'-')+'/'+s.tenor, cat:s.cls, op:s.op,
              inst:s.inst||'', tenor:s.tenor, i0:s.i0, v:s.v, name:s.name, unit:s.unit||'' };
   });
+  state.carryList = (D.carry||[]).map(function(s){
+    return { g:'carry', id:s.key, cat:s.cat, i0:s.i0, v:s.v,
+             name:s.name, unit:'bp', formula:s.formula||'' };
+  });
   // 技术指标：由主力合约收盘价前端派生
   var fut = ['T','TF','TS','TL'].map(function(k){
     var f = state.curveList.filter(function(s){ return s.id===k+'主力'; })[0];
@@ -291,7 +295,7 @@ function buildAll(){
     });
   });
   el('metaInfo').textContent = '更新 ' + D.meta.last_updated + ' · ' + DATES[0] + ' ~ ' + DATES[DATES.length-1]
-    + ' · 共 ' + (state.cashList.length+state.repoList.length+state.curveList.length+state.derivedList.length) + ' 条原始/衍生序列 + '
+    + ' · 共 ' + (state.cashList.length+state.repoList.length+state.curveList.length+state.derivedList.length+state.carryList.length) + ' 条原始/衍生序列 + '
     + state.techList.length + ' 条技术指标';
 }
 
@@ -621,6 +625,7 @@ var GROUPS = [
   { key:'repo', name:'机构行为·回购' },
   { key:'curve', name:'估值·曲线期货' },
   { key:'derived', name:'机构行为·现券衍生' },
+  { key:'carry', name:'估值·Carry结构' },
   { key:'tech', name:'技术指标(派生)' }
 ];
 var DIM_DEF = {
@@ -639,6 +644,7 @@ var DIM_DEF = {
     { k:'inst', label:'机构', opts:function(){ return (D.meta.groups[3]||{dims:{}}).dims.institution||[]; } },
     { k:'tenor', label:'期限档', opts:function(){ return (D.meta.groups[3]||{dims:{}}).dims.tenor||[]; } }
   ],
+  carry:[ { k:'cat', label:'类别', opts:function(){ return (D.meta.groups[4]||{dims:{}}).dims.cat||[]; } } ],
   tech:[ { k:'tech', label:'指标', opts:function(){ return TECH_DEFS.map(function(t){return t.name;}); } } ]
 };
 
@@ -692,6 +698,7 @@ function candidates(){
   else if(g==='repo') list = state.repoList;
   else if(g==='curve') list = state.curveList;
   else if(g==='derived') list = state.derivedList;
+  else if(g==='carry') list = state.carryList;
   else list = state.techList;
   var d = state.dims;
   var out = list.filter(function(s){
@@ -726,7 +733,7 @@ function renderCandidates(){
   var html = list.slice(0,maxShow).map(function(s){
     var on = state.selected.filter(function(x){ return x.key===seriesKey(s); }).length>0;
     var ci = state.selected.length % PALETTE.length;
-    var tip = (s.g==='derived') ? opShort(s.op) : s.name;
+    var tip = (s.g==='derived') ? opShort(s.op) : (s.g==='carry' ? (s.formula||s.name) : s.name);
     return '<div class="cand-item'+(on?' on':'')+'" data-key="'+seriesKey(s)+'" title="'+tip+'">'+
       '<span class="dot" style="background:'+PALETTE[ci]+'"></span>'+
       '<span class="nm">'+s.name+'</span></div>';
@@ -740,7 +747,7 @@ function renderCandidates(){
 }
 
 function findSeries(key){
-  var all = state.cashList.concat(state.repoList, state.curveList, state.derivedList, state.techList, state.custom);
+  var all = state.cashList.concat(state.repoList, state.curveList, state.derivedList, state.carryList, state.techList, state.custom);
   for(var i=0;i<all.length;i++) if(seriesKey(all[i])===key) return all[i];
   return null;
 }
@@ -891,7 +898,7 @@ function renderCards(sers){
       (s.g==='derived'
         ? '<div class="frm">'+opShort(s.op)+
           ' <a class="doc-link" data-op="'+s.op+'" style="text-decoration:underline">详解</a></div>'
-        : '')+'</div>';
+        : (s.g==='carry' && s.formula ? '<div class="frm">'+s.formula+'</div>' : ''))+'</div>';
   }).join('');
   el('cards').innerHTML = html;
   Array.prototype.forEach.call(el('cards').querySelectorAll('a[data-op]'), function(a){

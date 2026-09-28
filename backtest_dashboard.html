@@ -265,6 +265,14 @@
           <option value="cvr">按波动比排序（C 风险）</option>
           <option value="tr">按尾赔率排序（C 风险）</option>
         </select>
+        <select id="f-grp" onchange="fillFactorList()" style="margin-top:6px">
+          <option value="">全部大类</option>
+          <option value="cash">机构行为·现券</option>
+          <option value="repo">机构行为·回购</option>
+          <option value="curve">估值·曲线期货</option>
+          <option value="derived">机构行为·现券衍生</option>
+          <option value="carry">估值·Carry 结构</option>
+        </select>
         <select id="f-factor" style="margin-top:6px"></select>
         <div class="hint" id="f-factor-hint">加载中…</div>
       </div>
@@ -1043,6 +1051,9 @@ function fillFactorList(){
   var sel = document.getElementById('f-factor'), hint = document.getElementById('f-factor-hint');
   if (!CKBLOCK){ return; }
   var rows = CKBLOCK.rows.slice(), rank = document.getElementById('f-rank').value;
+  /* 大类筛选：候选榜只列前 30 条，不筛的话小众大类（如 Carry）根本排不进来 */
+  var grpEl = document.getElementById('f-grp');
+  if (grpEl && grpEl.value) rows = rows.filter(function(r){ return r[FIDX.g] === grpEl.value; });
   var val = function(r){
     var v = r[FIDX[rank]];
     if (rank === 'ic') v = Math.abs(r[FIDX.ic] || 0);
@@ -1088,6 +1099,7 @@ function getFactorSeries(g, k){
     var kk = g === 'cash' ? (arr[i].bt + '|' + arr[i].inst + '|' + arr[i].mat)
            : g === 'repo' ? (arr[i].inst + '|' + arr[i].field)
            : g === 'derived' ? (arr[i].op + '|' + arr[i].inst + '|' + arr[i].tenor + '|' + arr[i].cls)
+           : g === 'carry' ? (arr[i].cat + '|' + arr[i].key)
            : arr[i].name;
     if (kk === k){ s = arr[i]; break; }
   }
@@ -1528,6 +1540,10 @@ function renderFactorNote(res){
     if (sameSrc) m.push('⚠ 该因子就是目标标的本身或其组成部分（' + spec.name + '），IC 与净值只反映标的自身的动量/均值回复，不是外部增量信息。');
     else if (mech) m.push('⚠ 机械恒等：' + mech + ' 是同一标的的两种报价（价格与收益率反向）。'
       + '这类因子的 IC 天然很高，但不含增量信息，实盘无法用——请换一个真正外部的因子。');
+    else if (F.g === 'carry' && (F.tgt === 't' || F.tgt === 'tl'))
+      m.push('⚠ 该 carry 因子≈对应期限国债收益率水平（融资利率变动很小），对单边期货价格退化为'
+        + '「利率水平 → 未来变动」的机械关系（与 curve 组 债券·X年国债 同源），不是 carry 的增量信息。'
+        + '要看 carry 本身的增量请切到价差目标（ts4t / tl3t / s3010）。');
     if (r[FIDX.sig] === 0) m.push('× 体检里该因子未通过 FDR 校正（sig=0），样本内结果大概率是多重检验下的巧合。');
     else if (r[FIDX.sig] === 1) m.push('○ 体检里仅「独立样本 t」判据通过，置换检验未认可，需谨慎。');
     else m.push('✓ 体检里连置换检验也显著（sig=2），是本批最可信的一档。');
@@ -1565,6 +1581,7 @@ function initFromUrl(){
   ensureFactor(function(){
     var ts = document.getElementById('f-tgt'); if (ts) ts.value = F.tgt;
     var fs = document.getElementById('f-form'); if (fs) fs.value = F.form;
+    var gs = document.getElementById('f-grp'); if (gs && F.g) gs.value = F.g;
     buildFNSel();
     loadCheckupBlock(function(){
       fillFactorList();

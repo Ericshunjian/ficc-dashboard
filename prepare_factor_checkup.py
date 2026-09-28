@@ -359,6 +359,14 @@ def load_library():
             # k 四段：op|机构|期限档|类别 —— 页面二级维度按 (类别, 机构, 期限档) 筛选，
             # 与因子库页「机构行为·现券衍生」的三维筛选保持一致
             series.append(("derived", f"{s['op']}|{s['inst']}|{s['tenor']}|{s['cls']}", s["name"], v))
+    # Carry 结构：券面收益 − 融资成本，按期货组合名义金额加权（单位 bp）。
+    # 独立于 curve 成组：这类因子是"组合级"构造，不是单条曲线，且只有 8 条，
+    # 混进 curve 组会被 52 条曲线的多重检验负担稀释。
+    for s in lib.get("carry", []):
+        v = np.full(D, np.nan)
+        i0, arr = s["i0"], np.asarray(s["v"], dtype=float)
+        v[i0:i0 + len(arr)] = arr
+        series.append(("carry", f"{s['cat']}|{s['key']}", s["name"], v))
     # 本轮研究的两个价差都含 T：统一按有 T 价格的期货交易日计窗口和滞后。
     sessions = np.flatnonzero(np.isfinite(cmap["T主力"]))
     dates = [dates[i] for i in sessions]
@@ -520,7 +528,8 @@ def make_form(x, form):
 
 
 GROUP_CN = {"cash": "机构行为·现券", "repo": "机构行为·质押式回购",
-            "curve": "估值·曲线与期货", "derived": "机构行为·现券衍生因子"}
+            "curve": "估值·曲线与期货", "derived": "机构行为·现券衍生因子",
+            "carry": "估值·Carry 结构"}
 
 
 # ---------------- 主体 ----------------

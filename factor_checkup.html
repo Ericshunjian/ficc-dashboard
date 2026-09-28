@@ -212,7 +212,8 @@ var GROUPS = [
   {id:'cash',   name:'机构行为·现券'},
   {id:'repo',   name:'机构行为·回购'},
   {id:'curve',  name:'估值·曲线期货'},
-  {id:'derived',name:'机构行为·现券衍生'}
+  {id:'derived',name:'机构行为·现券衍生'},
+  {id:'carry',  name:'估值·Carry结构'}
 ];
 var FIELD_CN = {net:'净融出', rev_bal:'逆回购余额', repo_bal:'正回购余额', rate_spread:'正回购利率−DR001'};
 
@@ -240,6 +241,10 @@ var DIMS = {
     {k:'cls',  name:'类别', get:function(r){ return parts(r)[3]; }},
     {k:'inst', name:'机构', get:function(r){ return parts(r)[1]; }},
     {k:'ten',  name:'期限档', get:function(r){ return parts(r)[2]; }}
+  ],
+  /* carry 的 k = 类别|key（类别=价差/单边） */
+  carry: [
+    {k:'cat', name:'类别', get:function(r){ return parts(r)[0]; }}
   ]
 };
 function dimsOf(g){ return DIMS[g] || []; }
@@ -708,6 +713,12 @@ function detail(r){
   });
   if(sameSrc) msg.push('⚠ 该因子就是预测目标的标的本身（或其组成部分），IC 只反映标的自身的均值回复/动量特性，不是外部增量信息。');
   else if(mechSrc) msg.push('⚠ 机械恒等：'+mechSrc+' 是同一标的的两种报价（价格与收益率反向），IC 天然很高但不是增量信息，实盘不可用。');
+  /* carry 单腿 ≈ 对应期限收益率水平（DR001 变动小），预测单边期货价格时
+     退化成「利率水平 → 未来变动」的机械关系，与 curve 组 债券·X年国债 同源 */
+  else if(r[IDX.g]==='carry' && (S.tgt==='t'||S.tgt==='tl'))
+    msg.push('⚠ 该 carry 因子≈对应期限国债收益率水平（融资利率变动很小），对单边期货价格而言退化为'
+      +'「利率水平 → 未来变动」的机械关系（与 curve 组 债券·X年国债 同源），不是 carry 的增量信息。'
+      +'要看 carry 本身的增量，请切到价差目标（ts4t / tl3t / s3010）。');
   if(Math.abs(r[IDX.ic]) < CK.meta.min_ic_strong && Math.abs(r[IDX.t])>2)
     msg.push('⚠ |IC| 低于门槛 '+CK.meta.min_ic_strong+' 但 t 值偏高：多半是极端值驱动的假信号，勿采信。');
   if(r[IDX.sig]===2) msg.push('✓ 通过最严格的置换检验（保留 y 全部自相关结构后仍显著），可信度最高。');
@@ -929,6 +940,7 @@ function drawSeries(g, k){
       var kk = g==='cash' ? (arr[i].bt+'|'+arr[i].inst+'|'+arr[i].mat)
              : g==='repo' ? (arr[i].inst+'|'+arr[i].field)
              : g==='derived' ? (arr[i].op+'|'+arr[i].inst+'|'+arr[i].tenor+'|'+arr[i].cls)
+             : g==='carry' ? (arr[i].cat+'|'+arr[i].key)
              : arr[i].name;
       if(kk===k){ s=arr[i]; break; }
     }
