@@ -487,6 +487,7 @@
     </div>
     <div class="modal-foot">
       <button class="btn btn-outline" onclick="pullFromCloud(true)">⬇ 从云拉取</button>
+      <button class="btn btn-danger" onclick="forcePullFromCloud()" title="本机若存了内容更空的“新版本”，普通拉取不会覆盖。此按钮无条件采用云端">⬇ 强制用云端覆盖</button>
       <button class="btn btn-primary" onclick="uploadToCloud()">⬆ 上传到云</button>
       <button class="btn btn-outline" onclick="saveSyncConfigAndClose()">保存配置</button>
     </div>
@@ -971,7 +972,9 @@ async function uploadToCloud() {
 
 async function pullFromCloud(showToastFlag) {
   const cfg = curSyncConfig();
-  const raw = `https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/${cfg.path}?t=${Date.now()}`;
+  // ★ 走 GitHub Pages 域名而不是 raw.githubusercontent.com：后者国内常被墙，
+  //   静默失败后页面只剩本机 localStorage 的旧/空数据，表现为"点开结论是空的"（2026-09-29 修）
+  const raw = `https://${cfg.owner}.github.io/${cfg.repo}/${cfg.path}?t=${Date.now()}`;
   try {
     const r = await fetch(raw);
     if (!r.ok) {
@@ -991,8 +994,52 @@ async function pullFromCloud(showToastFlag) {
       toast(added > 0 ? `✅ 从云拉取完成，新增 ${added} 条（共 ${after} 条）` : `✅ 云端已是最新（共 ${after} 条）`);
     }
     if (document.getElementById('sync-mask').classList.contains('show')) updateSyncStatus();
+    setSyncWarn('');
   } catch(err) {
+    console.warn('云同步拉取失败', err);
+    setSyncWarn('⚠ 云同步不可用（' + err.message + '），当前显示的是本机浏览器存储的数据，可能不是最新/不完整。可点右上角「☁ 云同步」重试。');
     if (showToastFlag) toast('拉取失败：' + err.message);
+  }
+}
+
+/* 顶部可见的同步告警条：静默失败也必须让人看见，否则会误以为"结论内容是空的" */
+function setSyncWarn(msg) {
+  let el = document.getElementById('sync-warn');
+  if (!msg) { if (el) el.style.display = 'none'; return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sync-warn';
+    el.style.cssText = 'margin:8px 0;padding:8px 12px;border-radius:6px;font-size:12px;line-height:1.6;'
+      + 'background:var(--bg);border:1px solid var(--border);color:var(--text-secondary)';
+    const host = document.querySelector('.container') || document.body;
+    host.insertBefore(el, host.firstChild);
+  }
+  el.textContent = msg;
+  el.style.display = '';
+}
+
+/* 强制用云端覆盖本机：普通拉取按 updatedAt 合并，若本机存了内容更空的"新版本"，
+   云端完整内容永远进不来。此按钮无条件采用云端。 */
+async function forcePullFromCloud() {
+  const cfg = curSyncConfig();
+  const url = `https://${cfg.owner}.github.io/${cfg.repo}/${cfg.path}?t=${Date.now()}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) { toast('云端读取失败：HTTP ' + r.status); return; }
+    const remote = await r.json();
+    if (!Array.isArray(remote)) { toast('云端数据格式错误'); return; }
+    const onlyLocal = conclusions.filter(c => !remote.some(rc => rc.id === c.id)).length;
+    let tip = `云端 ${remote.length} 条，本机 ${conclusions.length} 条。确定用云端覆盖本机？`;
+    if (onlyLocal) tip += `\n⚠ 本机有 ${onlyLocal} 条未上传的结论会被丢弃（建议先「上传到云」备份）。`;
+    if (!confirm(tip)) return;
+    conclusions = remote;
+    persist();
+    renderFilterBar();
+    renderList();
+    setSyncWarn('');
+    toast(`✅ 已用云端 ${remote.length} 条覆盖本机`);
+  } catch (err) {
+    toast('强制拉取失败：' + err.message);
   }
 }
 
