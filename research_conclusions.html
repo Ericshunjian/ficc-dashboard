@@ -489,6 +489,7 @@
       <button class="btn btn-outline" onclick="pullFromCloud(true)">⬇ 从云拉取</button>
       <button class="btn btn-danger" onclick="forcePullFromCloud()" title="本机若存了内容更空的“新版本”，普通拉取不会覆盖。此按钮无条件采用云端">⬇ 强制用云端覆盖</button>
       <button class="btn btn-primary" onclick="uploadToCloud()">⬆ 上传到云</button>
+      <button class="btn btn-outline" onclick="runDiag()">🔧 自检</button>
       <button class="btn btn-outline" onclick="saveSyncConfigAndClose()">保存配置</button>
     </div>
   </div>
@@ -515,14 +516,25 @@ let currentDetailId = null;
 function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    conclusions = raw ? JSON.parse(raw) : [];
+    const arr = raw ? JSON.parse(raw) : [];
+    conclusions = Array.isArray(arr) ? arr : [];
   } catch (e) {
     console.error('加载失败', e);
     conclusions = [];
+    setSyncWarn('⚠ 本机浏览器存储读取失败（' + e.message + '），已从云端重新拉取；若反复出现请用「☁ 云同步 → 强制用云端覆盖」。');
   }
 }
 function persist() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(conclusions));
+  // ★ 写入失败必须"可见且不影响后续渲染"：以前 setItem 抛错会中断整段同步逻辑，
+  //   表现为列表一直停在旧内容（像"点开是空的"）。2026-09-29 修
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(conclusions));
+    return true;
+  } catch (e) {
+    console.error('写入本机存储失败', e);
+    setSyncWarn('⚠ 本机浏览器存储写入失败（' + e.message + '）：本次改动只在当前页面生效，刷新会丢失。常见原因：隐私/无痕模式、站点数据被禁、存储已满。');
+    return false;
+  }
 }
 function genId() {
   return 'rc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
@@ -584,6 +596,25 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
+/* 当前生效的筛选条件（人话），用于空状态时直接告诉用户"为什么一条都不显示" */
+function activeFilterDesc() {
+  const parts = [];
+  if (filterStatus !== 'all') parts.push('状态「' + filterStatus + '」');
+  if (filterTags.size) parts.push('标签「' + Array.from(filterTags).join('、') + '」');
+  if (searchKeyword) parts.push('搜索「' + searchKeyword + '」');
+  return parts;
+}
+function clearFilters() {
+  filterStatus = 'all';
+  filterTags.clear();
+  searchKeyword = '';
+  const si = document.getElementById('search-input');
+  if (si) si.value = '';
+  document.querySelectorAll('.status-tab').forEach(t => t.classList.toggle('active', t.dataset.status === 'all'));
+  renderFilterBar();
+  renderList();
+}
+
 function renderList() {
   const list = getFiltered();
   const meta = document.getElementById('result-meta');
@@ -591,12 +622,16 @@ function renderList() {
 
   const container = document.getElementById('card-container');
   if (list.length === 0) {
+    const why = activeFilterDesc();
     container.innerHTML = `
       <div class="empty-state">
         <div class="icon">📝</div>
         <h3>${conclusions.length === 0 ? '还没有研究结论' : '没有匹配的结论'}</h3>
-        <p>${conclusions.length === 0 ? '从因子分析页「保存为研究结论」，或点右上角新建' : '试试调整筛选条件'}</p>
-        ${conclusions.length === 0 ? '<button class="btn btn-primary" onclick="openEditor()">+ 新建第一条结论</button>' : ''}
+        ${conclusions.length === 0
+          ? '<p>从因子分析页「保存为研究结论」，或点右上角新建</p><button class="btn btn-primary" onclick="openEditor()">+ 新建第一条结论</button>'
+          : `<p>本机其实有 <b>${conclusions.length}</b> 条，但被筛选条件挡住了：${why.length ? '「' + why.join(' + ') + '」' : '（未知）'}</p>
+             <button class="btn btn-primary" onclick="clearFilters()">清除筛选条件，显示全部 ${conclusions.length} 条</button>
+             <button class="btn btn-outline" onclick="openSyncPanel()" style="margin-left:8px">☁ 云同步/自检</button>`}
       </div>`;
     return;
   }
@@ -988,6 +1023,7 @@ async function pullFromCloud(showToastFlag) {
     persist();
     renderFilterBar();
     renderList();
+    autoHealFilters();
     const after = conclusions.length;
     const added = after - before;
     if (showToastFlag || added > 0) {
@@ -1036,11 +1072,51 @@ async function forcePullFromCloud() {
     persist();
     renderFilterBar();
     renderList();
+    autoHealFilters();
     setSyncWarn('');
     toast(`✅ 已用云端 ${remote.length} 条覆盖本机`);
   } catch (err) {
     toast('强制拉取失败：' + err.message);
   }
+}
+
+/* 拉取/覆盖之后若"有数据却一条都不显示"，只可能是筛选条件卡住了 —— 直接清掉，别让人对着空页发呆 */
+function autoHealFilters() {
+  if (conclusions.length > 0 && getFiltered().length === 0) {
+    const why = activeFilterDesc().join(' + ');
+    clearFilters();
+    toast('⚠ 已自动清除筛选条件（' + (why || '未知') + '），显示全部 ' + conclusions.length + ' 条');
+    return true;
+  }
+  return false;
+}
+
+/* 自检：把"本机有几条 / 云端有几条 / 被什么筛掉了 / 每条正文多长"一次性摆出来 */
+async function runDiag() {
+  const cfg = curSyncConfig();
+  const url = `https://${cfg.owner}.github.io/${cfg.repo}/${cfg.path}`;
+  const lines = [];
+  let lsOk = true, lsMsg = '';
+  try { localStorage.setItem('__rc_test__', '1'); localStorage.removeItem('__rc_test__'); }
+  catch (e) { lsOk = false; lsMsg = e.message; }
+  lines.push('本机存储：' + (lsOk ? '可用' : '<b style="color:var(--danger)">❌ 不可用（' + lsMsg + '）</b>'));
+  lines.push('本机条数：<b>' + conclusions.length + '</b>（占用 ' + (localStorage.getItem(STORAGE_KEY) || '').length + ' 字符）');
+  lines.push('当前可见：<b>' + getFiltered().length + '</b> 条');
+  lines.push('筛选：状态=' + filterStatus + ' ／ 标签=' + (Array.from(filterTags).join('、') || '无') + ' ／ 搜索=' + (searchKeyword || '无'));
+  let cloud = '未知';
+  try {
+    const r = await fetch(url + '?t=' + Date.now());
+    if (!r.ok) cloud = 'HTTP ' + r.status;
+    else { const j = await r.json(); cloud = Array.isArray(j) ? '<b>' + j.length + '</b> 条' : '格式错误（不是数组）'; }
+  } catch (e) { cloud = '<b style="color:var(--danger)">不可达（' + e.message + '）</b>'; }
+  lines.push('云端：' + cloud);
+  lines.push('<span style="opacity:.55">' + url + '</span>');
+  const items = conclusions.map(c =>
+    '· ' + escapeHtml(c.title || '(无标题)') + ' ｜ ' + (c.status || '?') + ' ｜ 更新 ' + (c.updatedAt || '-')
+    + ' ｜ 正文 ' + ((c.stats || '').length + (c.cases || '').length + (c.envPerformance || '').length) + ' 字 ｜ <span style="opacity:.55">' + c.id + '</span>'
+  ).join('<br>');
+  document.getElementById('sync-status').innerHTML = lines.join('<br>') + '<br><br>' + (items || '<span style="opacity:.6">本机无条目</span>');
+  toast('自检完成，见上方「同步状态」');
 }
 
 function mergeConclusions(local, remote) {
