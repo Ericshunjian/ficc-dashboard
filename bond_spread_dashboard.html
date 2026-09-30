@@ -440,6 +440,7 @@
     <div class="watchlist-header">
       <span class="watchlist-title">📌 我的利差看板</span>
       <button class="watchlist-sync-btn" onclick="pullWatchlist(true)" title="从云端刷新">⟳</button>
+      <button class="watchlist-sync-btn" onclick="watchDiag()" title="自检：Token / 云端连通性 / 删除失败原因">🔧</button>
       <span class="watchlist-status" id="watchlist-status">加载中…</span>
     </div>
     <div class="watchlist-cards" id="watchlist-cards">
@@ -1074,6 +1075,7 @@ function resetFilters() {
 // 限制：仅「利率类」之间可相减（期货价格 T主力 等为点位，量纲不同，禁止与利率配对）
 // ============================================
 let watchlist = [];   // [{a:'bond:CODE'|'curve:NAME', b:同, note:'', added:'YYYY-MM-DD'}]
+let lastPushError = '';
 const WATCH_PATH = 'spread_watchlist.json';
 
 function getWatchSyncConfig() {
@@ -1088,6 +1090,83 @@ function getWatchSyncConfig() {
   };
 }
 function b64encode(s) { return btoa(unescape(encodeURIComponent(s))); }
+
+// ★★ GitHub Contents API 的 GET 必须禁用缓存 ★★
+// api.github.com 会返回 ETag，浏览器下次自动带 If-None-Match → 服务端 304 → 浏览器复用缓存里的旧响应。
+// 后果（正是"删除失败"的根因）：
+//   ① pull 读到旧列表 → 目标配对判定为"云端已不存在"；
+//   ② push 读到旧 sha → PUT 带过期 sha → 409 Conflict → 云端没删成，刷新后卡片回来了。
+// 修法：URL 带时间戳 + cache:'no-store' + 显式清空 If-None-Match。
+async function ghGet(cfg) {
+  const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path}`
+            + `?ref=${encodeURIComponent(cfg.branch)}&t=${Date.now()}`;
+  return await fetch(url, {
+    headers: { Authorization: 'token ' + cfg.token, Accept: 'application/vnd.github+json', 'If-None-Match': '' },
+    cache: 'no-store'
+  });
+}
+
+// 诊断浮层
+function showDiag(lines) {
+  let el = document.getElementById('wl-diag');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'wl-diag';
+    el.style.cssText = 'position:fixed;left:50%;top:12%;transform:translateX(-50%);z-index:9999;max-width:640px;'
+      + 'max-height:70vh;overflow:auto;background:#fff;border:1px solid #d0d5dd;border-radius:8px;'
+      + 'box-shadow:0 8px 28px rgba(0,0,0,.18);padding:16px 18px;font-size:12px;line-height:1.7;color:#1f2937;';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px">🔧 利差看板自检</div>'
+    + lines.map(l => `<div>${l}</div>`).join('')
+    + '<div style="margin-top:12px;text-align:right"><button onclick="document.getElementById(\'wl-diag\').remove()" '
+    + 'style="padding:4px 14px;border:1px solid #d0d5dd;border-radius:4px;background:#f9fafb;cursor:pointer">关闭</button></div>';
+}
+
+// 一键自检：定位"删除/保存失败"的具体原因
+async function watchDiag() {
+  const cfg = getWatchSyncConfig();
+  const L = [];
+  const tk = cfg.token || '';
+  const kind = !tk ? '（未配置）' : (tk.startsWith('github_pat_') ? 'fine-grained' : (tk.startsWith('ghp_') ? 'classic' : '未知前缀'));
+  L.push(`<b>配置</b>：owner=${cfg.owner} repo=${cfg.repo} branch=${cfg.branch}`);
+  L.push(`<b>Token</b>：${tk ? '已配置，长度 ' + tk.length + '，类型 ' + kind : '<span style="color:#b42318">未配置 → 只能拉、不能写，删除必然无法保存</span>'}`);
+  L.push(`<b>本机列表</b>：${watchlist.length} 对`);
+  if (!tk) {
+    L.push('<hr style="margin:8px 0"><span style="color:#b42318">未配置 Token 时无法写入云端。请到「研究结论库」页右上角 ☁ 云同步 里填写 Token（两页共用同一份配置）。</span>');
+    showDiag(L); return;
+  }
+  try {
+    const r = await ghGet(cfg);
+    L.push(`<b>API GET</b>：HTTP ${r.status}${r.status === 200 ? ' ✅' : ' <span style="color:#b42318">❌</span>'}`);
+    if (r.ok) {
+      const j = await r.json();
+      const remote = JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g, '')))));
+      const pairs = Array.isArray(remote) ? remote : (remote.pairs || []);
+      L.push(`<b>云端</b>：${pairs.length} 对，updated=${(remote.meta && remote.meta.updated) || '?'}`);
+      L.push(`<b>云端 sha</b>：${(j.sha || '').slice(0, 12)}…`);
+      const miss = watchlist.filter(p => !pairs.some(m => (m.a === p.a && m.b === p.b) || (m.a === p.b && m.b === p.a)));
+      L.push(miss.length
+        ? `<span style="color:#b42318">本机有 ${miss.length} 对不在云端（新增未上云 / 曾读到缓存）：${miss.slice(0, 5).map(p => typeLabelOf(p.a) + '−' + typeLabelOf(p.b)).join('、')}</span>`
+        : '本机与云端一致 ✅');
+      // 试写：用当前内容做一次 PUT 探测（内容不变，仅验证写权限）
+      const body = { message: 'chore: 写权限自检', content: b64encode(JSON.stringify({ meta: { updated: new Date().toISOString(), note: '个券利差看板' }, pairs: pairs }, null, 2)), branch: cfg.branch, sha: j.sha };
+      const rp = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path}`,
+        { method: 'PUT', headers: { Authorization: 'token ' + cfg.token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const ep = await rp.json().catch(() => ({}));
+      L.push(`<b>API PUT（写权限探测）</b>：HTTP ${rp.status}${rp.ok ? ' ✅ 有写权限' : ' <span style="color:#b42318">❌ ' + (ep.message || '') + '</span>'}`);
+      if (!rp.ok && (rp.status === 401 || rp.status === 403)) {
+        L.push('<span style="color:#b42318">→ Token 失效或缺少 Contents 写权限，需重新生成 Token（fine-grained 须勾选 Contents: Read and write）。</span>');
+      }
+    } else {
+      const e = await r.json().catch(() => ({}));
+      L.push(`<span style="color:#b42318">读取失败：${e.message || r.status}</span>`);
+    }
+  } catch (e) {
+    L.push(`<span style="color:#b42318">请求异常：${e.message}（多为网络/公司代理拦截 api.github.com）</span>`);
+  }
+  showDiag(L);
+}
 
 // 轻量 toast
 let _toastTimer = null;
@@ -1111,7 +1190,7 @@ async function pullWatchlist(showToast) {
   let remote = null, err1 = null;
   if (cfg.token) {
     try {
-      const r = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path}?ref=${encodeURIComponent(cfg.branch)}`, { headers: { Authorization: 'token ' + cfg.token, Accept: 'application/vnd.github+json' } });
+      const r = await ghGet(cfg);   // 已禁缓存，避免读到旧列表/旧 sha
       if (r.status === 404) { remote = { pairs: [] }; }
       else if (r.ok) { const j = await r.json(); remote = JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,''))))); }
       else throw new Error('API HTTP ' + r.status);
@@ -1162,7 +1241,7 @@ async function pushWatchlist(merge) {
     let sha = null;
     let finalPairs = watchlist;
     try {
-      const r = await fetch(api + '?ref=' + encodeURIComponent(cfg.branch), { headers: { Authorization: 'token ' + cfg.token, Accept: 'application/vnd.github+json' } });
+      const r = await ghGet(cfg);   // 已禁缓存：sha 必须是最新，否则 PUT 会 409
       if (r.ok) {
         const j = await r.json(); sha = j.sha;
         if (merge === true) {
@@ -1173,18 +1252,30 @@ async function pushWatchlist(merge) {
           watchlist.forEach(p => { const dup = merged.some(m => (m.a===p.a&&m.b===p.b)||(m.a===p.b&&m.b===p.a)); if (!dup) merged.push(p); });
           watchlist = merged; finalPairs = merged; renderWatchlist();
         }
+      } else if (r.status !== 404) {
+        const e = await r.json().catch(()=>({}));
+        throw new Error('读取云端失败 HTTP ' + r.status + '：' + (e.message || ''));
       }
-    } catch(e) {}
+    } catch(e) { if (String(e.message).indexOf('读取云端失败') === 0) throw e; }
     const payload = { meta: { updated: new Date().toISOString(), note: '个券利差看板' }, pairs: finalPairs };
     const body = { message: 'chore: 同步利差看板 ' + new Date().toISOString().slice(0,16).replace('T',' '), content: b64encode(JSON.stringify(payload, null, 2)), branch: cfg.branch };
     if (sha) body.sha = sha;
-    const r2 = await fetch(api, { method: 'PUT', headers: { Authorization: 'token ' + cfg.token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!r2.ok) { const e = await r2.json().catch(()=>({})); throw new Error(e.message || r2.status); }
+    const putIt = () => fetch(api, { method: 'PUT', headers: { Authorization: 'token ' + cfg.token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    let r2 = await putIt();
+    if (r2.status === 409) {
+      // sha 过期（并发写入或曾读到缓存）→ 取最新 sha 重试一次
+      const rg = await ghGet(cfg);
+      if (rg.ok) { const j2 = await rg.json(); body.sha = j2.sha; r2 = await putIt(); }
+    }
+    if (!r2.ok) { const e = await r2.json().catch(()=>({})); throw new Error('HTTP ' + r2.status + ' ' + (e.message || '')); }
     if (statusEl) statusEl.textContent = `已上云（${finalPairs.length} 对）`;
     toast(`✅ 看板已同步到云（${finalPairs.length} 对）`);
+    return true;
   } catch(err) {
     if (statusEl) statusEl.textContent = '上传失败';
-    toast('上传失败：' + err.message);
+    lastPushError = err.message;
+    toast('❌ 未保存到云端：' + err.message + '（点 🔧 自检）');
+    return false;
   }
 }
 
@@ -1332,12 +1423,24 @@ async function removePair(idx) {
   const p = watchlist[idx];
   if (!p) return;
   if (!confirm(`删除看板配对：${typeLabelOf(p.a)} − ${typeLabelOf(p.b)} ？`)) return;
-  await pullWatchlist(false);
+  const snapshot = watchlist.slice();          // 失败时回滚，避免"界面删了、云端没删"
+  try { await pullWatchlist(false); } catch(e) {}
   const realIdx = watchlist.findIndex(q => q.a===p.a && q.b===p.b);
-  if (realIdx < 0) { toast('该配对在云端已不存在'); renderWatchlist(); return; }
+  if (realIdx < 0) {
+    // 拉到最新列表后没有这一对：多为本地新增未成功上云，或此前读到过缓存。
+    // 云端本来就没有 → 直接以最新列表为准刷新，不再误报为失败。
+    toast('该配对已不在云端列表中（可能此前新增未成功上云），已按云端最新刷新');
+    renderWatchlist();
+    return;
+  }
   watchlist.splice(realIdx, 1);
   renderWatchlist();
-  pushWatchlist(false);
+  const ok = await pushWatchlist(false);
+  if (!ok) {
+    watchlist = snapshot;                      // 回滚：界面与云端保持一致
+    renderWatchlist();
+    toast('删除未生效，已恢复：' + (lastPushError || '云端写入失败') + '（点 🔧 自检）');
+  }
 }
 
 // 载入配对到 A/B 槽（含IRS/期货时先确保曲线数据已加载）
