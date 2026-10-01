@@ -81,6 +81,7 @@ DATA_FILES_FOR_VERSION = [
     "stock_bond_data.json",
     "factor_library.json",
     "factor_checkup.json",
+    "strategy_model.json",
     # 体检的 36 个分片（checkup_b/）不入版本清单：页面按块按需 fetch 并带时间戳，
     # 只需保证被 commit/push 即可（见 git_push 里的 json_files）
 ]
@@ -1439,6 +1440,19 @@ def main():
             log.warning(f"因子体检生成失败，保留现有数据: {e}")
             ok11, st11 = False, "保留旧数据"
 
+    # 策略研究页按需刷新。其因子名单固定，沿用最近一次因子体检的筛选统计。
+    RUN_STRATEGY = os.environ.get("FICC_UPDATE_STRATEGY", "0") == "1"
+    ok12, st12 = True, "跳过"
+    if RUN_STRATEGY:
+        try:
+            log.info("[12/12] 多因子时序策略研究 (strategy_model.json)")
+            import prepare_strategy_model
+            prepare_strategy_model.main()
+            st12 = "成功"
+        except Exception as e:
+            log.warning(f"策略研究更新失败，保留现有数据: {e}")
+            ok12, st12 = False, "保留旧数据"
+
     log.info("=" * 50)
     log.info(f"完成: 预处理={'成功' if ok0 else '失败'}, "
              f"机构行为={'成功' if ok1 else '失败'}, "
@@ -1451,7 +1465,8 @@ def main():
              f"质押式回购={'成功' if ok8 else '保留旧数据'}, "
              f"股债相关性={'成功' if ok9 else '保留旧数据'}, "
              f"因子库={st10}, "
-             f"因子体检={st11}")
+             f"因子体检={st11}, "
+             f"策略研究={st12}")
 
     # 更新数据版本清单（前端据此跳过未变更文件的下载）
     try:
@@ -1460,7 +1475,7 @@ def main():
         log.warning(f"data_version.json 生成失败（不影响数据）: {e}")
 
     # push 到 GitHub（唯一远程；gitee/gitcode 已于 2026-08-06 废弃，不再同步）
-    if ok1 or ok2 or ok3 or ok5 or ok7 or ok8 or ok9 or ok10 or ok11:
+    if ok1 or ok2 or ok3 or ok5 or ok7 or ok8 or ok9 or ok10 or ok11 or ok12:
         try:
             log.info("推送数据到远程仓库...")
             git_push_data()
@@ -1603,6 +1618,7 @@ def git_push_data():
         'stock_bond_data.json',
         'factor_library.json',
         'factor_checkup.json',
+        'strategy_model.json',
         'checkup_b',          # 体检分片目录（18 数据 + 18 详情，整体 add）
         'data_version.json',
     ]
@@ -1620,6 +1636,8 @@ def git_push_data():
         'prepare_factor_library.py',
         'factor_checkup.html',
         'prepare_factor_checkup.py',
+        'strategy_model.html',
+        'prepare_strategy_model.py',
         'backtest_dashboard.html',
         'bond_curve_deviation.html',
         'hs300_rolling_mdd.html',

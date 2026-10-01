@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>多因子时序策略研究 · FICC</title>
+<script src="vendor/chart.umd.min.js"></script>
+<style>
+:root{--bg:#f5f6fa;--panel:#fff;--text:#253449;--muted:#68798b;--border:#e4e9f0;--blue:#5470c6;--teal:#16847b;--orange:#d4872a;--red:#c75149;--shadow:0 2px 14px rgba(35,55,85,.055)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+a{color:var(--blue);text-decoration:none}.shell{max-width:1380px;margin:auto;padding:24px 26px 54px}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}.top h1{font-size:23px;margin:3px 0 5px}.top p{margin:0;color:var(--muted)}.links{display:flex;gap:12px;white-space:nowrap;padding-top:8px}
+.notice{background:#fff8ed;border:1px solid #f1dfc3;border-left:4px solid var(--orange);border-radius:9px;padding:12px 15px;color:#6e542d;margin-bottom:16px}
+.tabs{display:flex;gap:7px;margin-bottom:15px}.tabs button{border:1px solid var(--border);border-radius:7px;background:var(--panel);padding:8px 15px;cursor:pointer;color:var(--muted);font:inherit}.tabs button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:11px;margin-bottom:15px}.metric,.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow)}.metric{padding:13px 15px}.metric .label{font-size:12px;color:var(--muted)}.metric .value{font-size:22px;font-weight:650;margin-top:4px;font-variant-numeric:tabular-nums}.metric .sub{font-size:11px;color:var(--muted);margin-top:3px}.good{color:var(--teal)}.bad{color:var(--red)}
+.grid{display:grid;grid-template-columns:1.5fr 1fr;gap:15px;margin-bottom:15px}.card{padding:16px 18px;margin-bottom:15px;min-width:0}.card h2{font-size:15px;margin:0 0 8px}.card .hint{font-size:12px;color:var(--muted);margin:0 0 12px}.chart{height:340px}.chart.small{height:300px}
+.tablebox{max-width:100%;overflow:auto}table{border-collapse:collapse;width:100%;font-size:12px}th,td{text-align:left;border-bottom:1px solid #edf0f4;padding:9px 10px;white-space:nowrap}th{position:sticky;top:0;background:#f9fbfd;color:#607184;font-weight:600}td.factor{white-space:normal;min-width:280px}td.reason{white-space:normal;min-width:210px;color:var(--muted)}.num{text-align:right;font-variant-numeric:tabular-nums}.tablebox.trades{max-height:390px}.pill{display:inline-block;border-radius:5px;padding:2px 6px;background:#edf2ff;color:#4560ad;font-size:11px}.pill.zero{background:#f5f5f5;color:#777}
+.method{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.method div{background:#f8faff;border:1px solid #eef2fa;border-radius:8px;padding:12px 13px}.method b{display:block;margin-bottom:4px}.method p{margin:0;color:var(--muted);font-size:12px}.action{border:1px solid var(--border);border-radius:6px;background:#fff;padding:5px 9px;cursor:pointer;color:var(--text)}.action:hover{border-color:var(--blue)}
+@media(max-width:1000px){.summary{grid-template-columns:repeat(3,minmax(0,1fr))}.grid{grid-template-columns:1fr}.method{grid-template-columns:1fr}}
+@media(max-width:600px){.shell{padding:16px 12px}.top{display:block}.links{padding-top:12px}.summary{grid-template-columns:repeat(2,minmax(0,1fr))}.metric .value{font-size:18px}.chart{height:275px}}
+</style>
+</head>
+<body>
+<main class="shell">
+  <div class="top"><div><h1>多因子时序策略研究</h1><p id="subtitle">因子体检 → 预选因子 → 5日预测 → 固定方向交易</p></div><nav class="links"><a href="index.html">首页</a><a href="factor_checkup.html">因子体检</a><a href="backtest_dashboard.html">单因子回测</a></nav></div>
+  <div class="notice" id="notice">正在加载研究结果…</div>
+  <div class="tabs" id="tabs"></div>
+  <section class="summary" id="summary"></section>
+  <div class="grid">
+    <section class="card"><h2>无成本方向策略累计结果</h2><p class="hint">固定每5个交易日入场一次；3T−TL 为报价点数，30Y−10Y 为利差 bp 方向分数，均非资金收益率。</p><div class="chart"><canvas id="equityChart"></canvas></div></section>
+    <section class="card"><h2>分年表现</h2><p class="hint">同一交易日期下比较多因子岭回归、价差自身状态和历史训练方向等权。</p><div class="chart small"><canvas id="yearChart"></canvas></div></section>
+  </div>
+  <section class="card"><h2>选入的因子 <span id="factorCount"></span></h2><p class="hint">指标来自既有体检的“原值 / 未来5日”块；IC 为全样本 Spearman，ICIR 为滚动 Pearson，二者口径不同。选因子时已看过全样本。</p><div class="tablebox"><table><thead><tr><th>因子</th><th>来源</th><th class="num">IC</th><th class="num">ICIR</th><th class="num">Q5−Q1</th><th class="num">有效日</th><th>体检标记</th><th>选入理由</th></tr></thead><tbody id="factorBody"></tbody></table></div></section>
+  <div class="grid">
+    <section class="card"><h2>交易起始日敏感性</h2><p class="hint">每5日交易一次有5种固定起点。上方净值采用第0相位，这里列出全部相位，避免只展示有利起点。</p><div class="tablebox"><table><thead><tr><th>相位</th><th class="num">交易数</th><th class="num">多因子累计</th><th class="num">价格基线</th><th class="num">等权基线</th><th class="num">多因子胜率</th></tr></thead><tbody id="phaseBody"></tbody></table></div></section>
+    <section class="card"><h2>模型与信号口径</h2><div class="method"><div><b>预测</b><p>t 日收盘后观察因子；t+1 日收盘建仓，预测至 t+6 日收盘的价差变动。</p></div><div><b>组合</b><p>7条选入因子，加价差自身60日滚动Z与过去5日变动。每20日重训固定强度的岭回归。</p></div><div><b>交易</b><p>预测≥0做多，否则做空；固定满额方向、持有5日、不扣成本。价格基线仅用2条价差自身状态。</p></div></div></section>
+  </div>
+  <section class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h2>逐笔交易（第0相位）</h2><button type="button" class="action" id="csvButton">下载 CSV</button></div><p class="hint">正持仓表示看价差走阔，负持仓表示看价差收窄；30Y−10Y 的结果单位是 bp 方向分数。</p><div class="tablebox trades"><table><thead><tr><th>信号日</th><th>入场日</th><th>离场日</th><th class="num">预测变动</th><th class="num">实际变动</th><th>方向</th><th class="num">本笔结果</th><th class="num">累计结果</th></tr></thead><tbody id="tradeBody"></tbody></table></div></section>
+</main>
+<script>
+let DATA=null, ACTIVE='tl3t', EQUITY=null, YEAR=null;
+const byId=id=>document.getElementById(id);
+const fmt=(x,n=2)=>x===null||x===undefined||!Number.isFinite(Number(x))?'—':Number(x).toFixed(n);
+const signed=(x,n=2)=>x===null||x===undefined?'—':(x>0?'+':'')+fmt(x,n);
+const pct=x=>x===null||x===undefined?'—':fmt(100*x,1)+'%';
+const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function tableRows(rows){return rows.map(r=>'<tr>'+r.map(c=>'<td'+(c.cls?' class="'+c.cls+'"':'')+'>'+c.html+'</td>').join('')+'</tr>').join('');}
+function metric(label,value,sub,cls){return '<div class="metric"><div class="label">'+label+'</div><div class="value '+(cls||'')+'">'+value+'</div><div class="sub">'+sub+'</div></div>';}
+function render(){
+  const r=DATA.targets[ACTIVE], unit=r.unit, trades=r.trades, m=r.metrics;
+  byId('tabs').innerHTML=Object.entries(DATA.targets).map(([k,v])=>'<button type="button" data-t="'+k+'" class="'+(k===ACTIVE?'on':'')+'">'+escapeHtml(v.name)+'</button>').join('');
+  byId('tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{ACTIVE=b.dataset.t;render();});
+  byId('subtitle').textContent=r.formula+' · 底层数据至 '+DATA.meta.source_date+' · 研究回放 '+(r.period?r.period[0]+' ~ '+r.period[1]:'暂无');
+  byId('summary').innerHTML=[
+    metric('多因子预测 IC',signed(r.forecast_ic,3),'逐日预测与未来5日变动的秩相关'),
+    metric('多因子累计',signed(m.model.total,2)+' '+unit,m.model.trades+' 笔，未扣成本',m.model.total>=0?'good':'bad'),
+    metric('多因子胜率',pct(m.model.win_rate),'固定满额方向'),
+    metric('多因子最大回撤',signed(m.model.max_drawdown,2)+' '+unit,'以累计点数 / bp 衡量','bad'),
+    metric('价格基线累计',signed(m.price_only.total,2)+' '+unit,'只用价差自身状态'),
+    metric('等权基线累计',signed(m.equal_weight.total,2)+' '+unit,'方向仅由历史训练决定')
+  ].join('');
+  byId('factorCount').textContent='('+r.selected.length+'条)';
+  byId('factorBody').innerHTML=tableRows(r.selected.map(f=>[
+    {html:escapeHtml(f.label),cls:'factor'},{html:escapeHtml(f.group)},
+    {html:signed(f.ic,3),cls:'num'},{html:signed(f.icir,2),cls:'num'},
+    {html:signed(f.qd,3),cls:'num'},{html:String(f.n),cls:'num'},
+    {html:'<span class="pill '+(f.sig?'':'zero')+'">'+(f.sig?'筛选标记 '+f.sig:'未通过 FDR')+'</span>'},
+    {html:escapeHtml(f.reason),cls:'reason'}
+  ]));
+  byId('phaseBody').innerHTML=tableRows(r.phase_robustness.map(p=>[
+    {html:'第'+p.phase+'相位'},{html:p.model.trades,cls:'num'},
+    {html:signed(p.model.total,2),cls:'num'},{html:signed(p.price_only.total,2),cls:'num'},
+    {html:signed(p.equal_weight.total,2),cls:'num'},{html:pct(p.model.win_rate),cls:'num'}
+  ]));
+  byId('tradeBody').innerHTML=tableRows(trades.slice().reverse().map(t=>[
+    {html:t.asof},{html:t.entry},{html:t.exit},
+    {html:signed(t.pred,3),cls:'num'},{html:signed(t.actual,3),cls:'num'},
+    {html:t.position>0?'做多价差':'做空价差'},
+    {html:signed(t.pnl,3),cls:'num'},{html:signed(t.equity,3),cls:'num'}
+  ]));
+  if(EQUITY)EQUITY.destroy();
+  EQUITY=new Chart(byId('equityChart'),{type:'line',data:{labels:trades.map(t=>t.exit),datasets:[
+    {label:'多因子岭回归',data:trades.map(t=>t.equity),borderColor:'#5470c6',borderWidth:2,pointRadius:0,tension:.1},
+    {label:'价差自身基线',data:trades.map(t=>t.price_equity),borderColor:'#d4872a',borderWidth:1.5,pointRadius:0,tension:.1},
+    {label:'训练方向等权',data:trades.map(t=>t.equal_equity),borderColor:'#16847b',borderWidth:1.5,pointRadius:0,tension:.1}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},interaction:{mode:'index',intersect:false},scales:{x:{ticks:{maxTicksLimit:9}},y:{title:{display:true,text:'累计 '+unit},grid:{color:'#edf0f4'}}}}});
+  const years=[...new Set(trades.map(t=>t.entry.slice(0,4)))];
+  const sums=key=>years.map(y=>trades.filter(t=>t.entry.startsWith(y)).reduce((s,t)=>s+t[key],0));
+  if(YEAR)YEAR.destroy();
+  YEAR=new Chart(byId('yearChart'),{type:'bar',data:{labels:years,datasets:[
+    {label:'多因子',data:sums('pnl'),backgroundColor:'#5470c6'},
+    {label:'价格基线',data:sums('price_pnl'),backgroundColor:'#e1a247'},
+    {label:'等权基线',data:sums('equal_pnl'),backgroundColor:'#37a79d'}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{y:{title:{display:true,text:unit},grid:{color:'#edf0f4'}}}}});
+}
+function downloadCsv(){
+  const r=DATA.targets[ACTIVE];
+  const fields=['asof','entry','exit','pred','actual','position','pnl','equity','price_pnl','equal_pnl'];
+  const csv=[fields.join(','),...r.trades.map(t=>fields.map(k=>t[k]??'').join(','))].join('\r\n');
+  const a=document.createElement('a'),url=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
+  a.href=url;a.download='strategy_'+ACTIVE+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+byId('csvButton').onclick=downloadCsv;
+fetch('strategy_model.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json();}).then(d=>{
+  DATA=d;
+  byId('notice').innerHTML='<b>探索性回放：</b>选因子时已看过全样本体检，因此历史时间顺序回放不是独立样本外验证。'+
+    '所有结果均未扣交易成本；3T−TL 是报价点数，30Y−10Y 是收益率利差 bp 方向分数，不能解释为资金收益。'+
+    '模型每20日只用已完成5日持有期的历史数据重训。';
+  render();
+}).catch(e=>{byId('notice').textContent='加载策略结果失败：'+e.message;});
+</script>
+</body>
+</html>
