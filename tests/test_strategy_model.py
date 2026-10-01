@@ -6,7 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from prepare_strategy_model import HORIZON, PastOnlyScaler, known_training_indices, make_labels
+from prepare_strategy_model import (HORIZON, REBALANCE_EVERY, PastOnlyScaler,
+                                    known_training_indices, load_omo_policy, make_labels)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,8 +17,8 @@ class StrategyTimingTests(unittest.TestCase):
     def test_label_starts_after_signal_and_enters_training_only_after_exit(self):
         levels = np.arange(20, dtype=float) ** 2
         labels = make_labels(levels, horizon=HORIZON)
-        self.assertEqual(labels[0], levels[6] - levels[1])
-        self.assertEqual(labels[3], levels[9] - levels[4])
+        self.assertEqual(labels[0], levels[6] - levels[0])
+        self.assertEqual(labels[3], levels[9] - levels[3])
         self.assertTrue(np.isnan(labels[-6:]).all())
 
         valid = np.isfinite(labels)
@@ -44,9 +45,16 @@ class StrategyTimingTests(unittest.TestCase):
                 source = daily[trade["asof"]]
                 self.assertEqual((trade["entry"], trade["exit"]), (source["entry"], source["exit"]))
                 if previous_exit:
-                    self.assertLessEqual(previous_exit, trade["entry"])
+                    self.assertLess(previous_exit, trade["entry"])
                 previous_exit = trade["exit"]
-            self.assertEqual(len(target["phase_robustness"]), HORIZON)
+            self.assertEqual(len(target["phase_robustness"]), REBALANCE_EVERY)
+            self.assertEqual(len(target["market_factors"]), 4)
+            self.assertEqual(len(target["controls"]), 4)
+
+    def test_omo_changes_are_effective_on_announced_dates(self):
+        dates = ["2024-09-26", "2024-09-27", "2024-09-30", "2025-05-07", "2025-05-08"]
+        rates, _ = load_omo_policy(dates)
+        np.testing.assert_array_equal(rates, [1.70, 1.50, 1.50, 1.50, 1.40])
 
 
 if __name__ == "__main__":

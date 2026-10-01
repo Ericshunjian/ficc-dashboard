@@ -1,0 +1,17 @@
+{
+  "name": "中国人民银行公开市场7天期逆回购操作利率",
+  "unit": "%",
+  "method": "按已公布的生效日期记录政策利率；其后交易日沿用最近一次已生效值。不是每日操作成交利率，也不将14天或隔夜逆回购混入。",
+  "verified_through": "2026-09-29",
+  "latest_verification": "https://finance.sina.com.cn/jjxw/2026-09-29/doc-initmzhk2594799.shtml",
+  "changes": [
+    {"date": "2021-01-04", "rate": 2.20, "source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125227/125957/4246985/f13557ddebc344d2951a8c6b24a1ad1b/2021051118023165538.pdf", "note": "2021年一季度人民银行报告确认维持2.20%；此日期仅作为样本起点"},
+    {"date": "2022-01-17", "rate": 2.10, "source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125227/125957/4584071/b455ea168faa400199173a3f02bd2db1/2022050917023223026.pdf"},
+    {"date": "2022-08-15", "rate": 2.00, "source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125227/125957/4584071/41e6caf3396f4e96b37f400bfa148b6d/2022111619490056498.pdf"},
+    {"date": "2023-06-13", "rate": 1.90, "source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125227/125957/4883187/e6dc129d48d9474cb6455691eee05766/2023081717054357626.pdf"},
+    {"date": "2023-08-15", "rate": 1.80, "source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125227/125957/4883187/e6dc129d48d9474cb6455691eee05766/2023081717054357626.pdf"},
+    {"date": "2024-07-22", "rate": 1.70, "source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125227/125957/5347949/afbfa5df25ee45889d916a2819b60a43/2024110815410752868.pdf"},
+    {"date": "2024-09-27", "rate": 1.50, "source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125227/125957/5347949/afbfa5df25ee45889d916a2819b60a43/2024110815410752868.pdf"},
+    {"date": "2025-05-08", "rate": 1.40, "source": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/5896228/index.html"}
+  ]
+}

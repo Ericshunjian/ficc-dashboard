@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """探索性多因子时序模型：预选因子来自现有因子体检，不重新筛 IC。
 
-在 t 日收盘后使用当日可得信息，t+1 日收盘建仓，持有 5 个期货交易日。
+在 t 日收盘后使用当日可得信息，t+1 日按 t 日收盘价代理建仓，t+6 日收盘平仓。
 逐日扩展历史训练、每 20 日重训；只有已走完持有期的标签进入训练。
 每 5 日取一次不重叠交易。全样本体检已被用于预选因子，故历史结果
 只能称为时间顺序回放，不能称为独立样本外验证。
@@ -19,6 +19,8 @@ import prepare_factor_checkup as checkup
 BASE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(BASE, "strategy_model.json")
 HORIZON = 5
+REBALANCE_EVERY = HORIZON + 1  # 次日代理开盘到 t+6 收盘须错开 6 个信号日
+DR_WINDOW = 10
 REFIT_EVERY = 20
 RIDGE_ALPHA = 15.0
 MIN_COVERAGE = 5  # 7 个预选因子中至少 5 个有值
@@ -76,12 +78,38 @@ def _trailing_z(a, window=60):
     return out
 
 
+def _trailing_mean(a, window):
+    out = np.full(len(a), np.nan)
+    for t in range(window - 1, len(a)):
+        hist = a[t - window + 1:t + 1]
+        if np.isfinite(hist).all():
+            out[t] = hist.mean()
+    return out
+
+
+def load_omo_policy(dates):
+    """利率调整当日即可用于收盘信号；没有新调整时沿用历史值。"""
+    with open(os.path.join(BASE, "omo_policy_7d.json"), encoding="utf-8") as f:
+        policy = json.load(f)
+    changes = policy["changes"]
+    if [c["date"] for c in changes] != sorted(c["date"] for c in changes):
+        raise ValueError("OMO 利率调整日期必须按升序排列")
+    out = np.full(len(dates), np.nan)
+    i, current = 0, np.nan
+    for t, day in enumerate(dates):
+        while i < len(changes) and changes[i]["date"] <= day:
+            current = float(changes[i]["rate"])
+            i += 1
+        out[t] = current
+    return out, policy
+
+
 def make_labels(level, horizon=HORIZON):
-    """索引 t 的预测目标为入场 t+1 至离场 t+1+horizon 的变动。"""
+    """t 收盘为次日代理入场价；t+1 开始持有，t+1+horizon 收盘离场。"""
     out = np.full(len(level), np.nan)
     for t in range(len(level) - horizon - 1):
-        if np.isfinite(level[t + 1]) and np.isfinite(level[t + 1 + horizon]):
-            out[t] = level[t + 1 + horizon] - level[t + 1]
+        if np.isfinite(level[t]) and np.isfinite(level[t + 1 + horizon]):
+            out[t] = level[t + 1 + horizon] - level[t]
     return out
 
 
@@ -154,7 +182,7 @@ def _target_level(target, cmap):
     return 100 * (cmap["30年国债"] - cmap["10年国债"])
 
 
-def build_target(target, dates, series, cmap, ck_meta):
+def build_target(target, dates, series, cmap, omo, ck_meta):
     level = _target_level(target, cmap)
     y = make_labels(level)
     factor_map = {(g, k): (label, arr) for g, k, label, arr in series}
@@ -177,14 +205,26 @@ def build_target(target, dates, series, cmap, ck_meta):
     level_z = _trailing_z(level)
     momentum5 = np.full(len(level), np.nan)
     momentum5[5:] = level[5:] - level[:-5]
-    x_controls = np.column_stack([level_z, momentum5])
-    x_full = np.column_stack([x_factors, x_controls])
+    ma5, ma20 = _trailing_mean(level, 5), _trailing_mean(level, 20)
+    x_controls = np.column_stack([level_z, momentum5, ma5, ma20])
+    dr_ma10 = cmap["DR001-MA10"]
+    y10, y2, y30 = (cmap[k] for k in ("10年国债", "2年国债", "30年国债"))
+    # 收益率原序列单位为百分比；转为 bp 后与组合报价特征一起按训练集标准化。
+    x_market = np.column_stack([
+        100 * (dr_ma10 - omo),
+        100 * (y10 - dr_ma10),
+        100 * (y10 - y2),
+        100 * (y30 - y10),
+    ])
+    x_market_base = np.column_stack([x_controls, x_market])
+    x_full = np.column_stack([x_factors, x_market_base])
     coverage = np.isfinite(x_factors).sum(axis=1)
-    x_ok = (coverage >= MIN_COVERAGE) & np.isfinite(x_controls).all(axis=1)
+    x_ok = ((coverage >= MIN_COVERAGE) & np.isfinite(x_controls).all(axis=1)
+            & np.isfinite(x_market).all(axis=1))
     train_ok = x_ok & np.isfinite(y)
     min_train = MIN_TRAIN[target]
     daily = []
-    model = baseline = scale_for_score = score_signs = None
+    model = baseline = market_baseline = scale_for_score = score_signs = None
     refit_at = -REFIT_EVERY
     for t in range(len(dates)):
         if not x_ok[t] or not np.isfinite(level[t]):
@@ -195,6 +235,7 @@ def build_target(target, dates, series, cmap, ck_meta):
         if model is None or t - refit_at >= REFIT_EVERY:
             model = ridge_fit(x_full[train_idx], y[train_idx])
             baseline = ridge_fit(x_controls[train_idx], y[train_idx])
+            market_baseline = ridge_fit(x_market_base[train_idx], y[train_idx])
             scale_for_score = PastOnlyScaler().fit(x_factors[train_idx])
             z_train = scale_for_score.transform(x_factors[train_idx])
             cov = z_train.T @ (y[train_idx] - np.mean(y[train_idx]))
@@ -202,6 +243,7 @@ def build_target(target, dates, series, cmap, ck_meta):
             refit_at = t
         pred = float(ridge_predict(model, x_full[t:t + 1])[0])
         price_pred = float(ridge_predict(baseline, x_controls[t:t + 1])[0])
+        market_pred = float(ridge_predict(market_baseline, x_market_base[t:t + 1])[0])
         equal_score = float(np.mean(scale_for_score.transform(x_factors[t:t + 1])[0] * score_signs))
         actual = y[t]
         daily.append({
@@ -209,27 +251,30 @@ def build_target(target, dates, series, cmap, ck_meta):
             "entry": dates[t + 1] if t + 1 < len(dates) else None,
             "exit": dates[t + 1 + HORIZON] if t + 1 + HORIZON < len(dates) else None,
             "pred": _round(pred), "price_pred": _round(price_pred),
+            "market_pred": _round(market_pred),
             "equal_score": _round(equal_score), "actual": _round(actual),
             "train_n": len(train_idx), "coverage": int(coverage[t]),
         })
 
-    # 固定每 5 日交易，展示全部 5 种起始相位，避免只呈现偶然有利的周度起点。
+    # t+1 代理开盘至 t+6 收盘：每 6 个信号日开一笔，避免同日开/平仓重叠。
     first = daily[0]["t"] if daily else None
 
     def trade_path(phase):
         trades = []
-        equity = {"pnl": 0.0, "price_pnl": 0.0, "equal_pnl": 0.0}
+        equity = {"pnl": 0.0, "price_pnl": 0.0, "market_pnl": 0.0, "equal_pnl": 0.0}
         for d in daily:
-            if d["actual"] is None or (d["t"] - first) % HORIZON != phase:
+            if d["actual"] is None or (d["t"] - first) % REBALANCE_EVERY != phase:
                 continue
             actual = d["actual"]
             q = 1 if d["pred"] >= 0 else -1
             bq = 1 if d["price_pred"] >= 0 else -1
+            mq = 1 if d["market_pred"] >= 0 else -1
             eq = 1 if d["equal_score"] >= 0 else -1
             item = {k: d[k] for k in ("asof", "entry", "exit", "pred", "actual", "train_n")}
-            item.update({"position": q, "price_position": bq, "equal_position": eq,
+            item.update({"position": q, "price_position": bq, "market_position": mq, "equal_position": eq,
                          "pnl": _round(q * actual, 4),
                          "price_pnl": _round(bq * actual, 4),
+                         "market_pnl": _round(mq * actual, 4),
                          "equal_pnl": _round(eq * actual, 4)})
             for key in equity:
                 equity[key] += item[key]
@@ -241,7 +286,10 @@ def build_target(target, dates, series, cmap, ck_meta):
     known = [d for d in daily if d["actual"] is not None]
     result = {
         **TARGETS[target], "id": target, "selected": selected,
-        "controls": ["截至信号日的价差60日滚动Z", "截至信号日的价差过去5日变动"],
+        "controls": ["截至信号日的价差60日滚动Z", "截至信号日的价差过去5日变动",
+                     "组合价差MA5", "组合价差MA20"],
+        "market_factors": ["DR001-MA10 − 7天OMO", "10年国债 − DR001-MA10",
+                           "10年国债 − 2年国债", "30年国债 − 10年国债"],
         "daily_predictions": daily,
         "trades": trades,
         "period": [trades[0]["entry"], trades[-1]["exit"]] if trades else None,
@@ -250,13 +298,15 @@ def build_target(target, dates, series, cmap, ck_meta):
         "metrics": {
             "model": _metrics(trades, "pnl", TARGETS[target]["unit"]),
             "price_only": _metrics(trades, "price_pnl", TARGETS[target]["unit"]),
+            "market_only": _metrics(trades, "market_pnl", TARGETS[target]["unit"]),
             "equal_weight": _metrics(trades, "equal_pnl", TARGETS[target]["unit"]),
         },
         "phase_robustness": [
             {"phase": p, "model": _metrics(trade_path(p), "pnl", TARGETS[target]["unit"]),
              "price_only": _metrics(trade_path(p), "price_pnl", TARGETS[target]["unit"]),
+             "market_only": _metrics(trade_path(p), "market_pnl", TARGETS[target]["unit"]),
              "equal_weight": _metrics(trade_path(p), "equal_pnl", TARGETS[target]["unit"])}
-            for p in range(HORIZON)
+            for p in range(REBALANCE_EVERY)
         ],
     }
     return result
@@ -264,21 +314,28 @@ def build_target(target, dates, series, cmap, ck_meta):
 
 def main():
     _, dates, series, cmap = checkup.load_library()
+    omo, omo_policy = load_omo_policy(dates)
     with open(os.path.join(BASE, "factor_checkup.json"), encoding="utf-8") as f:
         ck = json.load(f)
     payload = {
         "meta": {
             "generated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "source_date": dates[-1], "checkup_generated": ck["meta"]["generated"],
-            "horizon": HORIZON, "factor_count": sum(map(len, SELECTED.values())),
+            "horizon": HORIZON, "rebalance_every": REBALANCE_EVERY,
+            "factor_count": sum(map(len, SELECTED.values())),
+            "dr_window": DR_WINDOW, "omo_verified_through": omo_policy["verified_through"],
+            "omo_needs_review": dates[-1] > omo_policy["verified_through"],
+            "target_definition": "信号日 t 的收盘价作为 t+1 入场代理价，目标为 t+6 收盘减 t 收盘",
             "refit_every": REFIT_EVERY, "ridge_alpha": RIDGE_ALPHA,
             "min_coverage": MIN_COVERAGE, "min_train": MIN_TRAIN,
             "cost": 0, "selection": "预选自因子体检 raw/未来5日；全样本已被看过，回放不是独立样本外验证",
-            "timing": "t 日收盘后得到因子；t+1 日收盘建仓；t+6 日收盘平仓；每 5 日交易一次",
+            "timing": "t 日收盘后得到因子；t+1 日按 t 日收盘价作为代理入场价；t+6 日收盘平仓；每 6 日交易一次以避免持仓重叠",
+            "entry_caveat": "缺少真实次日开盘价/开盘收益率；代理入场未计隔夜跳空，结果不是可执行成交回测",
+            "market_source": "OMO 为人民银行7天逆回购政策利率变更记录，详见 omo_policy_7d.json；DR001 使用原始库 MA10",
             "training": "每 20 日用已完成持有期的历史样本重训；填补、缩尾、标准化及等权方向仅用训练数据",
             "strategy": "模型预测变动>=0 做多价差，否则做空；固定满额方向，不扣成本，不做仓位优化",
         },
-        "targets": {key: build_target(key, dates, series, cmap, ck["meta"]) for key in SELECTED},
+        "targets": {key: build_target(key, dates, series, cmap, omo, ck["meta"]) for key in SELECTED},
     }
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, separators=(",", ":"), allow_nan=False)

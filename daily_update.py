@@ -82,6 +82,7 @@ DATA_FILES_FOR_VERSION = [
     "factor_library.json",
     "factor_checkup.json",
     "strategy_model.json",
+    "omo_policy_7d.json",
     # 体检的 36 个分片（checkup_b/）不入版本清单：页面按块按需 fetch 并带时间戳，
     # 只需保证被 commit/push 即可（见 git_push 里的 json_files）
 ]
@@ -1619,6 +1620,7 @@ def git_push_data():
         'factor_library.json',
         'factor_checkup.json',
         'strategy_model.json',
+        'omo_policy_7d.json',
         'checkup_b',          # 体检分片目录（18 数据 + 18 详情，整体 add）
         'data_version.json',
     ]
