@@ -15,7 +15,7 @@ a{color:var(--blue);text-decoration:none}.shell{max-width:1380px;margin:auto;pad
 .tabs{display:flex;gap:7px;margin-bottom:15px}.tabs button{border:1px solid var(--border);border-radius:7px;background:var(--panel);padding:8px 15px;cursor:pointer;color:var(--muted);font:inherit}.tabs button.on{background:var(--blue);border-color:var(--blue);color:#fff}
 .summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px;margin-bottom:15px}.metric,.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow)}.metric{padding:13px 15px}.metric .label{font-size:12px;color:var(--muted)}.metric .value{font-size:22px;font-weight:650;margin-top:4px;font-variant-numeric:tabular-nums}.metric .sub{font-size:11px;color:var(--muted);margin-top:3px}.good{color:var(--teal)}.bad{color:var(--red)}
 .grid{display:grid;grid-template-columns:1.5fr 1fr;gap:15px;margin-bottom:15px}.card{padding:16px 18px;margin-bottom:15px;min-width:0}.card h2{font-size:15px;margin:0 0 8px}.card .hint{font-size:12px;color:var(--muted);margin:0 0 12px}.chart{height:340px}.chart.small{height:300px}
-.tablebox{max-width:100%;overflow:auto}table{border-collapse:collapse;width:100%;font-size:12px}th,td{text-align:left;border-bottom:1px solid #edf0f4;padding:9px 10px;white-space:nowrap}th{position:sticky;top:0;background:#f9fbfd;color:#607184;font-weight:600}td.factor{white-space:normal;min-width:280px}td.reason{white-space:normal;min-width:210px;color:var(--muted)}.num{text-align:right;font-variant-numeric:tabular-nums}.tablebox.trades{max-height:390px}.pill{display:inline-block;border-radius:5px;padding:2px 6px;background:#edf2ff;color:#4560ad;font-size:11px}.pill.zero{background:#f5f5f5;color:#777}
+.tablebox{max-width:100%;overflow:auto}table{border-collapse:collapse;width:100%;font-size:12px}th,td{text-align:left;border-bottom:1px solid #edf0f4;padding:9px 10px;white-space:nowrap}th{position:sticky;top:0;background:#f9fbfd;color:#607184;font-weight:600}td.factor{white-space:normal;min-width:280px}td.reason{white-space:normal;min-width:210px;color:var(--muted)}.num{text-align:right;font-variant-numeric:tabular-nums}.tablebox.trades{max-height:390px}.pill{display:inline-block;border-radius:5px;padding:2px 6px;background:#edf2ff;color:#4560ad;font-size:11px}.pill.zero{background:#f5f5f5;color:#777}select.action{font:inherit}
 .method{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.method div{background:#f8faff;border:1px solid #eef2fa;border-radius:8px;padding:12px 13px}.method b{display:block;margin-bottom:4px}.method p{margin:0;color:var(--muted);font-size:12px}.action{border:1px solid var(--border);border-radius:6px;background:#fff;padding:5px 9px;cursor:pointer;color:var(--text)}.action:hover{border-color:var(--blue)}
 @media(max-width:1000px){.summary{grid-template-columns:repeat(3,minmax(0,1fr))}.grid{grid-template-columns:1fr}.method{grid-template-columns:1fr}}
 @media(max-width:600px){.shell{padding:16px 12px}.top{display:block}.links{padding-top:12px}.summary{grid-template-columns:repeat(2,minmax(0,1fr))}.metric .value{font-size:18px}.chart{height:275px}}
@@ -36,10 +36,13 @@ a{color:var(--blue);text-decoration:none}.shell{max-width:1380px;margin:auto;pad
     <section class="card"><h2>交易起始日敏感性</h2><p class="hint">每6日交易一次有6种固定起点。上方曲线采用第0相位；这里列出全部相位。</p><div class="tablebox"><table><thead><tr><th>相位</th><th class="num">交易数</th><th class="num">多因子累计</th><th class="num">价格基线</th><th class="num">市场基线</th><th class="num">等权基线</th><th class="num">多因子胜率</th></tr></thead><tbody id="phaseBody"></tbody></table></div></section>
     <section class="card"><h2>模型与信号口径</h2><div class="method"><div><b>预测与入场</b><p>t 日收盘后观察因子；t+1 日假设按 t 日收盘价入场，预测至 t+6 日收盘的变动。没有真实开盘价。</p></div><div><b>市场与技术</b><p>组合价差 MA5、MA20、过去5日变动、60日Z；DR001-MA10−7天OMO、10年−DR001-MA10、10年−2年、30年−10年。<a href="omo_policy_7d.json">OMO来源</a></p></div><div><b>模型与交易</b><p>再加7条预选因子，每20日重训岭回归；预测≥0做多，否则做空。每6日开一笔，固定满额方向、不扣成本。</p></div></div></section>
   </div>
+  <section class="card"><h2>离场规则对照（第0相位）</h2><p class="hint">六条规则使用完全相同的入场日和初始方向；提前离场后等到下一次原定入场。弱信号门槛预先固定为 |预测变动| &lt; 0.20×当时训练标签标准差。1日/2日模型只用于离场；所有训练均按标签完成时间向前滚动。六相位区间显示起始日敏感性，不以最好的相位选规则。此表回撤按逐日盯市计算，包含持仓浮动结果；上方基准摘要仍按逐笔已实现结果计算。</p><div class="tablebox"><table><thead><tr><th>规则</th><th class="num">累计结果</th><th class="num">逐日最大回撤</th><th class="num">胜率</th><th class="num">提前退出</th><th class="num">平均持仓日</th><th class="num">每持仓日结果</th><th class="num">六相位为正</th><th class="num">六相位累计范围</th></tr></thead><tbody id="exitBody"></tbody></table></div></section>
+  <section class="card"><h2>六条离场规则累计曲线</h2><p class="hint">第0相位，逐日盯市；提前退出后保持空仓至下一次原定入场。点击图例可隐藏或显示规则。</p><div class="chart"><canvas id="exitChart"></canvas></div></section>
+  <section class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h2>动态离场逐笔核对（第0相位）</h2><div style="display:flex;gap:8px"><select class="action" id="exitSelect" aria-label="离场规则"></select><button type="button" class="action" id="exitCsvButton">下载 CSV</button></div></div><p class="hint" id="exitHint"></p><div class="tablebox trades"><table><thead><tr><th>信号日</th><th>入场日</th><th>离场日</th><th>离场用价日期</th><th>离场方式</th><th>原因</th><th class="num">持仓日</th><th>方向</th><th class="num">本笔结果</th><th class="num">累计结果</th></tr></thead><tbody id="exitTradeBody"></tbody></table></div></section>
   <section class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h2>逐笔交易（第0相位）</h2><button type="button" class="action" id="csvButton">下载 CSV</button></div><p class="hint">正持仓表示看价差走阔，负持仓表示看价差收窄；30Y−10Y 的结果单位是 bp 方向分数。</p><div class="tablebox trades"><table><thead><tr><th>信号日</th><th>入场日</th><th>离场日</th><th class="num">预测变动</th><th class="num">实际变动</th><th>方向</th><th class="num">本笔结果</th><th class="num">累计结果</th></tr></thead><tbody id="tradeBody"></tbody></table></div></section>
 </main>
 <script>
-let DATA=null, ACTIVE='tl3t', EQUITY=null, YEAR=null;
+let DATA=null, ACTIVE='tl3t', EXIT_ACTIVE='fixed', EQUITY=null, YEAR=null, EXIT_CHART=null;
 const byId=id=>document.getElementById(id);
 const fmt=(x,n=2)=>x===null||x===undefined||!Number.isFinite(Number(x))?'—':Number(x).toFixed(n);
 const signed=(x,n=2)=>x===null||x===undefined?'—':(x>0?'+':'')+fmt(x,n);
@@ -47,6 +50,16 @@ const pct=x=>x===null||x===undefined?'—':fmt(100*x,1)+'%';
 const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function tableRows(rows){return rows.map(r=>'<tr>'+r.map(c=>'<td'+(c.cls?' class="'+c.cls+'"':'')+'>'+c.html+'</td>').join('')+'</tr>').join('');}
 function metric(label,value,sub,cls){return '<div class="metric"><div class="label">'+label+'</div><div class="value '+(cls||'')+'">'+value+'</div><div class="sub">'+sub+'</div></div>';}
+function renderExitTrades(){
+  const r=DATA.targets[ACTIVE], rule=r.exit_comparison.rules.find(x=>x.id===EXIT_ACTIVE)||r.exit_comparison.rules[0];
+  byId('exitHint').textContent=rule.description+'；结果单位：'+r.unit+'。提前退出的“离场用价日期”为前一交易日收盘，离场日为次日代理开盘。';
+  byId('exitTradeBody').innerHTML=tableRows(rule.trades.slice().reverse().map(t=>[
+    {html:t.asof},{html:t.entry},{html:t.exit},{html:t.exit_price_asof},
+    {html:t.exit_timing},{html:t.exit_reason},{html:String(t.holding_sessions),cls:'num'},
+    {html:t.position>0?'做多价差':'做空价差'},
+    {html:signed(t.pnl,3),cls:'num'},{html:signed(t.equity,3),cls:'num'}
+  ]));
+}
 function render(){
   const r=DATA.targets[ACTIVE], unit=r.unit, trades=r.trades, m=r.metrics;
   byId('tabs').innerHTML=Object.entries(DATA.targets).map(([k,v])=>'<button type="button" data-t="'+k+'" class="'+(k===ACTIVE?'on':'')+'">'+escapeHtml(v.name)+'</button>').join('');
@@ -56,7 +69,7 @@ function render(){
     metric('多因子预测 IC',signed(r.forecast_ic,3),'逐日预测与 t→t+6 变动的秩相关'),
     metric('多因子累计',signed(m.model.total,2)+' '+unit,m.model.trades+' 笔，未扣成本',m.model.total>=0?'good':'bad'),
     metric('多因子胜率',pct(m.model.win_rate),'固定满额方向'),
-    metric('多因子最大回撤',signed(m.model.max_drawdown,2)+' '+unit,'以累计点数 / bp 衡量','bad'),
+    metric('已实现最大回撤',signed(m.model.max_drawdown,2)+' '+unit,'以累计点数 / bp 衡量','bad'),
     metric('价格基线累计',signed(m.price_only.total,2)+' '+unit,'只用价差自身状态'),
     metric('市场基线累计',signed(m.market_only.total,2)+' '+unit,'价差自身＋4条市场基准'),
     metric('等权基线累计',signed(m.equal_weight.total,2)+' '+unit,'方向仅由历史训练决定')
@@ -75,6 +88,28 @@ function render(){
     {html:signed(p.market_only.total,2),cls:'num'},
     {html:signed(p.equal_weight.total,2),cls:'num'},{html:pct(p.model.win_rate),cls:'num'}
   ]));
+  byId('exitBody').innerHTML=tableRows(r.exit_comparison.rules.map(rule=>{
+    const x=rule.metrics;
+    return [
+      {html:escapeHtml(rule.label)},{html:signed(x.total,2)+' '+unit,cls:'num'},
+      {html:signed(x.daily_max_drawdown,2)+' '+unit,cls:'num'},
+      {html:pct(x.win_rate),cls:'num'},{html:x.early_exits+'/'+x.trades,cls:'num'},
+      {html:fmt(x.avg_hold,2),cls:'num'},
+      {html:signed(x.total/x.exposure_sessions,3)+' '+unit,cls:'num'},
+      {html:rule.positive_phases+'/'+r.phase_robustness.length,cls:'num'},
+      {html:signed(rule.phase_min,2)+' ~ '+signed(rule.phase_max,2),cls:'num'}
+    ];
+  }));
+  byId('exitSelect').innerHTML=r.exit_comparison.rules.map(rule=>'<option value="'+rule.id+'">'+escapeHtml(rule.label)+'</option>').join('');
+  byId('exitSelect').value=EXIT_ACTIVE;
+  byId('exitSelect').onchange=e=>{EXIT_ACTIVE=e.target.value;renderExitTrades();};
+  renderExitTrades();
+  if(EXIT_CHART)EXIT_CHART.destroy();
+  const exitColors=['#5470c6','#16847b','#d4872a','#a361a8','#7a8899','#d6525a'];
+  EXIT_CHART=new Chart(byId('exitChart'),{type:'line',data:{
+    labels:r.exit_comparison.rules[0].daily_path.map(d=>d.date),
+    datasets:r.exit_comparison.rules.map((rule,i)=>({label:rule.label,data:rule.daily_path.map(d=>d.equity),borderColor:exitColors[i],borderWidth:i===0?2.5:1.5,pointRadius:0}))
+  },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},interaction:{mode:'index',intersect:false},scales:{x:{ticks:{maxTicksLimit:9}},y:{title:{display:true,text:'累计 '+unit},grid:{color:'#edf0f4'}}}}});
   byId('tradeBody').innerHTML=tableRows(trades.slice().reverse().map(t=>[
     {html:t.asof},{html:t.entry},{html:t.exit},
     {html:signed(t.pred,3),cls:'num'},{html:signed(t.actual,3),cls:'num'},
@@ -105,7 +140,15 @@ function downloadCsv(){
   const a=document.createElement('a'),url=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
   a.href=url;a.download='strategy_'+ACTIVE+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+function downloadExitCsv(){
+  const rule=DATA.targets[ACTIVE].exit_comparison.rules.find(x=>x.id===EXIT_ACTIVE);
+  const fields=['asof','entry','exit','exit_price_asof','exit_timing','exit_reason','holding_sessions','position','pnl','equity'];
+  const csv=[fields.join(','),...rule.trades.map(t=>fields.map(k=>t[k]??'').join(','))].join('\r\n');
+  const a=document.createElement('a'),url=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
+  a.href=url;a.download='strategy_exit_'+ACTIVE+'_'+EXIT_ACTIVE+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
 byId('csvButton').onclick=downloadCsv;
+byId('exitCsvButton').onclick=downloadExitCsv;
 fetch('strategy_model.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json();}).then(d=>{
   DATA=d;
   const selected=Object.values(d.targets).flatMap(t=>t.selected), passed=selected.filter(f=>f.sig).length;

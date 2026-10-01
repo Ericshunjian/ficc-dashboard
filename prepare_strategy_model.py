@@ -3,7 +3,7 @@
 
 在 t 日收盘后使用当日可得信息，t+1 日按 t 日收盘价代理建仓，t+6 日收盘平仓。
 逐日扩展历史训练、每 20 日重训；只有已走完持有期的标签进入训练。
-每 5 日取一次不重叠交易。全样本体检已被用于预选因子，故历史结果
+每 6 日取一次不重叠交易。全样本体检已被用于预选因子，故历史结果
 只能称为时间顺序回放，不能称为独立样本外验证。
 """
 from __future__ import annotations
@@ -24,6 +24,15 @@ DR_WINDOW = 10
 REFIT_EVERY = 20
 RIDGE_ALPHA = 15.0
 MIN_COVERAGE = 5  # 7 个预选因子中至少 5 个有值
+WEAK_FRAC = 0.20  # 长周期预测幅度 / 当期训练标签标准差；事先固定，不搜索
+EXIT_RULES = [
+    ("fixed", "固定 t+6 收盘", "原策略基准"),
+    ("long_reverse", "长周期预测反向退出", "持仓方向与每日长周期预测相反时，次日代理开盘退出"),
+    ("long_weak", "长周期预测转弱退出", "|预测| < 0.20×仅用历史训练标签计算的标准差时退出"),
+    ("long_both", "长周期反向或转弱退出", "满足反向或转弱任一条件即退出"),
+    ("short1_reverse", "1日预测反向退出", "另训未来1日模型，仅用于离场判断"),
+    ("short2_reverse", "2日预测反向退出", "另训未来2日模型，仅用于离场判断"),
+]
 
 # 体检 raw / 5日中预先固定的 14 条：高 |IC|、ICIR、分组差异、分年方向，
 # 同时覆盖不同机构/期限/资金维度。不能在回放结果出炉后再替换因子。
@@ -113,9 +122,24 @@ def make_labels(level, horizon=HORIZON):
     return out
 
 
+def make_offset_labels(level, offset):
+    """短周期退出模型：t 收盘至 t+offset 收盘的变动。"""
+    out = np.full(len(level), np.nan)
+    if len(level) > offset:
+        start, end = level[:-offset], level[offset:]
+        valid = np.isfinite(start) & np.isfinite(end)
+        out[np.flatnonzero(valid)] = end[valid] - start[valid]
+    return out
+
+
 def known_training_indices(t, valid, horizon=HORIZON):
     """预测 t 时，仅训练离场价格在 t 日收盘前已知的样本。"""
     return np.flatnonzero(valid[:max(0, t - horizon)])
+
+
+def known_offset_indices(t, valid, offset):
+    """短周期标签在 r+offset 收盘后方可进入 t 日训练。"""
+    return np.flatnonzero(valid[:max(0, t - offset + 1)])
 
 
 class PastOnlyScaler:
@@ -168,6 +192,82 @@ def _metrics(trades, field, unit):
     }
 
 
+def simulate_exit_rule(fixed_trades, daily, level, dates, rule_id):
+    """相同入场日/方向，仅修改平仓；收盘信号下一交易日按该收盘价代理执行。"""
+    by_day = {d["asof"]: d for d in daily}
+    day_index = {day: i for i, day in enumerate(dates)}
+    out, equity = [], 0.0
+    for base in fixed_trades:
+        t0 = day_index[base["asof"]]
+        position = base["position"]
+        price_t = t0 + REBALANCE_EVERY
+        reason, execution = "最长持有期", "收盘"
+        if rule_id != "fixed":
+            for t in range(t0 + 1, t0 + REBALANCE_EVERY):
+                signal = by_day.get(dates[t])
+                if signal is None:
+                    continue
+                long_pred = signal["pred"]
+                reverse = position * long_pred < 0
+                weak = abs(long_pred) < WEAK_FRAC * signal["train_target_std"]
+                short1_reverse = position * signal["short1_pred"] < 0
+                short2_reverse = position * signal["short2_pred"] < 0
+                triggered = {
+                    "long_reverse": reverse,
+                    "long_weak": weak,
+                    "long_both": reverse or weak,
+                    "short1_reverse": short1_reverse,
+                    "short2_reverse": short2_reverse,
+                }[rule_id]
+                if triggered:
+                    price_t = t
+                    reason = ("长周期反向" if reverse and rule_id == "long_both" else
+                              "长周期转弱" if rule_id in ("long_weak", "long_both") else
+                              "长周期反向" if rule_id == "long_reverse" else
+                              "1日预测反向" if rule_id == "short1_reverse" else "2日预测反向")
+                    execution = "次日代理开盘"
+                    break
+        exit_day = dates[price_t] if price_t == t0 + REBALANCE_EVERY else dates[price_t + 1]
+        pnl = _round(position * (level[price_t] - level[t0]), 4)
+        equity += pnl
+        out.append({
+            "asof": base["asof"], "entry": base["entry"], "exit": exit_day,
+            "exit_price_asof": dates[price_t], "exit_timing": execution,
+            "position": position, "exit_reason": reason,
+            "holding_sessions": price_t - t0, "early_exit": price_t < t0 + REBALANCE_EVERY,
+            "pnl": pnl, "equity": _round(equity, 4),
+        })
+    return out
+
+
+def exit_metrics(trades, unit):
+    result = _metrics(trades, "pnl", unit)
+    if trades:
+        result.update({
+            "early_exits": sum(d["early_exit"] for d in trades),
+            "avg_hold": _round(np.mean([d["holding_sessions"] for d in trades]), 2),
+            "exposure_sessions": sum(d["holding_sessions"] for d in trades),
+        })
+    return result
+
+
+def exit_daily_path(trades, level, dates, end_date):
+    """逐日盯市，包含持仓中的浮动结果；代理开盘退出当天已无价格敞口。"""
+    if not trades:
+        return []
+    ix = {day: i for i, day in enumerate(dates)}
+    start, end = ix[trades[0]["asof"]], ix[end_date]
+    changes = np.zeros(end - start + 1)
+    for trade in trades:
+        a, b = ix[trade["asof"]], ix[trade["exit_price_asof"]]
+        segment = np.asarray(level[a:b + 1], dtype=float)
+        if not np.isfinite(segment).all():
+            raise ValueError("持仓期间缺少价格，无法计算逐日盯市结果")
+        changes[a + 1 - start:b + 1 - start] += trade["position"] * np.diff(segment)
+    return [{"date": dates[start + i], "equity": _round(value, 4)}
+            for i, value in enumerate(np.cumsum(changes))]
+
+
 def _factor_rows(target, checkup_meta):
     path = os.path.join(BASE, "checkup_b", f"b_raw_{target}.json")
     with open(path, encoding="utf-8") as f:
@@ -185,6 +285,7 @@ def _target_level(target, cmap):
 def build_target(target, dates, series, cmap, omo, ck_meta):
     level = _target_level(target, cmap)
     y = make_labels(level)
+    y1, y2 = make_offset_labels(level, 1), make_offset_labels(level, 2)
     factor_map = {(g, k): (label, arr) for g, k, label, arr in series}
     row_map, ix = _factor_rows(target, ck_meta)
     selected = []
@@ -222,9 +323,11 @@ def build_target(target, dates, series, cmap, omo, ck_meta):
     x_ok = ((coverage >= MIN_COVERAGE) & np.isfinite(x_controls).all(axis=1)
             & np.isfinite(x_market).all(axis=1))
     train_ok = x_ok & np.isfinite(y)
+    short1_ok, short2_ok = x_ok & np.isfinite(y1), x_ok & np.isfinite(y2)
     min_train = MIN_TRAIN[target]
     daily = []
-    model = baseline = market_baseline = scale_for_score = score_signs = None
+    model = baseline = market_baseline = short1_model = short2_model = None
+    scale_for_score = score_signs = train_target_std = None
     refit_at = -REFIT_EVERY
     for t in range(len(dates)):
         if not x_ok[t] or not np.isfinite(level[t]):
@@ -236,6 +339,11 @@ def build_target(target, dates, series, cmap, omo, ck_meta):
             model = ridge_fit(x_full[train_idx], y[train_idx])
             baseline = ridge_fit(x_controls[train_idx], y[train_idx])
             market_baseline = ridge_fit(x_market_base[train_idx], y[train_idx])
+            short1_idx = known_offset_indices(t, short1_ok, 1)
+            short2_idx = known_offset_indices(t, short2_ok, 2)
+            short1_model = ridge_fit(x_full[short1_idx], y1[short1_idx])
+            short2_model = ridge_fit(x_full[short2_idx], y2[short2_idx])
+            train_target_std = float(np.std(y[train_idx], ddof=1))
             scale_for_score = PastOnlyScaler().fit(x_factors[train_idx])
             z_train = scale_for_score.transform(x_factors[train_idx])
             cov = z_train.T @ (y[train_idx] - np.mean(y[train_idx]))
@@ -244,6 +352,8 @@ def build_target(target, dates, series, cmap, omo, ck_meta):
         pred = float(ridge_predict(model, x_full[t:t + 1])[0])
         price_pred = float(ridge_predict(baseline, x_controls[t:t + 1])[0])
         market_pred = float(ridge_predict(market_baseline, x_market_base[t:t + 1])[0])
+        short1_pred = float(ridge_predict(short1_model, x_full[t:t + 1])[0])
+        short2_pred = float(ridge_predict(short2_model, x_full[t:t + 1])[0])
         equal_score = float(np.mean(scale_for_score.transform(x_factors[t:t + 1])[0] * score_signs))
         actual = y[t]
         daily.append({
@@ -252,6 +362,8 @@ def build_target(target, dates, series, cmap, omo, ck_meta):
             "exit": dates[t + 1 + HORIZON] if t + 1 + HORIZON < len(dates) else None,
             "pred": _round(pred), "price_pred": _round(price_pred),
             "market_pred": _round(market_pred),
+            "short1_pred": _round(short1_pred), "short2_pred": _round(short2_pred),
+            "train_target_std": _round(train_target_std),
             "equal_score": _round(equal_score), "actual": _round(actual),
             "train_n": len(train_idx), "coverage": int(coverage[t]),
         })
@@ -283,6 +395,24 @@ def build_target(target, dates, series, cmap, omo, ck_meta):
         return trades
 
     trades = trade_path(0)
+    exit_rules = []
+    for rule_id, label, description in EXIT_RULES:
+        paths = [simulate_exit_rule(trade_path(p), daily, level, dates, rule_id)
+                 for p in range(REBALANCE_EVERY)]
+        phase_metrics = [exit_metrics(path, TARGETS[target]["unit"]) for path in paths]
+        daily_paths = [exit_daily_path(path, level, dates, trade_path(p)[-1]["exit"])
+                       for p, path in enumerate(paths)]
+        for metrics, daily_path in zip(phase_metrics, daily_paths):
+            equity = np.asarray([d["equity"] for d in daily_path])
+            metrics["daily_max_drawdown"] = _round((equity - np.maximum.accumulate(equity)).min(), 3)
+        totals = [p["total"] for p in phase_metrics]
+        exit_rules.append({
+            "id": rule_id, "label": label, "description": description,
+            "metrics": phase_metrics[0], "positive_phases": sum(x > 0 for x in totals),
+            "phase_min": min(totals), "phase_max": max(totals),
+            "phase_metrics": phase_metrics, "trades": paths[0],
+            "daily_path": daily_paths[0],
+        })
     known = [d for d in daily if d["actual"] is not None]
     result = {
         **TARGETS[target], "id": target, "selected": selected,
@@ -292,6 +422,8 @@ def build_target(target, dates, series, cmap, omo, ck_meta):
                            "10年国债 − 2年国债", "30年国债 − 10年国债"],
         "daily_predictions": daily,
         "trades": trades,
+        "exit_comparison": {"weak_fraction": WEAK_FRAC, "rules": exit_rules,
+                            "entry_policy": "全部规则使用与固定离场相同的入场日及方向；提前退出后等到下一个原定入场日"},
         "period": [trades[0]["entry"], trades[-1]["exit"]] if trades else None,
         "forecast_ic": _rank_corr([d["pred"] for d in known], [d["actual"] for d in known]),
         "price_forecast_ic": _rank_corr([d["price_pred"] for d in known], [d["actual"] for d in known]),
@@ -327,12 +459,13 @@ def main():
             "omo_needs_review": dates[-1] > omo_policy["verified_through"],
             "target_definition": "信号日 t 的收盘价作为 t+1 入场代理价，目标为 t+6 收盘减 t 收盘",
             "refit_every": REFIT_EVERY, "ridge_alpha": RIDGE_ALPHA,
+            "exit_rules": [x[0] for x in EXIT_RULES], "weak_fraction": WEAK_FRAC,
             "min_coverage": MIN_COVERAGE, "min_train": MIN_TRAIN,
             "cost": 0, "selection": "预选自因子体检 raw/未来5日；全样本已被看过，回放不是独立样本外验证",
             "timing": "t 日收盘后得到因子；t+1 日按 t 日收盘价作为代理入场价；t+6 日收盘平仓；每 6 日交易一次以避免持仓重叠",
             "entry_caveat": "缺少真实次日开盘价/开盘收益率；代理入场未计隔夜跳空，结果不是可执行成交回测",
             "market_source": "OMO 为人民银行7天逆回购政策利率变更记录，详见 omo_policy_7d.json；DR001 使用原始库 MA10",
-            "training": "每 20 日用已完成持有期的历史样本重训；填补、缩尾、标准化及等权方向仅用训练数据",
+            "training": "长周期与1/2日离场模型每20日仅用各自已完成标签的历史样本重训；填补、缩尾、标准化及等权方向仅用训练数据",
             "strategy": "模型预测变动>=0 做多价差，否则做空；固定满额方向，不扣成本，不做仓位优化",
         },
         "targets": {key: build_target(key, dates, series, cmap, omo, ck["meta"]) for key in SELECTED},
