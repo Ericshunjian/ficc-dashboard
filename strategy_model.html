@@ -104,7 +104,9 @@ function downloadCsv(){
 byId('csvButton').onclick=downloadCsv;
 fetch('strategy_model.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json();}).then(d=>{
   DATA=d;
+  const selected=Object.values(d.targets).flatMap(t=>t.selected), passed=selected.filter(f=>f.sig).length;
   byId('notice').innerHTML='<b>探索性回放：</b>选因子时已看过全样本体检，因此历史时间顺序回放不是独立样本外验证。'+
+    '入选的 '+selected.length+' 条因子中，只有 '+passed+' 条获得现有体检的 FDR 显著标记；相关性证据仍需后续检验。'+
     '所有结果均未扣交易成本；3T−TL 是报价点数，30Y−10Y 是收益率利差 bp 方向分数，不能解释为资金收益。'+
     '模型每20日只用已完成5日持有期的历史数据重训。';
   render();
