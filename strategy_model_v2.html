@@ -173,6 +173,7 @@ fetch('strategy_model_v2.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error
     '② rolling 模式每次重训只用当时可得历史重跑筛选，避免用全样本挑因子造成的前视；'+
     '③ 下注改用预测值在自己历史分布中的分位，规避训练期标准化漂移导致的系统性站错边。'+
     '<b>所有结果零成本、入场为昨日收盘代理价（非真实开盘），不能视为可执行成交回测。</b> '+
+    (d.meta.calculation_revision?'本次计算校正：'+escapeHtml(d.meta.calculation_revision)+' ':'')+
     (d.meta.omo_needs_review?'<b>OMO 政策利率只核验至 '+d.meta.omo_verified_through+'，请复核。</b> ':'');
   render();
 }).catch(e=>{byId('notice').textContent='加载 v2 策略结果失败：'+e.message;});

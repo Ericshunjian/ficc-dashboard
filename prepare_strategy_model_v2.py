@@ -177,10 +177,13 @@ def ridge_predict(model, x):
 
 def _colwise_spearman(A, y):
     """A (n,m) 含 NaN，y (n,) 无 NaN（调用前已按 y 过滤行）。返回 (m,) 精确 Spearman。"""
-    R = pd.DataFrame(A).rank().to_numpy()
-    M = np.isfinite(R)
+    # 每列都在因子与目标的成对有效观测上分别取秩；目标也必须取秩。
+    # 仅对 A 取秩再与原值 y 相关，并不是 Spearman。
+    M = np.isfinite(A) & np.isfinite(y)[:, None]
+    R = pd.DataFrame(np.where(M, A, np.nan)).rank().to_numpy()
+    YR = pd.DataFrame(np.where(M, y[:, None], np.nan)).rank().to_numpy()
     R0 = np.where(M, R, 0.0)
-    ycol = np.where(M, y[:, None], 0.0)
+    ycol = np.where(M, YR, 0.0)
     cnt = M.sum(0)
     ok = cnt >= 60
     c = np.where(cnt > 0, cnt, 1)
@@ -373,7 +376,7 @@ def simulate_exit_rule(fixed_trades, daily, level, dates, rule_id):
         out.append({
             "asof": base["asof"], "entry": base["entry"], "exit": exit_day,
             "exit_price_asof": dates[price_t], "exit_timing": execution,
-            "position": position, "exit_reason": reason,
+            "position": weight, "direction": position, "exit_reason": reason,
             "holding_sessions": price_t - t0, "early_exit": price_t < t0 + REBALANCE_EVERY,
             "pnl": pnl, "equity": _round(equity, 4),
         })
@@ -514,7 +517,8 @@ def make_trades(daily, weights, phase, field_actual="actual"):
             continue
         actual = d["actual"]
         item = {k: d[k] for k in ("asof", "entry", "exit", "pred", "actual", "train_n")}
-        item["position"] = _round(w, 3)
+        # 保留计算精度，舍入只交给前端显示，避免退出路径另用舍入仓位。
+        item["position"] = float(w)
         item["pnl"] = _round(w * actual, 4)
         bq = 1 if d["price_pred"] >= 0 else -1
         mq = 1 if d["market_pred"] >= 0 else -1
@@ -547,6 +551,7 @@ def perm_pvalue(trades, n_perm=500, seed=7):
 
 
 _DAILY_CACHE = {}
+_SCREENER_CACHE = {}
 
 
 def build_target(target, dates, series, cmap, omo, mode, k, stake):
@@ -556,7 +561,11 @@ def build_target(target, dates, series, cmap, omo, mode, k, stake):
         y = make_labels(level)
         y1, y2 = make_offset_labels(level, 1), make_offset_labels(level, 2)
         arrays = [np.asarray(a, float) for _, _, _, a in series]
-        screener = Screener(arrays, [g for g, _, _, _ in series], [l for _, _, l, _ in series])
+        # k 与下注口径不改变历史筛选统计，共用同目标的历史窗口缓存。
+        if target not in _SCREENER_CACHE:
+            _SCREENER_CACHE[target] = Screener(arrays, [g for g, _, _, _ in series],
+                                             [l for _, _, l, _ in series])
+        screener = _SCREENER_CACHE[target]
         level_z = _trailing_z(level)
         momentum5 = np.full(len(level), np.nan)
         momentum5[5:] = level[5:] - level[:-5]
@@ -664,6 +673,7 @@ def main():
             "null_check": null,
             "generated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "source_date": dates[-1],
+            "calculation_revision": "2026-10-12：Spearman按成对有效样本对双方取秩；逐笔和逐日账本均保留实际仓位权重。筛选和信号规则未改。",
             "horizon": HORIZON, "rebalance_every": REBALANCE_EVERY, "refit_every": REFIT_EVERY,
             "ridge_alpha": RIDGE_ALPHA, "cost": 0,
             "modes": list(MODES), "ks": list(KS), "stakes": list(STAKES),
@@ -726,7 +736,9 @@ def null_distribution(target, dates, series, cmap, omo, k, n_perm=12, seed=11):
     n = len(dates)
     for _ in range(n_perm):
         s = int(rng.integers(60, max(61, n - 60)))
-        screener = Screener([circshift_cols(A0, s)[:, j] for j in range(A0.shape[1])], groups, labels)
+        # 一次移位后再取各列，避免为每一列重复复制整张矩阵。
+        shifted = circshift_cols(A0, s)
+        screener = Screener([shifted[:, j] for j in range(A0.shape[1])], groups, labels)
         daily, _ = build_predictions(target, dates, level, y, y1, y2, screener, x_controls,
                                      x_market, "rolling", k, MIN_TRAIN[target])
         if not daily:
@@ -752,6 +764,13 @@ def build_main_daily(target, dates, series, cmap, omo, k):
     """为主口径重跑一次并保留逐日完整字段（含 short1/short2/train_target_std）。"""
     if (target, k) in _MAIN_CACHE:
         return _MAIN_CACHE[(target, k)]
+    cached = _DAILY_CACHE.get((target, MAIN[0], k))
+    if cached is not None:
+        # 退出模拟只读预测，复制字典以保留原配置的 pool 字段。
+        daily = [{key: value for key, value in d.items() if key != "pool"}
+                 for d in cached[0]]
+        _MAIN_CACHE[(target, k)] = daily
+        return daily
     level = level_of(target, cmap)
     y = make_labels(level)
     y1, y2 = make_offset_labels(level, 1), make_offset_labels(level, 2)
