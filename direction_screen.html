@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3T−TL · 方向型因子筛选</title>
+<script src="vendor/chart.umd.min.js"></script>
+<style>
+:root{--bg:#f5f6fa;--panel:#fff;--text:#253449;--muted:#68798b;--border:#e4e9f0;--blue:#5470c6;--green:#16847b;--orange:#a56c20}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif}
+a{color:var(--blue);text-decoration:none}.shell{max-width:1420px;margin:auto;padding:24px 26px 50px}.top{display:flex;justify-content:space-between;gap:15px;align-items:flex-start;margin-bottom:18px}h1{font-size:24px;margin:0 0 5px}h2{font-size:16px;margin:0 0 8px}.muted,.hint{color:var(--muted);font-size:12px}.hint{margin:0 0 12px}.links{display:flex;gap:12px;flex-wrap:wrap;padding-top:8px}.notice{border:1px solid #ecdcbf;border-left:4px solid #cf9139;background:#fff8ed;padding:12px 15px;border-radius:9px;margin-bottom:16px;font-size:13px}.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:17px 19px;margin-bottom:16px}.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}.metric{background:#fff;border:1px solid var(--border);border-radius:9px;padding:12px 16px}.metric b{display:block;font-size:26px;color:var(--blue)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.rules{margin:0;padding-left:20px;font-size:13px}.rules li{margin:5px 0}.stage{display:flex;align-items:center;gap:10px;font-size:12px;margin:7px 0}.stage span{width:170px;flex-shrink:0}.track{height:6px;background:#eef1f7;flex:1;border-radius:3px;overflow:hidden}.bar{height:100%;background:var(--blue)}.stage b{width:40px;text-align:right}.tablebox{overflow:auto;max-width:100%}.tablebox.scroll{max-height:520px}table{border-collapse:collapse;width:100%;font-size:12px}th,td{padding:9px 10px;border-bottom:1px solid #edf0f4;white-space:nowrap;text-align:left}th{position:sticky;top:0;background:#f9fbfd;color:#607184;font-weight:600;z-index:1}.num{text-align:right;font-variant-numeric:tabular-nums}.factor{white-space:normal;min-width:280px;max-width:420px}.reason{white-space:normal;min-width:260px;max-width:390px;color:var(--muted)}.factor button{border:0;background:none;color:var(--blue);text-align:left;cursor:pointer;font:inherit;padding:0}.factor button:hover{text-decoration:underline}.pill{padding:2px 6px;border-radius:4px;background:#edf2ff;color:#4965ac;font-size:11px}.pill.good{color:var(--green);background:#e8f5f1}.pill.warn{color:var(--orange);background:#fff2de}.detail-title{font-size:17px;margin-bottom:7px}.chart{height:265px}.toolbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.toolbar input{min-width:260px;flex:1}.toolbar input,.toolbar select,button.action{font:inherit;font-size:12px;border:1px solid var(--border);border-radius:6px;background:#fff;padding:6px 10px;color:var(--text)}button.action{cursor:pointer}button.action:disabled{opacity:.4;cursor:default}.pager{display:flex;justify-content:flex-end;gap:10px;align-items:center;margin-top:12px}.checks{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0 15px}.checks span{font-size:11px;padding:3px 7px;border-radius:4px;background:#f2f4f7}.checks .pass{background:#e8f5f1;color:var(--green)}.checks .fail{background:#fff2de;color:var(--orange)}.empty{padding:18px;color:var(--muted);text-align:center}
+.grid>*{min-width:0}.card{min-width:0}
+@media(max-width:950px){.grid{grid-template-columns:minmax(0,1fr)}.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.top{display:block}}
+@media(max-width:600px){.shell{padding:16px 12px}.metrics{grid-template-columns:repeat(2,1fr)}.card{padding:13px}h1{font-size:20px}.chart{height:230px}.stage span{width:150px}.toolbar input{min-width:100%;width:100%}}
+</style>
+</head>
+<body>
+<main class="shell">
+ <div class="top"><div><h1>3T−TL · 方向型因子筛选</h1><div class="muted" id="subtitle">加载结果中…</div></div><nav class="links"><a href="index.html">首页</a><a href="factor_library.html">因子库</a><a href="factor_checkup.html">原有体检</a><a href="strategy_model_v2.html">V2策略</a></nav></div>
+ <div class="notice" id="notice">本页按约定规则生成当前候选清单。</div>
+ <div class="metrics" id="metrics"></div>
+ <div class="grid">
+  <section class="card"><h2>本轮已固定的筛选规则</h2><ul class="rules">
+   <li>从全库检验：812条原始/衍生序列＋32条网页技术指标，不另外搜索变换窗口。</li>
+   <li>覆盖率≥90%，有效配对观测≥300；|Spearman IC|≥0.05。</li>
+   <li><b>|IC|与|ICIR|两项都进入全库前50%</b>，且IC与ICIR同号。全库排名范围是数据质量合格的全部因子。</li>
+   <li>ICIR使用60交易日滚动Spearman IC的均值÷样本标准差；每窗口至少54个有效配对值。</li>
+   <li>五组各≥30观测，Q5−Q1与IC同向，四个相邻组均值差至少三个同向；相同因子取值不强行拆组。</li>
+   <li>最近四段各63个期货交易日，至少三段IC同向；每段至少30配对值。</li>
+   <li>最多20条，按IC与ICIR全库分位的平均值排序。信息去重、模型增量暂不作为筛选条件。</li>
+  </ul></section>
+  <section class="card"><h2>逐关筛选结果</h2><p class="hint">以下为按规则顺序累计剩余数量；点击下方因子可查看具体原因。</p><div id="stages"></div><div class="hint" id="composition" style="margin-top:12px"></div></section>
+ </div>
+ <section class="card"><div class="toolbar"><h2 style="margin:0;flex:1">最终入选清单</h2><button class="action" id="selectedCsv" type="button">下载入选清单 CSV</button></div><p class="hint">负IC表示因子较高时，未来价差变动倾向较低；正IC表示倾向较高。此处是相关方向，尚未生成持仓指令。</p><div class="tablebox scroll"><table><thead><tr><th>排名</th><th>因子（点击核对）</th><th>来源</th><th class="num">IC</th><th class="num">ICIR</th><th class="num">IC分位</th><th class="num">ICIR分位</th><th class="num">Q5−Q1 点</th><th class="num">同向段</th></tr></thead><tbody id="selectedBody"></tbody></table></div></section>
+ <section class="card" id="detailCard"><h2 id="detailTitle" class="detail-title">因子逐项核对</h2><div class="hint" id="definition"></div><div class="hint" id="detailHint">点击清单中的因子。</div><div class="checks" id="checks"></div><div class="grid"><div><h2>五分组未来6日变动</h2><p class="hint">柱高是未来价差变动均值（点），不是策略盈亏。</p><div class="chart"><canvas id="groupChart"></canvas></div></div><div><h2>最近四段的IC</h2><p class="hint" id="quarterHint"></p><div class="chart"><canvas id="quarterChart"></canvas></div></div></div><div class="hint" id="groupEdges" style="margin-top:14px"></div></section>
+ <section class="card"><div class="toolbar"><h2 style="margin:0;flex:1">下一阶段模型的固定基准</h2><a class="action" href="direction_screen_inputs.json" download>下载候选＋基准输入 JSON</a></div><p class="hint">筛选清单最多20条；以下8条基准另列、始终保留，不参加本轮排名。已经准备时序矩阵，尚未拟合新模型。原始缺失保持null。</p><div class="tablebox"><table><thead><tr><th>基准变量</th><th>单位</th><th class="num">筛选日最新值</th><th>作用</th></tr></thead><tbody id="baselineBody"></tbody></table></div></section>
+ <section class="card"><h2>全库评价表</h2><div class="toolbar"><input id="search" type="search" placeholder="搜索机构、期限、因子名称" aria-label="搜索因子"><select id="status" aria-label="筛选结果"><option value="all">全部结果</option><option value="selected">最终入选</option><option value="qualified">全部条件通过</option><option value="rejected">条件未通过</option><option value="insufficient">不可评价</option></select><select id="source" aria-label="因子来源"><option value="all">全部来源（排名仍按全库）</option></select><button class="action" id="allCsv" type="button">下载全库 CSV</button></div><p class="hint">“不可评价”包括样本不足、覆盖不足、常数或ICIR标准差为零。通过全部条件但综合排名超过20的因子保留为候选记录。</p><div class="tablebox scroll"><table><thead><tr><th>状态</th><th>因子（点击核对）</th><th class="num">有效日</th><th class="num">覆盖</th><th class="num">IC</th><th class="num">ICIR</th><th class="num">IC分位</th><th class="num">ICIR分位</th><th class="num">同向段</th><th>未通过／未入选原因</th></tr></thead><tbody id="allBody"></tbody></table></div><div class="pager"><span id="pageInfo" class="muted"></span><button class="action" id="prev" type="button">上一页</button><button class="action" id="next" type="button">下一页</button></div></section>
+</main>
+<script>
+let DATA, ROWS, PAGE=0, GROUP_CHART, QUARTER_CHART;
+const $=id=>document.getElementById(id), SIZE=50;
+const sources={cash:'现券',repo:'回购',curve:'曲线／期货',derived:'机构衍生',carry:'Carry',tech:'技术指标'};
+const labels={data:'数据质量',ic_floor:'IC底线',ic_rank:'IC全库前50%',icir_rank:'ICIR全库前50%',sign_agree:'IC与ICIR同号',group_count:'五组样本量',group_trend:'五组同向',stability:'四段稳定性'};
+const statuses={selected:'入选',capped:'通过／超上限',rejected:'未通过',insufficient:'不可评价'};
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=(x,n=3)=>x==null?'—':Number(x).toFixed(n);
+const signed=(x,n=3)=>x==null?'—':(x>0?'+':'')+fmt(x,n);
+const pct=x=>x==null?'—':fmt(x,1)+'%';
+function factorCell(r){return '<td class="factor"><button type="button" data-id="'+esc(r.id)+'">'+esc(r.label)+'</button></td>';}
+function pill(r){return '<span class="pill '+(r.status==='selected'?'good':r.status==='insufficient'?'warn':'')+'">'+statuses[r.status]+'</span>';}
+function selectedRows(){return DATA.selected_ids.map(id=>ROWS.get(id));}
+function renderAll(){
+ const query=$('search').value.toLowerCase(), status=$('status').value, source=$('source').value;
+ const rows=DATA.rows.filter(r=>(source==='all'||r.group===source)&&(status==='all'||(status==='qualified'?r.qualified:r.status===status))&&r.label.toLowerCase().includes(query));
+ const pages=Math.max(1,Math.ceil(rows.length/SIZE));PAGE=Math.min(PAGE,pages-1);
+ const order={selected:0,capped:1,rejected:2,insufficient:3};
+ rows.sort((a,b)=>order[a.status]-order[b.status]||(b.score??-1)-(a.score??-1)||a.id.localeCompare(b.id));
+ $('allBody').innerHTML=rows.slice(PAGE*SIZE,(PAGE+1)*SIZE).map(r=>'<tr><td>'+pill(r)+'</td>'+factorCell(r)+
+  '<td class="num">'+r.n+'</td><td class="num">'+pct(100*r.coverage)+'</td><td class="num">'+signed(r.ic)+'</td><td class="num">'+signed(r.icir)+'</td><td class="num">'+pct(r.ic_percentile)+'</td><td class="num">'+pct(r.icir_percentile)+'</td><td class="num">'+r.same_blocks+'/4</td><td class="reason">'+esc(r.reasons.join('；')||'全部条件通过')+'</td></tr>').join('')||'<tr><td colspan="10" class="empty">没有匹配的因子</td></tr>';
+ $('pageInfo').textContent=rows.length+'条 · 第'+(PAGE+1)+'/'+pages+'页';$('prev').disabled=PAGE===0;$('next').disabled=PAGE+1>=pages;
+}
+function showDetail(id,scroll=false){
+ const r=ROWS.get(id);if(!r)return;
+ $('detailTitle').textContent=r.label;
+ $('definition').textContent='公式：'+r.formula+'；因子单位：'+r.unit+'。';
+ $('detailHint').textContent=statuses[r.status]+' · 有效日 '+r.n+' · IC '+signed(r.ic,4)+' · Pearson IC '+signed(r.pearson_ic,4)+' · ICIR '+signed(r.icir,4)+'（'+r.rolling_ic_n+'个有效滚动窗口） · '+(r.reasons.join('；')||'全部条件通过');
+ $('checks').innerHTML=Object.entries(r.checks).map(([k,v])=>'<span class="'+(v?'pass':'fail')+'">'+(v?'✓ ':'× ')+labels[k]+'</span>').join('');
+ $('quarterHint').textContent='整体IC方向：'+(r.direction>0?'正':r.direction<0?'负':'不可判定')+'；'+r.same_blocks+'/4段同向。仅检查方向稳定性，不是独立显著性检验。';
+ const q=r.quintiles;
+ $('groupEdges').textContent='五组因子边界（'+r.unit+'）：'+q.edges.map(x=>fmt(x,4)).join(' / ')+'；每组观测数：'+q.counts.join(' / ')+'；相邻同向变化：'+q.same_steps+'/4。';
+ if(GROUP_CHART)GROUP_CHART.destroy();if(QUARTER_CHART)QUARTER_CHART.destroy();
+ GROUP_CHART=new Chart($('groupChart'),{type:'bar',data:{labels:q.counts.map((n,i)=>'Q'+(i+1)+'（n='+n+'）'),datasets:[{label:'未来6日均值（点）',data:q.means,backgroundColor:'#5470c6'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{title:{display:true,text:'点'}}}}});
+ QUARTER_CHART=new Chart($('quarterChart'),{type:'bar',data:{labels:r.quarters.map((b,i)=>'第'+(i+1)+'段'),datasets:[{label:'Spearman IC',data:r.quarters.map(b=>b.ic),backgroundColor:r.quarters.map(b=>b.same?'#16847b':'#d4872a')}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{afterLabel:ctx=>{const b=r.quarters[ctx.dataIndex];return (b.start||'不足')+' ~ '+(b.end||'不足')+'；n='+b.n;}}}},scales:{y:{suggestedMin:-.35,suggestedMax:.35,title:{display:true,text:'IC'}}}}});
+ if(scroll)$('detailCard').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function csv(rows,name){
+ const fields=['id','label','group','status','n','coverage','ic','pearson_ic','icir','ic_percentile','icir_percentile','score','same_blocks','reasons'];
+ const quote=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+ const lines=[fields.map(quote).join(','),...rows.map(r=>fields.map(k=>quote(k==='reasons'?r.reasons.join('；'):r[k])).join(','))];
+ const url=URL.createObjectURL(new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+document.addEventListener('click',e=>{const button=e.target.closest('[data-id]');if(button)showDetail(button.dataset.id,true);});
+for(const id of ['search','status','source'])$(id).addEventListener(id==='search'?'input':'change',()=>{PAGE=0;renderAll();});
+$('prev').onclick=()=>{PAGE--;renderAll();};$('next').onclick=()=>{PAGE++;renderAll();};
+$('selectedCsv').onclick=()=>csv(selectedRows(),'3T-TL_direction_selected.csv');$('allCsv').onclick=()=>csv(DATA.rows,'3T-TL_direction_all.csv');
+fetch('direction_screen.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json();}).then(d=>{
+ DATA=d;ROWS=new Map(d.rows.map(r=>[r.id,r]));const s=d.summary,m=d.meta,w=d.window;
+ $('subtitle').textContent='筛选截至 '+m.asof+' 收盘 · 因子库资料至 '+m.library_date+' · 已完成标签的信号日 '+w.start+' ~ '+w.end;
+ $('notice').textContent=m.caveat+' 本轮目标为 '+m.target_definition+'。最后一个标签的离场收盘日为 '+w.last_label_exit+'。';
+ $('metrics').innerHTML=[['全库候选',s.total],['可评价',s.data_qualified],['两项排名都通过',s.stages.find(x=>x.key==='icir_rank').remaining],['全部条件通过',s.qualified],['最终入选',s.selected]].map(([name,n])=>'<div class="metric"><span class="muted">'+name+'</span><b>'+n+'</b></div>').join('');
+ $('stages').innerHTML=s.stages.map(x=>'<div class="stage"><span>'+esc(x.label)+'</span><div class="track"><div class="bar" style="width:'+100*x.remaining/s.total+'%"></div></div><b>'+x.remaining+'</b></div>').join('');
+ const counts={};selectedRows().forEach(r=>counts[r.group]=(counts[r.group]||0)+1);
+ $('composition').textContent='入选来源：'+Object.entries(counts).map(([g,n])=>sources[g]+' '+n+'条').join('；')+'。本轮未按来源设置名额。';
+ $('selectedBody').innerHTML=selectedRows().map(r=>'<tr><td>'+r.qualified_rank+'</td>'+factorCell(r)+'<td>'+sources[r.group]+'</td><td class="num">'+signed(r.ic,4)+'</td><td class="num">'+signed(r.icir,3)+'</td><td class="num">'+pct(r.ic_percentile)+'</td><td class="num">'+pct(r.icir_percentile)+'</td><td class="num">'+signed(r.quintiles.difference,4)+'</td><td class="num">'+r.same_blocks+'/4</td></tr>').join('')||'<tr><td colspan="9" class="empty">没有因子通过全部条件；规则未自动放宽。</td></tr>';
+ $('baselineBody').innerHTML=d.baselines.map(b=>'<tr><td>'+esc(b.label)+'</td><td>'+esc(b.unit)+'</td><td class="num">'+fmt(b.latest,4)+'</td><td>'+esc(b.role)+'</td></tr>').join('');
+ $('source').innerHTML='<option value="all">全部来源（排名仍按全库）</option>'+Object.entries(sources).map(([key,name])=>'<option value="'+key+'">'+name+'</option>').join('');
+ renderAll();showDetail(d.selected_ids[0]||d.rows[0]?.id);
+}).catch(e=>{$('notice').textContent='加载筛选结果失败：'+e.message;});
+</script>
+</body>
+</html>
