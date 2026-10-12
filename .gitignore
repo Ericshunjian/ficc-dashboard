@@ -32,3 +32,6 @@ _backup_20260903/
 push_result.txt
 _run.txt
 _push_result.txt
+
+# 浏览器检查截图，仅本地留档
+output/playwright/

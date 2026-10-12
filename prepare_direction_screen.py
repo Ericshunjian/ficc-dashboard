@@ -202,7 +202,7 @@ def technical_candidates(cmap):
     return candidates
 
 
-def screen_snapshot(dates, level, candidates, asof_index, lookback=None):
+def screen_snapshot(dates, level, candidates, asof_index, lookback=None, precomputed_rolling=None):
     y = make_offset_labels(np.asarray(level, float), RULES["horizon"])
     # Only labels whose exit close is known at the screening close may be used.
     end = asof_index - RULES["horizon"]
@@ -216,7 +216,12 @@ def screen_snapshot(dates, level, candidates, asof_index, lookback=None):
     a = np.column_stack([c["values"] for c in candidates])[idx]
     yy, window_dates = y[idx], [dates[i] for i in idx]
     ic = spearman_columns(a, yy)
-    ric = rolling_spearman(a, yy, RULES["icir_window"], RULES["icir_min_pairs"])
+    if precomputed_rolling is None:
+        ric = rolling_spearman(a, yy, RULES["icir_window"], RULES["icir_min_pairs"])
+    else:
+        if lookback is not None:
+            raise ValueError("预计算滚动IC仅用于从共同历史起点扩展的窗口")
+        ric = precomputed_rolling[idx]
     ir, ric_counts = np.full(len(candidates), np.nan), np.isfinite(ric).sum(axis=0)
     for j in range(len(candidates)):
         valid = ric[np.isfinite(ric[:, j]), j]
@@ -227,11 +232,24 @@ def screen_snapshot(dates, level, candidates, asof_index, lookback=None):
     eligible = ((count >= RULES["min_obs"]) & (coverage >= RULES["min_coverage"])
                 & np.isfinite(ic) & np.isfinite(ir))
     pic, pir = global_percentiles(ic, ir, eligible)
+    # Four paired-rank passes across all columns, rather than four passes per factor.
+    block_data = []
+    w = RULES["stability_block_sessions"]
+    for k in range(4):
+        begin, finish = len(yy) - 4 * w + k * w, len(yy) - 4 * w + (k + 1) * w
+        if begin < 0:
+            block_data.append(None)
+        else:
+            block_data.append((window_dates[begin], window_dates[finish - 1],
+                               (np.isfinite(a[begin:finish]) & np.isfinite(yy[begin:finish, None])).sum(axis=0),
+                               spearman_columns(a[begin:finish], yy[begin:finish], RULES["stability_min_pairs"])))
     rows = []
     for j, c in enumerate(candidates):
         sign = int(np.sign(ic[j])) if np.isfinite(ic[j]) else 0
         q = quintiles(a[:, j], yy, sign)
-        quarters = quarter_blocks(a[:, j], yy, window_dates, sign)
+        quarters = [{"start": b[0], "end": b[1], "n": int(b[2][j]), "ic": safe_number(b[3][j]),
+                     "same": bool(np.isfinite(b[3][j]) and sign * b[3][j] > 0)} if b is not None else
+                    {"start": None, "end": None, "n": 0, "ic": None, "same": False} for b in block_data]
         same = sum(b["same"] for b in quarters)
         mask = np.isfinite(a[:, j]) & np.isfinite(yy)
         pearson = np.corrcoef(a[mask, j], yy[mask])[0, 1] if mask.sum() >= 2 and np.isfinite(ic[j]) else np.nan
@@ -292,15 +310,9 @@ def baseline_features(level, cmap, dates):
             for key, label, unit, values in definitions], policy
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--asof", help="筛选收盘日；默认最后一个期货交易日")
-    parser.add_argument("--lookback", type=int, help="仅用于显式指定窗口；默认全部共同历史")
-    args = parser.parse_args()
-    if args.lookback is not None and args.lookback < RULES["min_obs"]:
-        parser.error("lookback至少300个期货交易日")
+def load_candidates():
+    """Shared full-pool construction for the snapshot and historical re-screening."""
     lib, dates, series, cmap = library_loader.load_library()
-    asof = max(i for i, d in enumerate(dates) if args.asof is None or d <= args.asof)
     units = {"cash": "亿元", "curve": "百分点/期货报价", "carry": "bp"}
     candidates = []
     for group, key, label, values in series:
@@ -319,6 +331,18 @@ def main():
         candidates.append({"id": group + "|" + key, "group": group, "key": key, "label": label,
                            "unit": unit, "formula": formula, "values": values})
     candidates.extend(technical_candidates(cmap))
+    return lib, dates, cmap, candidates
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--asof", help="筛选收盘日；默认最后一个期货交易日")
+    parser.add_argument("--lookback", type=int, help="仅用于显式指定窗口；默认全部共同历史")
+    args = parser.parse_args()
+    if args.lookback is not None and args.lookback < RULES["min_obs"]:
+        parser.error("lookback至少300个期货交易日")
+    lib, dates, cmap, candidates = load_candidates()
+    asof = max(i for i, d in enumerate(dates) if args.asof is None or d <= args.asof)
     level = 3 * cmap["T主力"] - cmap["TL主力"]
     result, target = screen_snapshot(dates, level, candidates, asof, args.lookback)
     baselines, policy = baseline_features(level, cmap, dates)
@@ -347,7 +371,7 @@ def main():
     input_dates = np.flatnonzero(np.isfinite(level) & (np.arange(len(level)) <= asof))
     inputs = {
         "meta": {"generated": generated, "asof": dates[asof], "target_definition": result["meta"]["target_definition"],
-                 "purpose": "下一阶段模型输入；尚未拟合模型。原始缺失保留null，预处理只能在训练期拟合。"},
+                 "purpose": "当前筛选快照输入，不能回填历史；历史推进模型在各时点独立重筛。原始缺失保留null，预处理只能在训练期拟合。"},
         "dates": [dates[i] for i in input_dates], "target_h6": raw_numbers(target[input_dates]),
         "features": [{"id": c["id"], "label": c["label"], "unit": c["unit"],
                       "role": "candidate" if c["id"] in selected_map else "baseline", "values": raw_numbers(c["values"][input_dates])}
