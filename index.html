@@ -121,6 +121,7 @@
   .card-3 { --accent: var(--accent3); }
   .card-4 { --accent: var(--accent4); }
   .card-5 { --accent: var(--accent5); }
+  .card-5b { --accent: var(--accent5); }
   .card-6 { --accent: var(--accent6); }
   .card-7 { --accent: var(--accent7); }
 
@@ -317,6 +318,19 @@
       </div>
       <div class="card-meta">
         <span>探索性研究 · 未扣成本</span>
+        <span class="arrow">进入 →</span>
+      </div>
+    </a>
+
+    <a class="card card-5b" href="strategy_model_v2.html">
+      <div class="card-icon">⚙️</div>
+      <div class="card-title">多因子岭回归策略 v2</div>
+      <div class="card-desc">
+        按固定规则（|IC|、|ICIR| 组内前 50% ＋ 覆盖 ＋ 分年同号 ＋ 相关性去重）筛因子，每次重训只用当时可得历史重跑筛选，
+        岭回归预测 3T−TL 与 30Y−10Y，下注改用预测分位。可切换筛选模式、入模条数与下注口径，附零假设对照。
+      </div>
+      <div class="card-meta">
+        <span>规则化筛选 · 滚动无前视</span>
         <span class="arrow">进入 →</span>
       </div>
     </a>
