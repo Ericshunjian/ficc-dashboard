@@ -47,4 +47,4 @@ python -X utf8 -m unittest discover -s tests -v
 
 模型输入导出保留原始浮点精度和缺失null，最后六个未完成标签为null，任何填补、缩尾、标准化参数均应只在历史训练数据拟合。
 
-历史重筛模型现已单独实现于 `prepare_curve_timing_walkforward.py`，页面为 `curve_timing_walkforward.html`，方法和结果见 `curve_timing_walkforward_README.md`。该模型不读取本页的当前20条名单，而是复用同一筛选函数在各历史重训日重新筛选。
+2026-10-13用户明确改为固定当前全历史筛出的20条，不再逐次重筛。冻结名单与筛选证据保存为 `curve_timing_factor_set.json`；`prepare_curve_timing_walkforward.py`每20日仅更新系数，按预测绝对值的250交易日历史百分位严格大于60%开仓。页面为 `curve_timing_walkforward.html`，方法和结果见 `curve_timing_walkforward_README.md`。本页未来更新不自动替换冻结名单；使用全历史名单回放过去包含因子选择前视，因此模型页明确标为探索性回放。

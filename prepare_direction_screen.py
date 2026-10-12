@@ -371,7 +371,7 @@ def main():
     input_dates = np.flatnonzero(np.isfinite(level) & (np.arange(len(level)) <= asof))
     inputs = {
         "meta": {"generated": generated, "asof": dates[asof], "target_definition": result["meta"]["target_definition"],
-                 "purpose": "当前筛选快照输入，不能回填历史；历史推进模型在各时点独立重筛。原始缺失保留null，预处理只能在训练期拟合。"},
+                 "purpose": "当前筛选快照输入，不是盲测名单。模型的冻结因子集单独存储，不随本快照更新自动替换；原始缺失保留null，预处理只能在训练期拟合。"},
         "dates": [dates[i] for i in input_dates], "target_h6": raw_numbers(target[input_dates]),
         "features": [{"id": c["id"], "label": c["label"], "unit": c["unit"],
                       "role": "candidate" if c["id"] in selected_map else "baseline", "values": raw_numbers(c["values"][input_dates])}

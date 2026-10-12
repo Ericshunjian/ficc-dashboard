@@ -8,7 +8,7 @@ import pandas as pd
 from sklearn.linear_model import Ridge
 
 from prepare_curve_timing_walkforward import (completed_indices, forecast_metrics,
-                                            position_for, simulate, walk_forward)
+                                            forecast_percentile_gate, position_for, simulate, walk_forward)
 from prepare_direction_screen import RULES, rolling_spearman, screen_snapshot
 from prepare_strategy_model import make_offset_labels, ridge_fit, ridge_predict
 
@@ -89,6 +89,63 @@ class CurveTimingTests(unittest.TestCase):
         np.testing.assert_allclose(coef, reference.coef_, atol=1e-12)
         np.testing.assert_allclose(ridge_predict(fitted, x), reference.predict(scaler.transform(x)), atol=1e-12)
 
+    def test_frozen_list_is_never_rescreened_and_coefficients_still_refit(self):
+        dates, level, base = self.fixture()
+        c = [feature("fixed", base[0]["values"].copy())]
+        frozen = {"selected_ids": ["fixed"], "rows": [c[0] | {"values": None}],
+                  "summary": {}, "window": {"start": "selected using full history"}}
+        def forbidden_screen(*args, **kwargs):
+            self.fail("固定名单时不应调用筛选函数")
+        result = walk_forward(dates, level, base, c, frozen_snapshot=frozen, screen_fn=forbidden_screen)
+        self.assertGreater(len(result["refits"]), 1)
+        self.assertTrue(all(r["selected_ids"] == ["fixed"] for r in result["refits"]))
+        self.assertNotEqual(result["refits"][0]["models"]["full"]["intercept"], result["refits"][1]["models"]["full"]["intercept"])
+
+    def test_percentile_excludes_today_and_requires_strictly_more_than_sixty(self):
+        pred = np.array([1, 2, 3, 4, 5, 3.5, -4.5], float)
+        gate = forecast_percentile_gate(pred, window=5, min_history=5)
+        self.assertTrue(np.isnan(gate["percentile"][:5]).all())
+        self.assertEqual(gate["history_n"][5], 5)
+        self.assertEqual(gate["percentile"][5], 60)
+        self.assertEqual(gate["signal"][5], 0)
+        self.assertEqual(gate["percentile"][6], 80)
+        self.assertEqual(gate["signal"][6], -1)
+
+    def test_percentile_future_changes_cannot_alter_past_and_abs_sign_is_respected(self):
+        rng = np.random.default_rng(21)
+        pred = rng.normal(size=420)
+        before = forecast_percentile_gate(pred)
+        pred[301:] *= 100000
+        after = forecast_percentile_gate(pred)
+        for key in before:
+            np.testing.assert_array_equal(before[key][:301], after[key][:301])
+        flat = forecast_percentile_gate(np.ones(65))
+        self.assertEqual(flat["percentile"][60], 50)
+        self.assertEqual(flat["signal"][60], 0)
+        all_zero = forecast_percentile_gate(np.zeros(65))
+        self.assertFalse(all_zero["signal"].any())
+
+    def test_percentile_window_uses_calendar_sessions_and_does_not_compress_missing(self):
+        pred = np.ones(300)
+        pred[260:290] = np.nan
+        pred[299] = -2
+        gate = forecast_percentile_gate(pred)
+        self.assertEqual(gate["history_n"][299], 220)
+        self.assertEqual(gate["percentile"][299], 100)
+        self.assertEqual(gate["signal"][299], -1)
+
+    def test_percentile_gate_drives_entries_and_dynamic_weak_exit(self):
+        dates = [f"d{i}" for i in range(9)]
+        pred = np.array([1, 2, 3, 4, 5, 3.5, 10, 1, 1], float)
+        gate = forecast_percentile_gate(pred, window=5, min_history=5)
+        sim = simulate(dates, np.arange(9, dtype=float), pred, gate["quantile"], rule="dynamic", gate=gate)
+        self.assertEqual(sim["trades"][0]["signal_date"], "d6")
+        self.assertEqual(sim["trades"][0]["entry_percentile"], 100)
+        self.assertEqual(sim["trades"][0]["reason"], "weak")
+        self.assertEqual(sim["trades"][0]["exit_signal_date"], "d7")
+        self.assertEqual(sim["position"][7], 1)
+        self.assertEqual(sim["position"][8], 0)
+
     def test_fixed_hold_is_exactly_six_intervals_and_daily_pnl_reconciles(self):
         dates = [f"d{i}" for i in range(15)]
         level = np.arange(15, dtype=float)
@@ -144,7 +201,10 @@ class CurveTimingTests(unittest.TestCase):
         d = json.loads(path.read_text(encoding="utf-8"))
         self.assertTrue(all(v is None for v in d["daily"]["target"][-6:]))
         self.assertEqual(d["meta"]["baseline_count"], 8)
+        fixed = json.loads((ROOT / "curve_timing_factor_set.json").read_text(encoding="utf-8"))
+        self.assertEqual(d["meta"]["selection_mode"], "fixed-full-history")
         for r in d["refits"]:
+            self.assertEqual(r["selected_ids"], fixed["selected_ids"])
             self.assertLessEqual(r["last_label_exit"], r["date"])
             self.assertLessEqual(len(r["selected_ids"]), 20)
             self.assertEqual(len(r["models"]["full"]["features"]), 8 + len(r["selected_ids"]))
@@ -155,6 +215,7 @@ class CurveTimingTests(unittest.TestCase):
                 self.assertAlmostEqual(sum(t["pnl"] for t in s["trades"]), s["equity"][-1])
                 self.assertTrue(set(s["position"]) <= {-1, 0, 1})
                 self.assertTrue(all(t["holding_sessions"] <= 6 for t in s["trades"]))
+                self.assertTrue(all(t["entry_percentile"] > 60 and t["entry_history_n"] >= 60 for t in s["trades"]))
                 np.testing.assert_allclose(np.cumsum(s["daily_pnl"]), s["equity"], atol=1e-10)
 
 
