@@ -236,6 +236,24 @@ def simulate(dates, level, prediction, threshold, rule="fixed", horizon=6, phase
     trades, decisions = [], []
     active = None
 
+    def dynamic_exit_reason(t):
+        # Relative-percentile strategies can intentionally oppose the raw forecast.
+        # Their exits must follow the same percentile signal as their entries.
+        if gate is not None and gate.get("direction_basis") == "percentile":
+            if not np.isfinite(prediction[t]) or not np.isfinite(gate["percentile"][t]):
+                return "missing_signal"
+            action = int(gate["signal"][t])
+            if active["direction"] * action < 0:
+                return "reverse"
+            return "weak" if action == 0 else None
+        if not np.isfinite(prediction[t]) or not np.isfinite(threshold[t]):
+            return "missing_signal"
+        if active["direction"] * prediction[t] <= 0:
+            return "reverse"
+        if (gate["signal"][t] == 0 if gate is not None else abs(prediction[t]) <= threshold[t] * exit_ratio):
+            return "weak"
+        return None
+
     def close_trade(t, reason):
         nonlocal active
         entry = active["entry_index"]
@@ -261,12 +279,7 @@ def simulate(dates, level, prediction, threshold, rule="fixed", horizon=6, phase
         if expired:
             reason = "max_hold"
         elif active is not None and rule == "dynamic" and t + 1 < n:
-            if not np.isfinite(prediction[t]) or not np.isfinite(threshold[t]):
-                reason = "missing_signal"
-            elif active["direction"] * prediction[t] <= 0:
-                reason = "reverse"
-            elif (gate["signal"][t] == 0 if gate is not None else abs(prediction[t]) <= threshold[t] * exit_ratio):
-                reason = "weak"
+            reason = dynamic_exit_reason(t)
         if reason:
             close_trade(t, reason)
         action = int(gate["signal"][t]) if gate is not None else position_for(prediction[t], threshold[t])
@@ -281,12 +294,7 @@ def simulate(dates, level, prediction, threshold, rule="fixed", horizon=6, phase
         if t == n - 1:
             # The last close has a next-session decision but no realized next-session P&L.
             if active is not None and rule == "dynamic":
-                if not np.isfinite(prediction[t]) or not np.isfinite(threshold[t]):
-                    planned_reason = "missing_signal"
-                elif active["direction"] * prediction[t] <= 0:
-                    planned_reason = "reverse"
-                elif (gate["signal"][t] == 0 if gate is not None else abs(prediction[t]) <= threshold[t] * exit_ratio):
-                    planned_reason = "weak"
+                planned_reason = dynamic_exit_reason(t)
                 if planned_reason:
                     next_position = action if on_grid else 0
             elif active is None:

@@ -86,6 +86,7 @@ DATA_FILES_FOR_VERSION = [
     "direction_screen.json",
     "direction_screen_inputs.json",
     "curve_timing_walkforward.json",
+    "curve_timing_percentile.json",
     "curve_timing_factor_set.json",
     "omo_policy_7d.json",
     # 体检的 36 个分片（checkup_b/）不入版本清单：页面按块按需 fetch 并带时间戳，
