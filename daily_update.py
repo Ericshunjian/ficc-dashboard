@@ -88,6 +88,8 @@ DATA_FILES_FOR_VERSION = [
     "curve_timing_walkforward.json",
     "curve_timing_percentile.json",
     "curve_timing_capacity.json",
+    "curve_timing_nonlinear.json",
+    "curve_timing_nonlinear_models.json",
     "curve_timing_capacity_factor_sets.json",
     "curve_timing_factor_set.json",
     "omo_policy_7d.json",
