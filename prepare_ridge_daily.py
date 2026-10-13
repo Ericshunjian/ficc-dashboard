@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 
 from jsonio import write_json_skip_unchanged
-from prepare_curve_timing_percentile import signed_percentile_gate
+from prepare_curve_timing_percentile import serialize_sim, signed_percentile_gate
 from prepare_curve_timing_walkforward import simulate
 from prepare_direction_screen import baseline_features, load_candidates, safe_number
 from prepare_factor_library import build as build_library
@@ -130,7 +130,7 @@ def enrich(rows):
             rec.update(current)
 
 
-def position_summary(rows, arm):
+def archive_simulation(rows, arm):
     days = [r["date"] for r in rows]
     level = np.array([r["level"] for r in rows], float)
     pred = np.array([r["models"][arm]["prediction"] for r in rows], float)
@@ -138,7 +138,11 @@ def position_summary(rows, arm):
             "signal": np.array([r["models"][arm]["signal"] for r in rows], int),
             "history_n": np.array([r["models"][arm]["history_n"] for r in rows], int),
             "quantile": np.array([r["models"][arm]["upper_reference"] for r in rows], float)}
-    sim = simulate(days, level, pred, gate["quantile"], rule="dynamic", horizon=6, gate=gate)
+    return simulate(days, level, pred, gate["quantile"], rule="dynamic", horizon=6, gate=gate)
+
+
+def position_summary(rows, arm, sim=None):
+    sim = archive_simulation(rows, arm) if sim is None else sim
     decision = sim["decisions"][-1]
     open_trade = next((t for t in reversed(sim["trades"]) if not t["closed"]), None)
     return {"position_during_signal_day": int(sim["position"][-1]), "next_position": decision["next_position"],
@@ -213,7 +217,8 @@ def build(max_date=None):
     latest = rows[-1]
     statuses = [latest["models"][k]["status"] for k in ARMS]
     healthy = not latest_issue and all(s in ("issued", "backfill") for s in statuses)
-    summaries = {k: position_summary(rows, k) for k in ARMS}
+    simulations = {k: archive_simulation(rows, k) for k in ARMS}
+    summaries = {k: position_summary(rows, k, simulations[k]) for k in ARMS}
     report = {"meta": {"generated": now.isoformat(timespec="seconds"), "model_version": frozen["meta"]["version"],
                        "model_sha256": sha(MODELS), "signal_date": latest["date"], "main": "f20",
                        "comparison": "f30", "healthy": healthy, "source_dates": info,
@@ -221,7 +226,8 @@ def build(max_date=None):
                        "timing": "中午更新与复核；信号日收盘后观察，下一期货交易日开盘执行，代理开盘价=信号日收盘价。",
                        "archive": "历史行标记research-backfill；首次上线后的预测逐日归档且不覆盖。仅模拟持仓，不自动交易。",
                        "research_caveat": "固定因子来自全历史筛选，历史业绩含选择前视；不扣交易成本。"},
-              "config": CONFIG, "latest": latest, "positions": summaries, "records": rows}
+              "config": CONFIG, "latest": latest, "positions": summaries, "records": rows,
+              "strategies": {k: serialize_sim(simulations[k]) for k in ARMS}}
     library_changed = write_json_skip_unchanged(str(ROOT / "factor_library.json"), lib)
     signal_changed = write_json_skip_unchanged(str(ROOT / OUTPUT), report)
     update_versions()

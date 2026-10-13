@@ -104,6 +104,16 @@ class DailyTests(unittest.TestCase):
             self.assertFalse(trade["closed"])
             self.assertIsNone(trade["exit_session"])
 
+    def test_daily_charts_and_ledger_reconcile_with_saved_position_summary(self):
+        for arm in daily.ARMS:
+            sim = self.report["strategies"][arm]
+            self.assertEqual(sim["metrics"], self.report["positions"][arm]["metrics"])
+            self.assertEqual(len(sim["equity"]), len(self.report["records"]))
+            np.testing.assert_allclose(np.cumsum(sim["daily_pnl"]), sim["equity"], atol=1e-9)
+            self.assertAlmostEqual(sum(t["pnl"] for t in sim["trades"]), sim["equity"][-1], places=8)
+            self.assertAlmostEqual(-min(sim["drawdown"]), sim["metrics"]["max_drawdown"], places=5)
+            self.assertEqual(sim["decisions"][-1]["next_position"], self.report["positions"][arm]["next_position"])
+
     def test_rerun_is_idempotent_and_never_calls_training(self):
         names = (daily.MODELS, daily.OUTPUT, "factor_library.json", "data_version.json")
         before = {n: daily.sha(n) for n in names}
