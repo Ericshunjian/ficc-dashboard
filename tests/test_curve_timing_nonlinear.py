@@ -2,12 +2,14 @@ import hashlib
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
 from prepare_curve_timing_nonlinear import (chronological_split, fit_nonlinear,
                                            preprocessing_record, serialize_tree, xgboost)
 from prepare_direction_screen import baseline_features, load_candidates
+from research_inputs import research_input
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -42,9 +44,11 @@ class NonlinearTests(unittest.TestCase):
     def test_archived_tree_and_xgboost_reproduce_all_test_predictions(self):
         d = json.loads((ROOT / "curve_timing_nonlinear.json").read_text(encoding="utf-8"))
         archive = json.loads((ROOT / "curve_timing_nonlinear_models.json").read_text(encoding="utf-8"))
-        _, dates, cmap, candidates = load_candidates()
-        level = 3 * cmap["T主力"] - cmap["TL主力"]
-        bases, _ = baseline_features(level, cmap, dates)
+        snapshot = research_input("factor_library.json", d["meta"]["input_hashes"]["factor_library.json"])
+        with patch("prepare_factor_checkup.LIB_PATH", str(snapshot)), patch("prepare_strategy_model.BASE", str(snapshot.parent)):
+            _, dates, cmap, candidates = load_candidates()
+            level = 3 * cmap["T主力"] - cmap["TL主力"]
+            bases, _ = baseline_features(level, cmap, dates)
         values = {f["id"]: f["values"] for f in candidates + bases}
         test = np.array([dates.index(day) for day in d["daily"]["dates"]])
         for key, record in archive["models"].items():
@@ -103,7 +107,7 @@ class NonlinearTests(unittest.TestCase):
                     if family == "ridge":
                         self.assertEqual(sim, source["strategies"][rule][f"f{n}"])
         for name, h in d["meta"]["input_hashes"].items():
-            self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(), h)
+            self.assertEqual(hashlib.sha256(research_input(name, h).read_bytes()).hexdigest(), h)
 
     def test_requested_pages_removed_and_no_live_html_links_remain(self):
         for name in ("curve_timing_walkforward.html", "strategy_model.html"):

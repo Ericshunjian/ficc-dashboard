@@ -10,6 +10,7 @@ from sklearn.linear_model import Ridge
 
 from prepare_curve_timing_capacity import (ALL_VARIANTS, TypeAwareScaler, clip_policy,
                                           fit_model, fit_variants, model_record, predict)
+from research_inputs import research_input
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -122,7 +123,7 @@ class CapacityTests(unittest.TestCase):
                 p = d["periods"][rule][key]["all"]
                 self.assertAlmostEqual(p["long_pnl"] + p["short_pnl"], p["total"], places=5)
         for name, h in d["meta"]["input_hashes"].items():
-            self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(), h)
+            self.assertEqual(hashlib.sha256(research_input(name, h).read_bytes()).hexdigest(), h)
 
 
 if __name__ == "__main__":

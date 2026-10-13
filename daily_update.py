@@ -93,6 +93,8 @@ DATA_FILES_FOR_VERSION = [
     "curve_timing_capacity_factor_sets.json",
     "curve_timing_factor_set.json",
     "omo_policy_7d.json",
+    "ridge_daily_models.json",
+    "ridge_daily_signals.json",
     # 体检的 36 个分片（checkup_b/）不入版本清单：页面按块按需 fetch 并带时间戳，
     # 只需保证被 commit/push 即可（见 git_push 里的 json_files）
 ]

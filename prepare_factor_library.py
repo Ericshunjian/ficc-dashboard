@@ -96,7 +96,7 @@ def _load(name):
         return json.load(f)
 
 
-def _load_merged():
+def _load_merged(prefer_compact=False):
     """现券合并明细。
 
     优先用本机生成的 `bond_trading_data_merged.json`（~44MB，.gitignore 不入库）。
@@ -104,7 +104,7 @@ def _load_merged():
     解码还原——后者是同一份数据的紧凑编码版（idx + 编码 detail），口径完全一致。
     """
     p = _p(F_PATH["merged"])
-    if os.path.exists(p):
+    if os.path.exists(p) and not prefer_compact:
         return _load(F_PATH["merged"])
     alt = "bond_trading_data.json"
     if not os.path.exists(_p(alt)):
@@ -123,13 +123,13 @@ def _load_merged():
         }
         for r in b["detail"]
     ]
-    print("  [info] %s 不在工作区，已从 %s 还原 %d 条明细（同源同口径）"
+    print("  [info] 使用仓库紧凑JSON：%s → %s 还原 %d 条明细（同源同口径）"
           % (F_PATH["merged"], alt, len(detail)))
     return {"meta": dict(b["meta"]), "detail": detail}
 
 
-def build():
-    merged = _load_merged()
+def build(prefer_compact=False):
+    merged = _load_merged(prefer_compact=prefer_compact)
     repo = _load(F_PATH["repo"])
     curve = _load(F_PATH["curve"])
 

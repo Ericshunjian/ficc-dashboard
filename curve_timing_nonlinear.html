@@ -8,7 +8,7 @@
 .tablebox.scroll{max-height:500px}.name{white-space:normal;min-width:240px;max-width:420px}
 .metric b.bad{color:#b45f3d}
 </style></head><body><main class="shell">
-<div class="top"><div><h1>3T−TL · 岭回归、浅层树与XGBoost</h1><div id="subtitle" class="muted">加载研究结果中…</div></div><nav class="links"><a href="index.html">首页</a><a href="curve_timing_capacity.html">缩尾与因子数量</a><a href="direction_screen.html">因子筛选</a></nav></div>
+<div class="top"><div><h1>3T−TL · 岭回归、浅层树与XGBoost</h1><div id="subtitle" class="muted">加载研究结果中…</div></div><nav class="links"><a href="index.html">首页</a><a href="ridge_daily.html">每日信号</a><a href="curve_timing_capacity.html">缩尾与因子数量</a><a href="direction_screen.html">因子筛选</a></nav></div>
 <div class="notice">本轮比较三种模型、20／30／40三份固定因子池，均加8个基准。价差及其MA、动量、Z值不缩尾。树深及XGBoost早停只使用2024年内的验证数据；选定后用全部406条训练标签重新拟合，测试期冻结。</div>
 <section class="card"><div class="toolbar"><h2>对照设置</h2><span class="field"><label for="size">因子数量</label><select id="size"><option value="30">30＋8基准</option><option value="20">20＋8基准</option><option value="40">40＋8基准</option></select></span><span class="field"><label for="family">核对模型</label><select id="family"><option value="xgb">XGBoost</option><option value="tree">浅层回归树</option><option value="ridge">岭回归</option></select></span><span class="field"><label for="rule">离场</label><select id="rule"><option value="dynamic">动态离场，最长6日</option><option value="fixed">固定持有6日</option></select></span><button id="dailyCsv">下载逐日 CSV</button><a href="curve_timing_nonlinear.json" download>完整结果 JSON</a></div><p class="hint">核对模型只控制卡片、分组、重要性和账本；比较表与曲线保留同一因子池下的三种模型。默认展示XGBoost不是选择它作为最终策略。</p></section>
 <div id="metrics" class="metrics"></div>
