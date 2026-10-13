@@ -29,8 +29,13 @@ function line(id, labels, series, kind = 'points') {
   charts[id] = new Chart($(id), {type:'line',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,animation:false,
     onResize:chart=>{chart.options.scales.x.ticks.maxTicksLimit=chart.width<450?4:6;},
     interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}},
+      zoom:{limits:{x:{min:'original',max:'original',minRange:1}},
+        pan:{enabled:true,mode:'x',threshold:5},
+        zoom:{mode:'x',wheel:{enabled:true,speed:0.1},pinch:{enabled:true},
+          drag:{enabled:true,modifierKey:'shift',threshold:5,backgroundColor:'rgba(84,112,198,0.12)',borderColor:'#5470c6',borderWidth:1}}},
       tooltip:{callbacks:{label:ctx => ctx.dataset.label + '：' + (kind === 'signal' ? dir(ctx.parsed.y) : fmt(ctx.parsed.y,kind === 'percentile' ? 1 : 4) + (kind === 'percentile' ? '%' : ' 点'))}}},
     scales:{x:{grid:{display:false},ticks:{maxTicksLimit:innerWidth<600?4:6,maxRotation:0,font:{size:10}}},y}}});
+  $(id).ondblclick=()=>charts[id].resetZoom();
 }
 
 function csv(rows, name) {
@@ -175,4 +180,8 @@ $('download').onclick=()=>{if(data)download(new Blob([JSON.stringify(data,null,2
 $('dailyCsv').onclick=()=>{if(data)csv(data.records.map((r,i)=>({date:r.date,level:r.level,f20_prediction:r.models.f20.prediction,f20_percentile:r.models.f20.percentile,f20_signal:r.models.f20.signal,f20_position:data.strategies.f20.position[i],f30_prediction:r.models.f30.prediction,f30_percentile:r.models.f30.percentile,f30_signal:r.models.f30.signal,f30_position:data.strategies.f30.position[i]})),'3TTL_daily_signals.csv');};
 $('tradeCsv').onclick=()=>{const source=ledger();if(source)csv(source.sim.trades,'3TTL_trades_'+source.key+'.csv');};
 $('modelDetails').addEventListener('toggle',loadGateComparison);
+$('resetAllCharts').onclick=()=>Object.values(charts).forEach(chart=>chart.resetZoom());
+document.querySelectorAll('[data-reset-chart]').forEach(button=>{
+  button.onclick=()=>charts[button.dataset.resetChart]?.resetZoom();
+});
 loadDaily(); loadResearch();
