@@ -1,48 +1,99 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>3T−TL · 每日岭回归信号</title>
-<link rel="icon" href="data:,">
-<style>
-:root{color-scheme:dark;--bg:#0b1220;--panel:#131e30;--line:#2a3a53;--text:#e5ecf8;--muted:#a7b7cd;--blue:#83bdff;--green:#80dbb4;--red:#f4a6aa}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 system-ui,"Microsoft YaHei",sans-serif}main{max-width:1220px;margin:auto;padding:28px 24px 60px}a{color:var(--blue)}nav{display:flex;flex-wrap:wrap;gap:18px;margin-bottom:25px}h1{font-size:29px;margin:0 0 8px}h2{font-size:20px;margin:0 0 12px}h3{font-size:17px;margin:0 0 14px}p{margin:8px 0}.muted{color:var(--muted)}.banner,.panel,.card{border:1px solid var(--line);border-radius:14px;padding:20px;background:var(--panel);margin:18px 0}.banner{border-left:4px solid var(--blue)}.cards{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{margin:0}.main{border-color:#507bb0}.tag{border-radius:30px;padding:4px 10px;background:#223753;font-size:13px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:19px 0}.value{font-size:27px;font-weight:700;line-height:1.3}.label{font-size:13px;color:var(--muted)}.neutral{color:var(--blue)}.long{color:var(--green)}.short{color:var(--red)}.scroll{overflow:auto}table{border-collapse:collapse;width:100%;white-space:nowrap;font-size:13px}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left}th{color:var(--muted);font-weight:500}.actions{white-space:normal;min-width:150px}button{cursor:pointer;color:var(--text);background:#243a59;border:1px solid #476181;border-radius:8px;padding:8px 13px;font:inherit}.tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.error{border-color:var(--red);color:var(--red)}details summary{cursor:pointer;color:var(--blue);margin-bottom:12px}code{color:#c4d8f5}#state{min-height:40px}@media(max-width:740px){main{padding:20px 14px}.cards{grid-template-columns:1fr}.metrics{gap:7px}.value{font-size:23px}h1{font-size:25px}.panel,.card,.banner{padding:16px}}
-</style></head><body><main>
-<nav><a href="index.html">← FICC首页</a><a href="factor_library.html">因子库</a><a href="curve_timing_capacity.html">岭回归研究</a><a href="curve_timing_nonlinear.html">模型对照</a></nav>
-<h1>3T−TL · 每日岭回归信号</h1><p class="muted">20因子＋8市场基准为主，30因子＋8基准作对照。模型只训练一次，每日更新输入与预测。</p>
-<div id="state" class="banner">正在读取最新已归档信号…</div>
-<div id="content" hidden>
-<div class="cards" id="cards"></div>
-<section class="panel"><h2>开平仓规则与中午复核</h2>
-<p>资产为 <code>S=3×T主连−TL主连</code>，预测 <code>S[t+6]−S[t]</code>，单位为价差点。t日收盘后观察因子，t＋1期货交易日开盘执行；暂无开盘价，以t日收盘价代理。</p>
-<p>当日预测在此前250个期货交易日预测中的排名：<b>低于40%做空，高于60%做多，40%至60%空仓</b>，边界不包含。历史样本至少60条有效预测，当天预测不参与自己的排名。交易方向由排名决定，不额外要求预测正负号一致。</p>
-<p>已有仓位遇中性或缺失信号，计划下一交易日开盘平仓；遇相反信号，计划平仓并反向开仓。同方向继续持有，不重置持有天数；最长持有6个期货交易日，到期收盘离场。每次固定一单位，不做仓位大小优化，暂不计成本。</p>
-<p><b>12:00报告只更新与复核。</b>它不是午间新开仓指令，也不代表策略已在账户成交。下面的仓位来自历史信号模拟；账户实际持仓及成交情况需要你自行确认。</p>
-<div class="scroll"><table><thead><tr><th>实际账户状态</th><th>当天排名偏低：P&lt;40%</th><th>中性：40%≤P≤60%</th><th>当天排名偏高：P&gt;60%</th></tr></thead><tbody>
-<tr><td>空仓</td><td>计划做空价差</td><td>继续空仓</td><td>计划做多价差</td></tr>
-<tr><td>已做多</td><td>计划平多并转空</td><td>计划平多</td><td>继续持有，检查6日到期</td></tr>
-<tr><td>已做空</td><td>继续持有，检查6日到期</td><td>计划平空</td><td>计划平空并转多</td></tr>
-</tbody></table></div><p class="muted">做多价差＝多3单位T、空1单位TL；做空价差＝空3单位T、多1单位TL。上述动作均沿用原执行时点。</p></section>
-<section class="panel"><h2>数据与模型检查</h2><div id="quality"></div><details><summary>查看主模型的固定因子、当天输入与预测贡献</summary><p class="muted">贡献＝训练标准化后的因子值×冻结系数。基准变量和价差不缩尾；指定机构金额按训练1%／99%界限处理。贡献描述模型计算，不是因果解释。</p><div class="scroll"><table><thead><tr><th>因子</th><th>当日原值</th><th>单位</th><th>标准化值</th><th>预测贡献（点）</th><th>处理</th></tr></thead><tbody id="inputs"></tbody></table></div></details></section>
-<section class="panel"><h2>预测归档</h2><div class="tools"><button id="all">展开全部历史</button><button id="download">下载归档JSON</button><span class="muted">上线前为研究回填，上线后的预测逐日保存，不覆盖已发出的预测。</span></div><div class="scroll"><table><thead><tr><th>信号日</th><th>3T−TL</th><th>20因子预测</th><th>排名</th><th>方向</th><th>30因子预测</th><th>排名</th><th>方向</th><th>记录来源</th></tr></thead><tbody id="history"></tbody></table></div></section>
-<p class="muted">历史因子筛选使用全样本，历史业绩属于探索性研究。每日归档用于后续前瞻检验；冻结模型、旧研究数据快照与持续更新的因子库分别保存。</p>
-</div></main><script>
-const esc=x=>String(x??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const fmt=(x,n=3)=>x==null?'—':Number(x).toFixed(n);
-const dir=x=>x===1?'做多':x===-1?'做空':'空仓';
-const cls=x=>x===1?'long':x===-1?'short':'neutral';
-const reasons={weak:'中性信号，计划平仓',reverse:'方向反转，计划平仓并反向',missing_signal:'信号缺失，计划平仓',max_hold:'到达6日持有上限'};
-let data,models,expanded=false;
-function renderHistory(){document.getElementById('history').innerHTML=(expanded?data.records:data.records.slice(-25)).slice().reverse().map(r=>{let a=r.models.f20,b=r.models.f30;return `<tr><td>${esc(r.date)}</td><td>${fmt(r.level)}</td><td>${fmt(a.prediction)}</td><td>${fmt(a.percentile,1)}%</td><td class="${cls(a.signal)}">${dir(a.signal)}</td><td>${fmt(b.prediction)}</td><td>${fmt(b.percentile,1)}%</td><td class="${cls(b.signal)}">${dir(b.signal)}</td><td>${r.origin==='research-backfill'?'研究回填':a.status==='blocked'?'数据待补':'每日归档'}</td></tr>`}).join('')}
-async function run(){try{
- [data,models]=await Promise.all(['ridge_daily_signals.json','ridge_daily_models.json'].map(async n=>{let r=await fetch(n+'?v='+Date.now(),{cache:'no-store'});if(!r.ok)throw Error(n+' HTTP '+r.status);return r.json()}));
- const m=data.meta,r=data.latest;
- document.getElementById('state').className='banner'+(m.healthy?'':' error');
- document.getElementById('state').innerHTML=`<b>信号与数据截至 ${esc(m.signal_date)}</b> · ${m.healthy?'两组模型输入检查通过':'数据待补，不能形成完整新信号'}<br><span class="muted">${esc(m.timing)}<br>最近文件更新：${esc(m.generated)}。查看日期晚于数据日期时，不代表已有新行情。</span>`;
- document.getElementById('cards').innerHTML=['f20','f30'].map(k=>{let a=r.models[k],p=data.positions[k],tr=p.open_trade;return `<article class="card ${k==='f20'?'main':''}"><h3>${k==='f20'?'主信号 · 20因子＋8基准':'对照 · 30因子＋8基准'} <span class="tag">动态离场</span></h3><div class="metrics"><div><div class="value">${fmt(a.prediction)}</div><div class="label">未来6日预测（点）</div></div><div><div class="value">${fmt(a.percentile,1)}%</div><div class="label">此前${a.history_n}条预测排名</div></div><div><div class="value ${cls(a.signal)}">${a.status==='blocked'?'待补':dir(a.signal)}</div><div class="label">当日方向信号</div></div></div><p>信号日模拟持仓：<b>${dir(p.position_during_signal_day)}</b>；下一交易日目标：<b class="${cls(p.next_position)}">${dir(p.next_position)}</b>。</p><p>${esc(reasons[p.exit_reason]||(p.next_position===0?'继续空仓':p.position_during_signal_day===p.next_position?'同方向继续持有':'计划开仓'))}。</p><p class="muted">${tr?'当前模拟交易：'+esc(tr.entry_session)+'入场，已计'+tr.holding_sessions+'个交易日；最后一天的离场计划尚未计为下一日成交。':'暂无未结束的模拟交易。'}<br>开仓门槛严格为P&lt;40%或P&gt;60%。</p></article>`}).join('');
- document.getElementById('quality').innerHTML=`<p>机构日报：${esc(m.source_dates.institution)}；回购：${esc(m.source_dates.repo)}；曲线与期货：${esc(m.source_dates.curve)}。</p><p>7天OMO：${fmt(m.source_dates.omo_rate,2)}%，核验至${esc(m.source_dates.omo_verified)}。<a href="${esc(m.source_dates.omo_source)}" target="_blank" rel="noopener">核验来源</a></p><p>当日固定因子覆盖：20组${fmt(r.models.f20.coverage*100,0)}%，30组${fmt(r.models.f30.coverage*100,0)}%；要求≥90%，8个基准全部完整。</p><p>模型版本：${esc(m.model_version)}；训练截止${esc(models.meta.train_through)}，${models.meta.train_n}条标签；筛选名单截至${esc(models.meta.selection_asof)}。不滚动回归，不重新筛选。</p><p>${m.price_revisions.length?'检测到'+m.price_revisions.length+'条历史价格修订；归档价格保留原值，未改写已发信号。':'未发现归档价格被上游修订。'}</p><p class="error">${esc([...(r.models.f20.problems||[]),...(r.models.f30.problems||[]),...(m.unpriced_latest?.problems||[])].join('；'))}</p>`;
- document.getElementById('inputs').innerHTML=(r.models.f20.inputs||[]).map(x=>`<tr><td>${esc(x.label)}</td><td>${fmt(x.raw,4)}</td><td>${esc(x.unit)}</td><td>${fmt(x.z)}</td><td>${fmt(x.contribution,4)}</td><td>${x.missing?'训练中位数填补':x.clipped?'训练界限缩尾':x.clip_enabled?'金额未触及缩尾界限':'不缩尾'}</td></tr>`).join('');
- renderHistory();document.getElementById('content').hidden=false;
- document.getElementById('all').onclick=()=>{expanded=!expanded;renderHistory();document.getElementById('all').textContent=expanded?'只显示最近25日':'展开全部历史'};
- document.getElementById('download').onclick=()=>{let u=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='ridge_daily_signals.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)};
- }catch(e){document.getElementById('state').className='banner error';document.getElementById('state').textContent='读取失败：'+e.message}}
-run();
-</script></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>3T−TL · 曲线择时策略</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root{color-scheme:dark;--bg:#0b1220;--panel:#131e30;--line:#2a3a53;--text:#e5ecf8;--muted:#a7b7cd;--blue:#83bdff;--green:#80dbb4;--red:#f4a6aa}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 system-ui,"Microsoft YaHei",sans-serif}
+    main{max-width:1120px;margin:auto;padding:28px 24px 50px}a{color:var(--blue)}nav,.tools{display:flex;flex-wrap:wrap;gap:16px;align-items:center}nav{margin-bottom:25px}
+    h1{font-size:29px;margin:0 0 8px}h2{font-size:20px;margin:0 0 12px}h3{font-size:17px;margin:0 0 12px}p{margin:8px 0}.muted,small{color:var(--muted)}small{font-size:13px}
+    .section{margin-top:26px}.panel,.signal-card{border:1px solid var(--line);border-radius:14px;padding:20px;background:var(--panel)}.panel{margin-top:14px}
+    .cards{display:grid;grid-template-columns:1fr 1fr;gap:16px}.main-signal{border-color:#507bb0}.badge{display:inline-block;border-radius:30px;padding:3px 10px;background:#223753;font-size:12px}
+    .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}.value{font-size:28px;font-weight:700;line-height:1.3}.label{font-size:13px;color:var(--muted)}.neutral{color:var(--blue)}.long{color:var(--green)}.short,.error{color:var(--red)}
+    .notice{padding:12px 16px;background:#15253d;border-left:3px solid var(--blue);border-radius:6px;margin:15px 0}.error.notice{border-color:var(--red)}
+    .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;list-style:none;padding:0;margin:16px 0}.steps li{padding:16px;background:var(--panel);border:1px solid var(--line);border-radius:12px}.steps b{display:block;margin-bottom:7px}.steps p{font-size:14px;margin:0;color:var(--muted)}
+    .gates{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}.gate{padding:12px 15px;background:#1a293e;border-radius:9px}.gate b{display:block;font-size:18px}
+    .scroll{overflow:auto}table{border-collapse:collapse;width:100%;white-space:nowrap;font-size:13px}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left}th{color:var(--muted);font-weight:500}.num{text-align:right}
+    details{margin-top:15px}details summary{cursor:pointer;color:var(--blue);padding:8px 0}details[open] summary{margin-bottom:8px}.tools{margin:12px 0}button,select{color:var(--text);background:#243a59;border:1px solid #476181;border-radius:8px;padding:7px 12px;font:inherit}button{cursor:pointer}code{color:#c4d8f5}.footer{margin-top:24px;font-size:13px;color:var(--muted)}
+    @media(max-width:800px){.steps{grid-template-columns:1fr 1fr}}@media(max-width:600px){main{padding:20px 14px}.cards,.steps{grid-template-columns:1fr}.value{font-size:24px}h1{font-size:25px}.panel,.signal-card{padding:16px}.gate{padding:10px}.gate b{font-size:16px}}
+  </style>
+</head>
+<body><main>
+  <nav><a href="index.html">← FICC首页</a><a href="#trading">交易规则</a><a href="#research">研究过程</a><a href="factor_library.html">因子库</a><a href="direction_screen.html">因子筛选明细</a></nav>
+  <h1>3T−TL · 曲线择时策略</h1>
+  <p class="muted">20因子＋8基准的岭回归为主，30因子作对照。因子与模型固定，逐日更新预测，按历史排名开平仓。</p>
+
+  <section class="section" id="daily">
+    <h2>每日信号 <span class="badge">12:00更新与复核</span></h2>
+    <div id="state" class="notice">正在读取最新归档…</div>
+    <div class="cards" id="cards"></div>
+    <p class="muted">信号日收盘后决策，下一期货交易日开盘执行；中午报告用于复核。模拟仓位不代表账户实际持仓或成交。</p>
+  </section>
+
+  <section class="section" id="research">
+    <h2>研究是怎样完成的</h2>
+    <ol class="steps">
+      <li><b>1 · 整理候选因子</b><p>现券机构净买入按机构、券种、期限分别保留，构造累计、持续性、加速、异常与期限差；加入回购、资金、曲线和期货技术指标。</p></li>
+      <li><b>2 · 检验并冻结名单</b><p>全库筛选方向型因子：IC、ICIR、五分组和时间稳定性同时检验。保留20条，扩展30／40条作对照，不每日重筛。</p></li>
+      <li><b>3 · 一次训练预测</b><p>8个固定基准另行入模。训练至2024年底，岭回归α＝15，预测未来6日价差变动；系数、填补与标准化参数冻结。</p></li>
+      <li><b>4 · 将预测变成交易</b><p>比较历史预测排名与动态／固定6日离场；核对20／30／40因子、浅层树和XGBoost，最终日常主报20因子岭回归＋动态离场。</p></li>
+    </ol>
+    <div class="panel">
+      <p><b>当前选择：</b>保留20因子主模型、30因子对照。30因子的历史预测排序和幅度误差较好；20因子的历史累计交易盈亏较高；40因子及树模型没有带来一致改善。</p>
+      <div id="researchState" class="muted">正在读取历史研究摘要…</div>
+      <div class="scroll"><table><thead><tr><th>岭回归版本</th><th class="num">预测IC</th><th class="num">RMSE（点）</th><th class="num">动态盈亏（点）</th><th class="num">最大回撤（点）</th></tr></thead><tbody id="ridgeResults"></tbody></table></div>
+      <p class="muted">这些是固定历史研究结果，不随每日信号更新延长。盈亏为固定±1单位价差的点数，含期末浮动盈亏，暂不扣成本。</p>
+      <details>
+        <summary>展开因子筛选与预处理规则</summary>
+        <p>使用截至2026-10-09已完成的6日标签，信号日区间为2023-04-21至2026-09-23。有效观测≥300、覆盖≥90%；|Spearman IC|≥0.05，|IC|与|ICIR|都在合格全库前50%，且IC与ICIR同号。</p>
+        <p>五组各≥30条，Q5−Q1与IC同号，四个相邻组变化至少三个顺着IC方向；最近四段各63个交易日，至少三段IC与整体同号。ICIR按60日滚动IC的均值／标准差计算。87条因子通过，沿既定合格排序取前20，30／40为嵌套扩展；未做信息去重或逐因子增量筛选。</p>
+        <p><b>8个市场基准：</b>DR001(MA10)−7天OMO、10年国债−DR001(MA10)、10年−2年、30年−10年，以及价差MA5、MA20、5日变动、Z60。</p>
+        <p>训练只使用2024年底已完成的406条标签。缺失填补、均值、标准差及金额缩尾界限都只取训练集；日常8个基准须全部完整，固定因子覆盖≥90%。<b>价差、预测标签、价差MA及曲线和技术指标不缩尾</b>；仅指定机构金额及金额衍生按训练1%／99%处理。</p>
+      </details>
+      <details id="modelDetails">
+        <summary>展开模型、因子数量与交易规则对照</summary>
+        <div id="comparisonState" class="muted">展开后读取历史对照。</div>
+        <div class="scroll"><table><thead><tr><th>模型</th><th class="num">因子＋基准</th><th class="num">预测IC</th><th class="num">RMSE（点）</th><th class="num">固定6日盈亏</th><th class="num">动态盈亏</th><th class="num">动态回撤</th></tr></thead><tbody id="modelResults"></tbody></table></div>
+        <p class="muted">浅层树与XGBoost只用训练期内前80%／后20%验证，隔离6条跨边界标签；树深为2／3／3层，XGBoost早停为1／1／2棵。确定参数后用完整训练集拟合一次，测试期冻结。树模型的幅度误差较小，排序IC未超过对应岭回归，不能只凭RMSE换主模型。</p>
+        <h3>为何采用40%／60%的预测排名</h3>
+        <p>过去的绝对强度规则要求预测幅度超过历史门槛，还受到预测正负号约束。现在直接用带符号预测的相对历史排名，允许低排名做空、高排名做多；<b>排名偏低不等于模型预测为负</b>，开仓与动态离场统一按排名判断。</p>
+        <div class="scroll"><table><thead><tr><th>旧20因子模型的交易映射</th><th class="num">动态盈亏（点）</th><th class="num">最大回撤（点）</th><th class="num">2026年盈亏（点）</th></tr></thead><tbody id="gateResults"></tbody></table></div>
+        <p class="muted">上表仅比较同一份旧模型预测的两种交易规则，使用旧缩尾参数，不能与当前修正后的模型混作同一对照。完整数据：<a href="curve_timing_capacity.json" download>缩尾与因子数量</a> · <a href="curve_timing_nonlinear.json" download>模型对照</a> · <a href="curve_timing_percentile.json" download>预测排名对照</a>。</p>
+      </details>
+      <p class="footer">因子名单使用全历史筛选，后续方案也参考过历史表现，因此这些结果属于探索性回放，不能当作独立样本外证明。接下来用每日原样归档的预测做前瞻验证。</p>
+    </div>
+  </section>
+
+  <section class="section" id="trading">
+    <h2>开仓与平仓怎么判断</h2>
+    <div class="panel">
+      <p><code>S＝3×T主连−TL主连</code>，目标为<code>S[t+6]−S[t]</code>。t收盘观察，t＋1开盘执行；暂无开盘价，采用t收盘价代理。每次一单位，单一仓位＋1／−1／0。</p>
+      <div class="gates"><div class="gate short"><b>P＜40%</b>做空价差</div><div class="gate neutral"><b>40%≤P≤60%</b>空仓／平仓</div><div class="gate long"><b>P＞60%</b>做多价差</div></div>
+      <p>P是当天预测在此前250个期货交易日预测中的百分位，至少60条有效历史，不包含当天。严格小于40%或大于60%才开仓；恰好40%／60%为空仓。预测正负号不另设限制。</p>
+      <div class="scroll"><table><thead><tr><th>现有仓位</th><th>P＜40%</th><th>40%≤P≤60%</th><th>P＞60%</th></tr></thead><tbody>
+        <tr><td>空仓</td><td>开空</td><td>保持空仓</td><td>开多</td></tr>
+        <tr><td>做多</td><td>平多并转空</td><td>平多</td><td>继续持有</td></tr>
+        <tr><td>做空</td><td>继续持有</td><td>平空</td><td>平空并转多</td></tr>
+      </tbody></table></div>
+      <p><b>动态离场：</b>中性、缺失或反向信号在下一交易日代理开盘执行；同向信号不重置持有天数。最长6个期货交易日，到期收盘平仓；重新入场视作新交易。</p>
+      <p class="muted">做多＝多3单位T、空1单位TL；做空＝空3单位T、多1单位TL。中午复核沿用这些执行时点。</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <details><summary>数据检查与固定因子明细</summary>
+      <div id="quality"></div>
+      <div class="tools"><label for="inputModel">查看模型</label><select id="inputModel"><option value="f20">20因子主模型</option><option value="f30">30因子对照</option></select></div>
+      <p class="muted">贡献＝训练标准化值×冻结系数，单位为预测价差点；描述模型计算，不代表因果关系。</p>
+      <div class="scroll"><table><thead><tr><th>因子</th><th>原值</th><th>单位</th><th class="num">标准化值</th><th class="num">预测贡献</th><th>处理</th></tr></thead><tbody id="inputs"></tbody></table></div>
+    </details>
+    <details><summary>每日预测归档</summary>
+      <div class="tools"><button id="all">展开全部历史</button><button id="download">下载归档JSON</button><small>默认最近10日；上线前标记研究回填，已发布预测不覆盖。</small></div>
+      <div class="scroll"><table><thead><tr><th>信号日</th><th>价差</th><th>20预测</th><th>排名</th><th>方向</th><th>30预测</th><th>排名</th><th>方向</th><th>来源</th></tr></thead><tbody id="history"></tbody></table></div>
+    </details>
+  </section>
+</main><script src="ridge_daily.js"></script></body>
+</html>

@@ -110,7 +110,8 @@ class NonlinearTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(research_input(name, h).read_bytes()).hexdigest(), h)
 
     def test_requested_pages_removed_and_no_live_html_links_remain(self):
-        for name in ("curve_timing_walkforward.html", "strategy_model.html"):
+        for name in ("curve_timing_walkforward.html", "strategy_model.html", "curve_timing_capacity.html",
+                     "curve_timing_nonlinear.html", "curve_timing_percentile.html", "strategy_model_v2.html"):
             self.assertFalse((ROOT / name).exists())
             for page in ROOT.glob("*.html"):
                 self.assertNotIn('href="' + name + '"', page.read_text(encoding="utf-8"), page.name)

@@ -311,42 +311,12 @@
 
     <a class="card card-5" href="ridge_daily.html">
       <div class="card-icon">🕛</div>
-      <div class="card-title">3T−TL 每日岭回归信号</div>
+      <div class="card-title">3T−TL 曲线择时策略</div>
       <div class="card-desc">
-        20因子＋8基准为主、30因子对照。冻结模型逐日预测，展示40%／60%方向、动态离场与模拟持仓。
-        中午更新与复核，保留次日开盘执行；附因子输入检查与不可覆盖的预测归档。
+        每日信号、因子筛选与一次训练的研究流程、开平仓条件集中展示。
+        20因子岭回归为主、30因子对照；历史模型比较与因子明细按需展开。
       </div>
-      <div class="card-meta"><span>每日复核 · 因子更新 · 固定系数</span><span class="arrow">进入 →</span></div>
-    </a>
-
-    <a class="card card-5" href="curve_timing_nonlinear.html">
-      <div class="card-icon">🌳</div>
-      <div class="card-title">3T−TL 模型对照 · 岭回归／树／XGBoost</div>
-      <div class="card-desc">
-        同一20、30、40因子池比较岭回归、浅层回归树与受约束XGBoost；训练内时间验证及6日标签隔离，测试模型冻结。
-        沿用40%／60%历史排名交易，展示九组结果、早停证据、并列预测诊断与逐笔账本。
-      </div>
-      <div class="card-meta"><span>最新模型实验 · 相同交易口径</span><span class="arrow">进入 →</span></div>
-    </a>
-
-    <a class="card card-5" href="curve_timing_capacity.html">
-      <div class="card-icon">📊</div>
-      <div class="card-title">3T−TL 缩尾与20／30／40因子</div>
-      <div class="card-desc">
-        价差、价差MA及曲线利差不缩尾，按类型处理机构金额；同一训练期比较20、30、40因子加8基准。
-        历史预测排名低于40%做空、高于60%做多，展示预测、分年多空盈亏、缩尾审核与账本。
-      </div>
-      <div class="card-meta"><span>最新处理 · 固定一次训练</span><span class="arrow">进入 →</span></div>
-    </a>
-
-<a class="card card-5" href="curve_timing_percentile.html">
-      <div class="card-icon">↕️</div>
-      <div class="card-title">3T−TL 预测百分位多空对照</div>
-      <div class="card-desc">
-        复用一次训练的预测：历史排名低于40%做空、高于60%做多，不要求预测与方向同号。
-        与原绝对强度规则比较固定6日和动态离场，查看2026年做空交易、分年盈亏及账本。
-      </div>
-      <div class="card-meta"><span>相同预测 · 两种交易映射</span><span class="arrow">进入 →</span></div>
+      <div class="card-meta"><span>每日信号 · 研究流程 · 交易规则</span><span class="arrow">进入 →</span></div>
     </a>
 
     <a class="card card-5" href="direction_screen.html">
@@ -357,19 +327,6 @@
         逐项展示通过或未通过原因、分组关系、四段IC与固定市场基准，支持下载模型输入。
       </div>
       <div class="card-meta"><span>首轮候选研究 · 全库排名</span><span class="arrow">进入 →</span></div>
-    </a>
-
-<a class="card card-5b" href="strategy_model_v2.html">
-      <div class="card-icon">⚙️</div>
-      <div class="card-title">多因子岭回归策略 v2</div>
-      <div class="card-desc">
-        按固定规则（|IC|、|ICIR| 组内前 50% ＋ 覆盖 ＋ 分年同号 ＋ 相关性去重）筛因子，每次重训只用当时可得历史重跑筛选，
-        岭回归预测 3T−TL 与 30Y−10Y，下注改用预测分位。可切换筛选模式、入模条数与下注口径，附零假设对照。
-      </div>
-      <div class="card-meta">
-        <span>规则化筛选 · 滚动无前视</span>
-        <span class="arrow">进入 →</span>
-      </div>
     </a>
 
     <a class="card card-6" href="research_conclusions.html">
