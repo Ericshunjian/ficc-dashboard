@@ -115,15 +115,32 @@ class DailyTests(unittest.TestCase):
             self.assertEqual(sim["decisions"][-1]["next_position"], self.report["positions"][arm]["next_position"])
 
     def test_rerun_is_idempotent_and_never_calls_training(self):
-        names = (daily.MODELS, daily.OUTPUT, "factor_library.json", "data_version.json")
+        names = (daily.MODELS, daily.OUTPUT, "factor_library.json", "data_version.json",
+                 "curve_timing_logistic_models.json", "curve_timing_logistic.json")
         before = {n: daily.sha(n) for n in names}
         with patch("prepare_curve_timing_capacity.fit_model", side_effect=AssertionError("Unexpected fit")), \
-             patch("prepare_direction_screen.screen_snapshot", side_effect=AssertionError("Unexpected screening")):
+             patch("prepare_direction_screen.screen_snapshot", side_effect=AssertionError("Unexpected screening")), \
+             patch("sklearn.linear_model.LogisticRegression.fit", side_effect=AssertionError("Unexpected Logistic fit")):
             _, changes = daily.build()
         self.assertEqual(changes["new_signal_dates"], [])
+        self.assertEqual(changes["new_logistic_dates"], [])
         self.assertFalse(changes["signal_changed"])
         self.assertFalse(changes["library_changed"])
         self.assertEqual(before, {n: daily.sha(n) for n in names})
+
+    def test_parallel_logistic_signal_uses_frozen_probability_gate(self):
+        import prepare_logistic_daily as logistic
+        frozen = daily.read(logistic.MODELS)
+        report = self.report["logistic"]
+        logistic.validate_models(frozen)
+        self.assertEqual(report["meta"]["model_sha256"], daily.sha(logistic.MODELS))
+        for arm in logistic.ARMS:
+            rec = report["latest"]["models"][arm]
+            score = frozen["models"][arm]["intercept"] + sum(f["contribution"] for f in rec["inputs"])
+            self.assertAlmostEqual(rec["prediction"], logistic.probability(score), places=12)
+            expected = 1 if rec["prediction"] > .6 else -1 if rec["prediction"] < .4 else 0
+            self.assertEqual(rec["signal"], expected)
+            self.assertEqual(report["strategies"][arm]["metrics"], report["positions"][arm]["metrics"])
 
 
 if __name__ == "__main__":

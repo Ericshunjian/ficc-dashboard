@@ -228,15 +228,19 @@ def build(max_date=None):
                        "research_caveat": "固定因子来自全历史筛选，历史业绩含选择前视；不扣交易成本。"},
               "config": CONFIG, "latest": latest, "positions": summaries, "records": rows,
               "strategies": {k: serialize_sim(simulations[k]) for k in ARMS}}
+    from prepare_logistic_daily import build_archive
+    report["logistic"], logistic_dates = build_archive(report, old.get("logistic") if old else None,
+                                                      features, dates, info, bond_dates, repo_dates, now)
     library_changed = write_json_skip_unchanged(str(ROOT / "factor_library.json"), lib)
     signal_changed = write_json_skip_unchanged(str(ROOT / OUTPUT), report)
     update_versions()
-    return report, {"new_signal_dates": new_dates, "library_changed": library_changed, "signal_changed": signal_changed}
+    return report, {"new_signal_dates": new_dates, "new_logistic_dates": logistic_dates,
+                    "library_changed": library_changed, "signal_changed": signal_changed}
 
 
 def update_versions():
     manifest = read("data_version.json")
-    for name in ("factor_library.json", "omo_policy_7d.json", MODELS, OUTPUT):
+    for name in ("factor_library.json", "omo_policy_7d.json", MODELS, OUTPUT, "curve_timing_logistic_models.json", "curve_timing_logistic.json"):
         p = ROOT / name
         obj = read(name)
         stamp = obj.get("meta", {}).get("last_updated") or obj.get("meta", {}).get("generated")
@@ -252,6 +256,11 @@ def main():
     args = parser.parse_args()
     report, changes = build(args.max_date)
     print(json.dumps({"signal_date": report["meta"]["signal_date"], "healthy": report["meta"]["healthy"],
+                      "logistic": {"signal_date": report["logistic"]["meta"]["signal_date"],
+                                   "healthy": report["logistic"]["meta"]["healthy"],
+                                   "signals": {k: {n: report["logistic"]["latest"]["models"][k][n]
+                                                   for n in ("prediction", "percentile", "signal", "status")}
+                                               for k in report["logistic"]["latest"]["models"]}},
                       **changes, "signals": {k: {n: report["latest"]["models"][k][n]
                                                   for n in ("prediction", "percentile", "signal", "status")}
                                              for k in ARMS}}, ensure_ascii=False, allow_nan=False))
