@@ -1,6 +1,7 @@
 """Causal training, fair model comparison and executable close-proxy accounting."""
 import json
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import numpy as np
@@ -8,7 +9,7 @@ import pandas as pd
 from sklearn.linear_model import Ridge
 
 from prepare_curve_timing_walkforward import (completed_indices, forecast_metrics,
-                                            forecast_percentile_gate, position_for, simulate, walk_forward)
+                                            fit_once_and_test, forecast_percentile_gate, position_for, simulate, walk_forward)
 from prepare_direction_screen import RULES, rolling_spearman, screen_snapshot
 from prepare_strategy_model import make_offset_labels, ridge_fit, ridge_predict
 
@@ -111,6 +112,29 @@ class CurveTimingTests(unittest.TestCase):
         self.assertEqual(gate["percentile"][6], 80)
         self.assertEqual(gate["signal"][6], -1)
 
+    def test_static_model_fits_once_per_arm_and_test_does_not_change_fit_or_scaler(self):
+        dates, level, base = self.fixture()
+        c = [feature("fixed", base[0]["values"].copy())]
+        frozen = {"selected_ids": ["fixed"], "rows": [c[0] | {"values": None}],
+                  "summary": {}, "window": {}}
+        with patch("prepare_curve_timing_walkforward.ridge_fit", wraps=ridge_fit) as fitter:
+            before = fit_once_and_test(dates, level, base, c, frozen, train_through=dates[340])
+            self.assertEqual(fitter.call_count, 2)
+        self.assertEqual(len(before["refits"]), 1)
+        self.assertEqual(before["refits"][0]["train_end"], dates[334])
+        self.assertTrue(np.isnan(before["predictions"]["full"][:341]).all())
+        self.assertTrue(np.all(before["refit_index"][341:] == 0))
+        level[361:] += 10000
+        for f in base + c:
+            f["values"][361:] -= 10000
+        after = fit_once_and_test(dates, level, base, c, frozen, train_through=dates[340])
+        self.assertEqual(before["refits"], after["refits"])
+        for arm in ("baseline", "full"):
+            np.testing.assert_array_equal(before["predictions"][arm][:361], after["predictions"][arm][:361])
+        gate = forecast_percentile_gate(before["predictions"]["full"])
+        self.assertTrue(np.isnan(gate["percentile"][:401]).all())
+        self.assertEqual(gate["history_n"][401], 60)
+
     def test_percentile_future_changes_cannot_alter_past_and_abs_sign_is_respected(self):
         rng = np.random.default_rng(21)
         pred = rng.normal(size=420)
@@ -203,6 +227,15 @@ class CurveTimingTests(unittest.TestCase):
         self.assertEqual(d["meta"]["baseline_count"], 8)
         fixed = json.loads((ROOT / "curve_timing_factor_set.json").read_text(encoding="utf-8"))
         self.assertEqual(d["meta"]["selection_mode"], "fixed-full-history")
+        self.assertEqual(d["meta"]["training_mode"], "fixed-train-test")
+        self.assertEqual(len(d["refits"]), 1)
+        self.assertEqual(d["refits"][0]["date"], "2024-12-31")
+        self.assertEqual(d["refits"][0]["train_n"], 406)
+        self.assertEqual(d["refits"][0]["train_end"], "2024-12-23")
+        self.assertEqual(d["daily"]["dates"][0], "2025-01-02")
+        self.assertEqual(d["forecast_metrics"]["full"]["n"], 420)
+        self.assertTrue(all(i == 0 for i in d["daily"]["refit_index"]))
+        self.assertTrue(all(v is None for v in d["daily"]["percentile"]["full"][:60]))
         for r in d["refits"]:
             self.assertEqual(r["selected_ids"], fixed["selected_ids"])
             self.assertLessEqual(r["last_label_exit"], r["date"])

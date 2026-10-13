@@ -25,6 +25,8 @@ CONFIG = {"min_train": 300, "refit_every": 20, "ridge_alpha": 15.0,
           "entry_percentile": 60.0,
           "prediction_candidate_coverage": 0.90}
 ARMS = ("baseline", "full")
+STATIC_CONFIG = {k: v for k, v in CONFIG.items() if k != "refit_every"} | {
+    "training_mode": "fixed-train-test", "train_through": "2024-12-31"}
 
 
 def completed_indices(level, y, t, horizon=6):
@@ -116,6 +118,51 @@ def walk_forward(dates, level, baselines, candidates, asof=None, config=None, sc
         predictions["full"][t] = float(ridge_predict(models["full"], full_matrix[t]))
     return {"predictions": predictions, "target": y, "sigma": sigma,
             "refit_index": refit_index, "refits": refits, "skipped": skipped, "config": config}
+
+
+def fit_once_and_test(dates, level, baselines, candidates, frozen_snapshot,
+                      train_through="2024-12-31", asof=None):
+    """Fit each arm once at the cutoff; neither coefficients nor scaler see test data."""
+    asof = len(dates) - 1 if asof is None else asof
+    cutoff = max((i for i, d in enumerate(dates[:asof + 1]) if d <= train_through), default=-1)
+    if cutoff < 0 or cutoff >= asof:
+        raise ValueError("必须同时具有训练截止日前数据和截止日后的测试数据")
+    level = np.asarray(level, float)
+    y = make_offset_labels(level, CONFIG["horizon"])
+    train = completed_indices(level, y, cutoff, CONFIG["horizon"])
+    if len(train) < CONFIG["min_train"]:
+        raise ValueError("已完成训练标签不足300条")
+    candidate_map = {c["id"]: c for c in candidates}
+    ids = frozen_snapshot["selected_ids"]
+    selected = [candidate_map[key] for key in ids]
+    features = {"baseline": baselines, "full": baselines + selected}
+    matrix = {arm: np.column_stack([f["values"] for f in features[arm]]) for arm in ARMS}
+    models = {arm: ridge_fit(matrix[arm][train], y[train], CONFIG["ridge_alpha"]) for arm in ARMS}
+    rows_by_id = {r["id"]: r for r in frozen_snapshot["rows"]}
+    fitted = {"date": dates[cutoff], "index": cutoff, "train_start": dates[train[0]],
+              "train_end": dates[train[-1]], "last_label_exit": dates[train[-1] + CONFIG["horizon"]],
+              "train_n": len(train), "sigma": float(y[train].std(ddof=1)), "selected_ids": ids,
+              "selected": [rows_by_id[key] for key in ids],
+              "screen_summary": frozen_snapshot["summary"], "screen_window": frozen_snapshot["window"],
+              "models": {arm: model_record(models[arm], features[arm]) for arm in ARMS}}
+    prediction = {arm: np.full(len(dates), np.nan) for arm in ARMS}
+    refit_index = np.full(len(dates), -1, int)
+    skipped = []
+    for t in range(cutoff + 1, asof + 1):
+        refit_index[t] = 0
+        values = matrix["full"][t, len(baselines):]
+        coverage = float(np.mean(np.isfinite(values))) if len(values) else 1.0
+        base_complete = bool(np.isfinite(matrix["baseline"][t]).all())
+        if not np.isfinite(level[t]) or not base_complete or coverage < CONFIG["prediction_candidate_coverage"]:
+            skipped.append({"date": dates[t], "candidate_coverage": coverage, "baseline_complete": base_complete})
+            continue
+        for arm in ARMS:
+            prediction[arm][t] = float(ridge_predict(models[arm], matrix[arm][t]))
+    # Before cutoff there are no archived test forecasts. Gate warmup must occur in test.
+    return {"predictions": prediction, "target": y, "refit_index": refit_index,
+            "refits": [fitted], "skipped": skipped,
+            "train_metrics": {arm: forecast_metrics(ridge_predict(models[arm], matrix[arm][train]), y[train]) for arm in ARMS},
+            "config": STATIC_CONFIG | {"train_through": train_through}}
 
 
 def forecast_metrics(pred, y):
@@ -273,6 +320,7 @@ def simulate(dates, level, prediction, threshold, rule="fixed", horizon=6, phase
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--asof", help="只处理截至此日的数据，默认最后期货交易日")
+    parser.add_argument("--train-through", default=STATIC_CONFIG["train_through"], help="训练截止日，默认2024-12-31；只拟合一次")
     args = parser.parse_args()
     lib, dates, cmap, candidates = load_candidates()
     asof = max(i for i, d in enumerate(dates) if args.asof is None or d <= args.asof)
@@ -288,9 +336,9 @@ def main():
     missing_ids = set(frozen_ids) - {c["id"] for c in candidates}
     if missing_ids:
         raise ValueError("固定名单的因子不在当前库中，不能自动重新筛选替代：" + str(sorted(missing_ids)))
-    result = walk_forward(dates, level, baselines, candidates,
-                          frozen_snapshot=frozen,
-                          progress=lambda r: print(r["date"], "训练", r["train_n"], "固定因子", len(r["selected_ids"]), flush=True))
+    result = fit_once_and_test(dates, level, baselines, candidates, frozen,
+                               train_through=args.train_through)
+    print("一次拟合", result["refits"][0]["date"], "训练标签", result["refits"][0]["train_n"], flush=True)
     if not result["refits"]:
         raise ValueError("没有足够历史训练模型")
     first = next(i for i, p in enumerate(result["predictions"]["baseline"]) if np.isfinite(p))
@@ -333,7 +381,10 @@ def main():
                                        for arm in ARMS} for rule in simulations}}
     output = {"meta": {"generated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "asof": dates[-1],
                        "library_date": lib["meta"]["date_range"][-1], "target": "3T−TL", "unit": "点",
-                       "label": "S[t+6]−S[t]，S=3×T主连−TL主连", "config": CONFIG, "screen_rules": RULES,
+                       "label": "S[t+6]−S[t]，S=3×T主连−TL主连", "config": result["config"], "screen_rules": RULES,
+                       "training_mode": "fixed-train-test", "train_through": args.train_through,
+                       "train_signal_start": final["train_start"], "train_signal_end": final["train_end"],
+                       "train_labels": final["train_n"], "test_sessions": len(dates) - final["index"] - 1,
                        "selection_mode": "fixed-full-history", "selection_asof": frozen["meta"]["selection_asof"],
                        "frozen_on": frozen["meta"]["frozen_on"],
                        "first_prediction": dates[first], "last_completed_signal": dates[len(dates) - 7],
@@ -341,8 +392,8 @@ def main():
                        "refits": len(result["refits"]), "candidate_count": len(candidates),
                        "baseline_count": len(baselines), "omo_verified_through": policy["verified_through"],
                        "timing": "t收盘后决策；t+1以t收盘价代理开盘成交；持仓盈亏从t到t+1开始计算。",
-                       "training": "扩展历史；仅使用r+6≤重训日的标签；两模型同训练日期；中位数填补、1/99%缩尾、标准化只拟合训练期。",
-                       "screening": "固定2026-10-09全历史筛出的20条，不再重筛；每20个交易日仅更新系数与训练期预处理参数，8条基准固定保留。",
+                       "training": "仅在训练截止日拟合一次；训练标签r+6≤截止日；两模型同训练日期；中位数填补、1/99%缩尾、标准化只拟合训练集并冻结，测试期不更新任何系数或预处理参数。",
+                       "screening": "固定2026-10-09全历史筛出的20条与8个基准，不再筛选；系数与预处理参数同样冻结。",
                        "execution": "固定6日：平仓后逐日等待下一合格信号；动态：反向/转弱/数据缺失时次日代理开盘离场，可反手，最长6日。单一持仓±1或0。",
                        "threshold": "各模型分别比较预测绝对值与此前250个交易日真实生成的历史预测；至少60个有值才启用；中位并列秩百分位严格>60才开仓，按预测正负确定方向；动态≤60时转弱离场。",
                        "percentile_definition": "100×(历史|预测|小于当前值的个数＋0.5×等于的个数)/历史有效个数；历史窗口不含今天。参考60%分位点使用线性插值，仅供解释；交易以经验百分位为准。",
@@ -352,6 +403,7 @@ def main():
                                          "prepare_strategy_model.py", "prepare_curve_timing_walkforward.py")}},
               "baselines": [{k: f[k] for k in ("id", "label", "unit")} for f in baselines],
               "forecast_metrics": metrics, "forecast_reference": forecast_metrics(zero_forecast, result["target"]),
+              "train_forecast_metrics": result["train_metrics"],
               "annual": annual, "phases": phases, "latest": latest,
               "refits": result["refits"], "skipped": result["skipped"],
               "selection_frequency": sorted(frequency.values(), key=lambda r: (-r["count"], r["id"])),
