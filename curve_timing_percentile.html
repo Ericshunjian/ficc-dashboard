@@ -13,6 +13,7 @@
 <body><main class="shell">
 <div class="top"><div><h1>3T−TL · 预测百分位多空对照</h1><div id="subtitle" class="muted">加载研究结果中…</div></div><nav class="links"><a href="index.html">首页</a><a href="curve_timing_walkforward.html">一次训练模型</a><a href="direction_screen.html">因子筛选</a></nav></div>
 <div class="notice">本轮只改变预测到持仓的映射：带正负号的预测值排名&lt;40%做空、&gt;60%做多，40%—60%空仓；预测本身的正负不限制交易方向。完整保留原规则作为对照。</div>
+<p><a href="curve_timing_capacity.html">最新研究：价差不缩尾，并比较20／30／40个因子 →</a> <span class="hint">本页保留旧缩尾参数作为历史对照。</span></p>
 <section class="card"><div class="toolbar"><h2>比较设置</h2><span class="field"><label for="arm">模型</label><select id="arm"><option value="full">B 完整模型 · 8基准+20因子</option><option value="baseline">A 基准模型 · 8基准</option></select></span><span class="field"><label for="rule">离场</label><select id="rule"><option value="dynamic">动态离场，最长6日</option><option value="fixed">固定持有6日</option></select></span><button id="dailyCsv">下载逐日 CSV</button><a href="curve_timing_percentile.json" download>完整研究 JSON</a></div><p class="hint">训练至2024年底，测试从2025年开始。原模型的系数、输入因子、缩尾、标准化和每日预测均沿用；此次没有改进预处理，也没有搜索窗口或阈值。</p></section>
 <div id="metrics" class="metrics"></div>
 <section class="card"><h2>本轮结果</h2><p id="summary"></p><p class="hint">所有盈亏是固定±1单位3T−TL的点数，包含期末浮动盈亏，不是本金收益率。新增交易数量本身不能说明信号变好。</p></section>
