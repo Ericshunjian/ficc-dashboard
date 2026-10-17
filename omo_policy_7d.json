@@ -2,8 +2,8 @@
   "name": "中国人民银行公开市场7天期逆回购操作利率",
   "unit": "%",
   "method": "按已公布的生效日期记录政策利率；其后交易日沿用最近一次已生效值。不是每日操作成交利率，也不将14天或隔夜逆回购混入。",
-  "verified_through": "2026-10-14",
-  "latest_verification": "https://www.cnfin.com/hb-lb/detail/20261014/4480847_1.html",
+  "verified_through": "2026-10-15",
+  "latest_verification": "https://www.cnfin.com/zs-lb/detail/20261015/4481274_1.html",
   "changes": [
     {
       "date": "2021-01-04",
