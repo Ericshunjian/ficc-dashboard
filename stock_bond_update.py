@@ -341,7 +341,9 @@ def main():
                 logger.warning('  %s 兜底也失败: %s', fb_name, str(e2)[:120])
             time.sleep(0.5)
 
-    keep_names = [STOCK[0], BOND_MAIN] + [x[0] for x in BOND_FALLBACKS]
+    # 兜底源不进日常保留名单：主源正常时压根不会去抓，列进来只会每天误报"抓取失败"。
+    # 兜底能力本身保留——中债真的挂了时，上面抓到的兜底序列仍在 prices 里，会正常写出。
+    keep_names = [STOCK[0], BOND_MAIN]
     prices = _merge_with_existing(prices, keep_names)
     # 存量保留的序列，来源标记沿用
     for name in prices:
