@@ -1,6 +1,6 @@
 # 六模型纯预测评价与候选筛选
 
-本轮只比较预测，不运行交易映射，不按收益、胜率、开平仓门槛选择模型。
+模型筛选部分只比较预测，不按收益、胜率、开平仓门槛选择模型。用户确认候选后，另附独立的交易映射比较，不改写原筛选结论。
 页面 `forecast_model_comparison.html`，结果 `forecast_model_comparison.json`，补充的原28输入XGBoost冻结于 `forecast_model_comparison_models.json`。
 
 ## 比较口径
@@ -40,7 +40,9 @@
 
 用户确认保留原Ridge、时序Ridge，并额外保留时序贝叶斯。`forecast_model_shortlist.json` 单独保存三组名单与角色；报告的 `selection` 仍保留原自动筛选两组，`retained` 表示用户最终保留三组，不伪造第三组自动入选。
 
-三模型的预测正负与强弱分层已合并到本页 `#prediction-strata`，详见 `forecast_signal_diagnostics_README.md`。分档由2025年内部校准预测冻结后观察2026年，不更换因子、2025年底最终模型、原预测、开平仓规则或每日任务。仍未创建新的交易映射，不混合模型或自动挑选最高命中率组上线。
+三模型的预测正负与强弱分层已合并到本页 `#prediction-strata`，详见 `forecast_signal_diagnostics_README.md`。分档由2025年内部校准预测冻结后观察2026年，不更换因子、2025年底最终模型或原预测。
+
+经用户确认，另在本页 `#entry-rules` 对照纯方向、固定强负边界过滤、滚动40／60排名，均固定持有六日，详见 `entry_rules_README.md`。展示完整2026区间和共同起点空仓重启的全部9种组合，不混合模型或自动选择最高盈利组合上线。每日生产开平仓规则和自动任务不变。
 
 ## 运行
 
