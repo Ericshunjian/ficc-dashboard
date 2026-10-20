@@ -8,6 +8,7 @@ Prediction noise uses the original training estimate, not the tempered variance.
 from __future__ import annotations
 
 import gzip
+import argparse
 import hashlib
 import importlib.metadata
 import json
@@ -24,12 +25,15 @@ CACHE = ROOT / 'output' / 'bayes' / 'train_202512'
 SEED, CHAINS, DRAWS, BURNIN = 20261020, 4, 1500, 1500
 
 
-def main():
+def main(cache=CACHE, train_through='2025-12-31'):
     import arviz as az
     from stochtree import BARTModel
-    source = CACHE / 'bart_inputs.npz'
+    cache = Path(cache).resolve()
+    if not cache.is_relative_to((ROOT / 'output' / 'bayes').resolve()):
+        raise ValueError('BART cache must remain inside output/bayes')
+    source = cache / 'bart_inputs.npz'
     checksum = hashlib.sha256(source.read_bytes()).hexdigest()
-    summary_path = CACHE / 'bart_summary.json'
+    summary_path = cache / 'bart_summary.json'
     if summary_path.exists():
         old = json.loads(summary_path.read_text(encoding='utf-8'))
         if old['inputs_sha256'] != checksum:
@@ -37,12 +41,12 @@ def main():
         print('Frozen BART cache already exists; no retraining.')
         return
     data = np.load(source)
-    metadata = json.loads((CACHE / 'study_inputs.json').read_text(encoding='utf-8'))
+    metadata = json.loads((cache / 'study_inputs.json').read_text(encoding='utf-8'))
     x, y, score = data['x_train'], data['y_train'], data['x_score']
-    if x.shape != (metadata['train_n'], 28) or metadata['train_through'] != '2025-12-31':
+    if x.shape != (metadata['train_n'], 28) or metadata['train_through'] != train_through:
         raise ValueError('Unexpected training population')
-    if np.any(data['train_label_exit_dates'] > '2025-12-31'):
-        raise ValueError('A training label crosses the 2025 cutoff')
+    if np.any(data['train_label_exit_dates'] > train_through):
+        raise ValueError('A training label crosses the requested cutoff')
     noise = metadata['noise_variance']
     print(f'Classic MCMC BART: {len(y)} training labels, 28 features; no test Y.', flush=True)
     model = BARTModel()
@@ -59,7 +63,7 @@ def main():
     if latent.shape != (CHAINS * DRAWS, len(score)):
         raise ValueError(f'Unexpected posterior shape {latent.shape}')
     serialized = model.to_json()
-    with gzip.open(CACHE / 'bart_model.json.gz', 'wt', encoding='utf-8') as handle:
+    with gzip.open(cache / 'bart_model.json.gz', 'wt', encoding='utf-8') as handle:
         handle.write(serialized)
     restored = BARTModel()
     restored.from_json(serialized)
@@ -68,7 +72,7 @@ def main():
     predictive = latent + rng.normal(size=latent.shape) * np.sqrt(noise)
     std = np.sqrt(np.var(latent, axis=0) + noise)
     chain_mean = latent.reshape(CHAINS, DRAWS, -1).mean(axis=1)
-    np.savez_compressed(CACHE / 'bart_predictions.npz', mean=latent.mean(axis=0), std=std,
+    np.savez_compressed(cache / 'bart_predictions.npz', mean=latent.mean(axis=0), std=std,
                         low80=np.quantile(predictive, .1, axis=0), high80=np.quantile(predictive, .9, axis=0),
                         probability_positive=ndtr(latent / np.sqrt(noise)).mean(axis=0), chain_mean=chain_mean)
     idata = az.from_dict(posterior={'mu': fitted.reshape(CHAINS, DRAWS, -1)})
@@ -77,7 +81,7 @@ def main():
     summary = {'inputs_sha256': checksum, 'engine': 'StochTree classic BART MCMC',
                'engine_version': importlib.metadata.version('stochtree'),
                'random_seed': SEED, 'm': 50, 'chains': CHAINS, 'tune': BURNIN, 'draws_per_chain': DRAWS,
-               'likelihood_power': 1 / 6, 'train_n': len(y), 'features_n': 28,
+               'likelihood_power': 1 / 6, 'train_n': len(y), 'features_n': 28, 'train_through': train_through,
                'noise_variance_fixed': noise, 'sigma_diagnostics': {'r_hat': None, 'ess_bulk': None},
                'latent_rhat_median': float(np.median(rhat)), 'latent_rhat_p95': float(np.quantile(rhat, .95)),
                'latent_rhat_max': float(np.max(rhat)), 'latent_ess_median': float(np.median(ess)),
@@ -89,4 +93,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cache', type=Path, default=CACHE)
+    parser.add_argument('--train-through', default='2025-12-31')
+    args = parser.parse_args()
+    main(args.cache, args.train_through)
