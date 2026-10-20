@@ -35,3 +35,4 @@ _push_result.txt
 
 # 浏览器检查截图，仅本地留档
 output/playwright/
+output/bayes/
