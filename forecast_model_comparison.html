@@ -92,4 +92,21 @@
 <section class="panel"><details><summary>展开同收缩强度归因对照</summary><p class="muted">以下两项是上一轮已经固定的交叉对照，未据2026年重新调参，不混入本轮六个既定版本的候选名单。它们说明参数处理也可能比增加历史输入更重要；主表不能解释为单纯滞后项的因果效果。</p><div class="scroll"><table><thead><tr><th>对照</th><th class="num">同向准确率</th><th class="num">平衡准确率</th><th class="num">Rank IC</th><th class="num">MAE</th><th class="num">RMSE</th></tr></thead><tbody id="controls"></tbody></table></div></details></section>
 <section class="panel"><h2>筛选怎样做</h2><p><b>用户确认：</b>2026-10-20保留时序Ridge、原Ridge，并额外保留时序贝叶斯作为自适应观察候选。以下自动筛选最多两组的原记录继续保留，第三组不改称自动入选。</p><p>先保留平衡准确率&gt;50%、Rank IC&gt;0的模型，再比较方向、排序及两项误差。若另一模型在全部指标不差且至少一项更好，则标记为被支配。先留平衡准确率最高的方向候选；幅度候选须同时战胜“预测0”和“训练均值”的RMSE。无不同幅度候选时，补充Rank IC最高的不同模型，最多两组，不强行选唯一赢家。</p><p class="muted">上述50%／0只是工作筛选界限，不是显著性证明。季度、滚动和相位用于说明稳定性限制，不临时改门槛。这里筛的是既定六版本，不是对每种算法所有可能参数的全局优劣判断。</p><details><summary>展开参数和训练日期审计</summary><div id="audit"></div></details></section>
 <div class="notice warning"><b>研究边界：</b>固定20因子来自全历史筛选，含前视；2026年已被反复观察。本轮候选依然是探索选择，不能将同一2026年区间再称为选择之后的独立样本外证明。六日标签重叠，不把183条记录当作183个独立实验。后续新增日期的预测归档才可继续检验候选。本页没有修改生产模型或交易规则。</div>
-</main><script src="forecast_model_comparison.js?v=20261020-shortlist3"></script><script src="forecast_signal_diagnostics.js?v=20261020"></script><script src="entry_rules_study.js?v=20261021-neutral"></script><script src="strategy_stability.js?v=20261021"></script></body></html>
+<section id="bayes-parameters" class="panel">
+<h2>时序贝叶斯：9组参数有限对照</h2>
+<div id="bayestune-state" class="notice">正在读取独立参数研究…</div>
+<p>相同92输入、alpha=500、未来6日目标。只调旧信息保留速度（discount=1／.995／.98）与初始参数协方差倍数（c=1／6／18）；旧版为discount=1、c=6。c越小，越信任初始系数，初期吸收新数据的力度越小；小于1的discount允许更多漂移。两者都不会改变因子或开平仓门槛。</p>
+<p id="bayestune-selection"></p><div id="bayestune-conclusion" class="notice"></div>
+<div class="scroll"><table><thead><tr><th>模型</th><th class="num">同向正确／总数</th><th class="num">同向准确率</th><th class="num">平衡准确率</th><th class="num">Rank IC</th><th class="num">MAE（点）</th><th class="num">RMSE（点）</th></tr></thead><tbody id="bayestune-metrics"></tbody></table></div>
+<p id="bayestune-ci" class="muted"></p>
+<div class="tools"><label>相同交易规则 <select id="bayestune-rule"><option value="sign">纯方向开仓＋反向退出</option><option value="asymmetric">非对称开仓＋中性退出（共用阈值）</option></select></label><button id="bayestune-reset">本组图复位</button><a href="bayes_parameter_study.json" download>下载参数研究数据</a></div>
+<p id="bayestune-rule-note" class="muted"></p>
+<div class="scroll"><table><thead><tr><th>模型</th><th class="num">累计盈亏（点）</th><th class="num">最大回撤（点）</th><th class="num">已平／未平</th><th class="num">已平胜率</th><th class="num">平均持有交易日</th></tr></thead><tbody id="bayestune-trades"></tbody></table></div>
+<div class="grid" style="margin-top:16px"><div class="panel"><h2>六日预测与已完成实际（价差点）</h2><div class="chart"><canvas id="bayestune-forecast"></canvas></div></div><div class="panel"><h2>相同交易规则累计盈亏（价差点）</h2><div class="chart"><canvas id="bayestune-equity"></canvas></div></div></div>
+<p class="muted">鼠标滚轮／双指缩放、横向拖拽，双击或按钮复位。实际六日变动按信号日归属；最后未完成标签留空。次日代理开盘=t收盘、最长6交易日、固定±1、不计成本；不是资金净值收益率。</p>
+<details><summary>展开全部9组参数：2025验证与2026观察</summary><p class="muted">绿色仅表示2025验证RMSE选中，不依照右侧2026成绩再选。c是初始协方差倍数，不是系数乘数或仓位倍数。</p><div class="scroll"><table><thead><tr><th>discount</th><th class="num">c</th><th class="num">2025验证RMSE</th><th class="num">验证同向率</th><th class="num">验证Rank IC</th><th class="num">2026同向率</th><th class="num">2026 Rank IC</th><th class="num">2026 MAE</th><th class="num">2026 RMSE</th><th>选择口径</th></tr></thead><tbody id="bayestune-grid"></tbody></table></div></details>
+<details style="margin-top:12px"><summary>展开季度预测表现</summary><div class="scroll"><table><thead><tr><th>季度</th><th>模型</th><th class="num">完整标签</th><th>最后完整信号</th><th class="num">同向准确率</th><th class="num">Rank IC</th><th class="num">MAE</th><th class="num">RMSE</th><th>样本说明</th></tr></thead><tbody id="bayestune-quarters"></tbody></table></div></details>
+<p class="muted">参数协方差原先6倍为工作近似，本轮是初始信任力度的敏感性分析，并未准确估计完整序列误差协方差。每隔6交易日，仅吸收已兑现的非重叠6日标签；预处理与噪声方差不随2026重估。新增研究独立冻结，原每日信号和所有旧策略不变。</p>
+<div class="notice warning">2026已被反复观察，且20因子名单含全历史筛选前视；这里仍是探索评估。六日标签重叠、参数选择也有不确定性，四季度完整标签太少，不能把当前收益或微小准确率差距当作确定优势。</div>
+</section>
+</main><script src="forecast_model_comparison.js?v=20261020-shortlist3"></script><script src="forecast_signal_diagnostics.js?v=20261020"></script><script src="entry_rules_study.js?v=20261021-neutral"></script><script src="strategy_stability.js?v=20261021"></script><script src="bayes_parameter_study.js?v=20261021"></script></body></html>
