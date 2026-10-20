@@ -231,10 +231,14 @@ def build(max_date=None):
     from prepare_logistic_daily import build_archive
     report["logistic"], logistic_dates = build_archive(report, old.get("logistic") if old else None,
                                                       features, dates, info, bond_dates, repo_dates, now)
+    from prepare_curve_comparison_daily import build_archive as build_comparison
+    report["comparison"], comparison_dates = build_comparison(report, old.get("comparison") if old else None,
+                                                            features, dates, info, bond_dates, repo_dates, now)
     library_changed = write_json_skip_unchanged(str(ROOT / "factor_library.json"), lib)
     signal_changed = write_json_skip_unchanged(str(ROOT / OUTPUT), report)
     update_versions()
     return report, {"new_signal_dates": new_dates, "new_logistic_dates": logistic_dates,
+                    "new_comparison_dates": comparison_dates,
                     "library_changed": library_changed, "signal_changed": signal_changed}
 
 
@@ -261,6 +265,9 @@ def main():
                                    "signals": {k: {n: report["logistic"]["latest"]["models"][k][n]
                                                    for n in ("prediction", "percentile", "signal", "status")}
                                                for k in report["logistic"]["latest"]["models"]}},
+                      "comparison": {"asof": report["comparison"]["meta"]["asof"],
+                                     "healthy": report["comparison"]["meta"]["healthy"],
+                                     "models": len(report["comparison"]["forecast"])},
                       **changes, "signals": {k: {n: report["latest"]["models"][k][n]
                                                   for n in ("prediction", "percentile", "signal", "status")}
                                              for k in ARMS}}, ensure_ascii=False, allow_nan=False))

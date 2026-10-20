@@ -128,6 +128,23 @@ class DailyTests(unittest.TestCase):
         self.assertFalse(changes["library_changed"])
         self.assertEqual(before, {n: daily.sha(n) for n in names})
 
+    def test_all_comparison_charts_update_with_daily_signal(self):
+        import prepare_curve_comparison_daily as comparison
+        current = self.report['comparison']
+        dates = [r['date'] for r in self.report['records']]
+        self.assertEqual(current['daily']['dates'], dates)
+        self.assertEqual(current['meta']['asof'], self.report['meta']['signal_date'])
+        self.assertTrue(current['meta']['healthy'])
+        for name, digest in current['meta']['frozen_hashes'].items():
+            self.assertEqual(digest, daily.sha(name))
+        for rule in ('dynamic', 'fixed'):
+            self.assertEqual(set(current['strategies'][rule]), set(comparison.KEYS))
+            for sim in current['strategies'][rule].values():
+                self.assertEqual(len(sim['equity']), len(dates))
+                self.assertEqual(len(sim['drawdown']), len(dates))
+                self.assertEqual(len(sim['position']), len(dates))
+                self.assertAlmostEqual(sum(sim['daily_pnl']), sim['equity'][-1], places=8)
+
     def test_parallel_logistic_signal_uses_frozen_probability_gate(self):
         import prepare_logistic_daily as logistic
         frozen = daily.read(logistic.MODELS)

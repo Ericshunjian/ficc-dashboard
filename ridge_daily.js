@@ -78,7 +78,7 @@ function ledger() {
   if (choice==='research') {
     if (!research) return null;
     const key=$('family').value+$('size').value,rule=$('rule').value;
-    return {sim:research.strategies[rule][key],label:`历史核对：${names[$('family').value]} · ${$('size').value}＋8 · ${rule==='dynamic' ? '动态离场' : '固定6日'}`,
+    return {sim:research.strategies[rule][key],label:`每日模型对照：${names[$('family').value]} · ${$('size').value}＋8 · ${rule==='dynamic' ? '动态离场' : '固定6日'}`,
       dates:research.daily.dates,asof:research.meta.asof,key};
   }
   if (!data) return null;
@@ -127,9 +127,6 @@ function renderDailyCharts() {
   const chosenSignal=isLogistic?logRec('signal'):data.records.map(r=>r.models[chosenArm].signal);
   const chosenPosition=isLogistic?logSeries(currentSim.position):currentSim.position;
   const chosenName=isLogistic?'Logistic '+chosenArm.slice(1):'岭回归 '+chosenArm.slice(1);
-  line('drawdownChart',dates,[...arms.map((key,i)=>({label:`岭回归${key.slice(1)}＋8`,values:data.strategies[key].drawdown,color:colors[i]})),
-    {label:`Logistic ${logArm.slice(1)}＋8`,values:logSeries(log.strategies[logArm].drawdown),color:colors[3]}], 'drawdown');
-  $('drawdownHint').textContent=`截至${data.meta.signal_date} · 岭回归20回撤 ${fmt(data.strategies.f20.metrics.max_drawdown)}点；岭回归30 ${fmt(data.strategies.f30.metrics.max_drawdown)}点；Logistic ${logArm.slice(1)} ${fmt(log.strategies[logArm].metrics.max_drawdown)}点。`;
   line('percentileChart',dates,[...arms.map((key,i)=>({label:`${key.slice(1)}因子预测排名`,values:data.records.map(r=>r.models[key].percentile),color:colors[i]})),
     {label:'40% 做空门槛',values:dates.map(()=>40),dashed:true,color:'#b45f3d'},
     {label:`Logistic ${logArm.slice(1)}历史排名（仅观察）`,values:logRec('percentile'),color:colors[3]},
@@ -163,7 +160,7 @@ async function loadDaily() {
     }).join('');
     $('quality').innerHTML=`<p>机构日报 ${esc(m.source_dates.institution)} · 回购 ${esc(m.source_dates.repo)} · 曲线与期货 ${esc(m.source_dates.curve)}</p><p>7天OMO ${fmt(m.source_dates.omo_rate,2)}%，核验至${esc(m.source_dates.omo_verified)} · <a href="${esc(m.source_dates.omo_source)}" target="_blank" rel="noopener">来源</a></p><p>因子覆盖：20组 ${rank(row.models.f20.coverage==null?null:row.models.f20.coverage*100)}，30组 ${rank(row.models.f30.coverage==null?null:row.models.f30.coverage*100)}；要求≥90%，8基准全部完整。</p><p>模型 ${esc(m.model_version)}；训练截止${esc(models.meta.train_through)}，${models.meta.train_n}条标签；名单截至${esc(models.meta.selection_asof)}，不重新回归或筛选。</p><p>${m.price_revisions.length?'发现'+m.price_revisions.length+'条历史价格修订，已归档价格和预测未改写。':'未发现归档价格修订。'}</p>`;
     $('quality').innerHTML+=`<p>Logistic冻结模型 ${esc(logisticModels.meta.version)}；20／30／40均按绝对概率60／40，C＝0.001，日常不训练。Logistic信号截至${esc(data.logistic.meta.signal_date)}；${data.logistic.meta.deployment_backfill_through?'部署回填截至'+esc(data.logistic.meta.deployment_backfill_through)+'，不代表此前已发布。':''}</p>`;
-    renderDailyCharts(); renderHistory(); renderInputs(); renderTrades();
+    renderDailyCharts(); renderHistory(); renderInputs(); loadResearch(); renderTrades();
   } catch(error) { $('state').className='notice error'; $('state').textContent='每日信号读取失败：'+error.message; }
 }
 
@@ -173,28 +170,29 @@ function renderResearch() {
   if (!research) return;
   const size=$('size').value,family=$('family').value,key=family+size,rule=$('rule').value;
   const metric=researchSim(key).metrics,forecast=research.forecast[key].test;
-  $('researchState').textContent=`研究截至${research.meta.asof} · 训练${research.meta.train_n}条标签 · 测试2025-01-02起${research.meta.test_n}日 · 当前核对：${names[family]} ${size}＋8 / ${rule==='dynamic'?'动态离场':'固定6日'}`;
-  $('performance').innerHTML=[['累计盈亏',fmt(metric.total)+' 点','包含期末浮动盈亏'],['最大回撤',fmt(metric.max_drawdown)+' 点','完整历史研究区间'],[family==='logistic'?'分类AUC':'预测IC',fmt(family==='logistic'?forecast.auc:forecast.ic,4),forecast.n+'个完成标签'],['已平仓 / 未平仓',metric.closed_trades+' / '+metric.open_trades,'核对模型的历史账本']].map(r=>`<div class="metric"><small>${r[0]}</small><b>${r[1]}</b><small>${r[2]}</small></div>`).join('');
+  $('researchState').textContent=`全部模型比较截至${research.meta.asof} · 训练${research.meta.train_n}条标签 · 2025-01-02起${research.meta.test_n}日 · 当前核对：${names[family]} ${size}＋8 / ${rule==='dynamic'?'动态离场':'固定6日'}${research.meta.healthy?'':' · 部分对照输入待补'}`;
+  $('performance').innerHTML=[['累计盈亏',fmt(metric.total)+' 点','包含期末浮动盈亏'],['最大回撤',fmt(metric.max_drawdown)+' 点','完整更新区间'],[family==='logistic'?'分类AUC':'预测IC',fmt(family==='logistic'?forecast.auc:forecast.ic,4),forecast.n+'个完成标签，末6日待完成'],['已平仓 / 未平仓',metric.closed_trades+' / '+metric.open_trades,'随每日归档更新的模拟账本']].map(r=>`<div class="metric"><small>${r[0]}</small><b>${r[1]}</b><small>${r[2]}</small></div>`).join('');
   line('modelEquityChart',research.daily.dates,families.map((f,i)=>({label:names[f]+(f==='logistic'?'（概率60／40）':''),values:researchSim(f+size).equity,color:colors[i]})));
   line('factorEquityChart',research.daily.dates,[20,30,40].map((n,i)=>({label:n+'因子＋8',values:researchSim(family+n).equity,color:colors[i]})));
-  $('modelChartHint').textContent=`相同${size}因子＋8基准、${rule==='dynamic'?'动态离场':'固定6日'}；Logistic按绝对概率60／40，其余按历史排名60／40。`;
-  $('factorChartHint').textContent=`相同${names[family]} · ${rule==='dynamic'?'动态离场':'固定6日'} · 累计盈亏（点）`;
-  $('researchSummary').textContent='研究截至'+research.meta.asof+' · 以下为动态离场的固定历史对照';
+  line('drawdownChart',research.daily.dates,[20,30,40].map((n,i)=>({label:n+'因子＋8',values:researchSim(family+n).drawdown,color:colors[i]})), 'drawdown');
+  $('drawdownHint').textContent=`截至${research.meta.asof} · ${names[family]} · ${rule==='dynamic'?'动态离场':'固定6日'} · 最大回撤：`+[20,30,40].map(n=>`${n}因子 ${fmt(researchSim(family+n).metrics.max_drawdown)}点`).join('；');
+  $('modelChartHint').textContent=`截至${research.meta.asof} · 相同${size}因子＋8基准、${rule==='dynamic'?'动态离场':'固定6日'}；Logistic按绝对概率60／40，其余按历史排名60／40。`;
+  $('factorChartHint').textContent=`截至${research.meta.asof} · 相同${names[family]} · ${rule==='dynamic'?'动态离场':'固定6日'} · 累计盈亏（点）`;
+  $('researchSummary').textContent='全部比较更新至'+research.meta.asof+' · 以下为动态离场结果；原研究快照截至'+research.meta.research_asof;
   $('ridgeResults').innerHTML=[20,30,40].map(n=>{const f=research.forecast['ridge'+n].test,s=research.strategies.dynamic['ridge'+n].metrics;return `<tr><td>${n}因子＋8基准</td><td class="num">${fmt(f.ic)}</td><td class="num">${fmt(f.rmse)}</td><td class="num">${fmt(s.total)}</td><td class="num">${fmt(s.max_drawdown)}</td></tr>`;}).join('');
   $('modelResults').innerHTML=research.meta.sizes.flatMap(n=>families.map(f=>{
     const k=f+n,forecast=research.forecast[k].test,a=research.strategies.fixed[k].metrics,b=research.strategies.dynamic[k].metrics;
     return `<tr><td>${names[f]}</td><td>${f==='logistic'?'绝对概率60／40':'历史排名60／40'}</td><td class="num">${n}＋8</td><td class="num">${fmt(forecast.ic)}</td><td class="num">${fmt(forecast.rmse)}</td><td class="num">${fmt(forecast.auc)}</td><td class="num">${fmt(a.total)}</td><td class="num">${fmt(b.total)}</td><td class="num">${fmt(b.max_drawdown)}</td></tr>`;
   })).join('');
-  $('comparisonState').textContent=`历史模型结果截至${research.meta.asof}；每日主模型仍为20因子岭回归、动态离场。`;
+  $('comparisonState').textContent=`全部模型结果截至${research.meta.asof}；主模型仍为20因子岭回归、动态离场。补充对照截至${research.meta.supplemental_backfill_through}为首次补算，之后按日归档。`;
   if ($('ledgerSource').value==='research') { tradePage=0; renderTrades(); }
 }
 
 async function loadResearch() {
   try {
-    const [base,log]=await Promise.all(['curve_timing_nonlinear.json','curve_timing_logistic.json'].map(fetchJson));
-    if (JSON.stringify(base.daily.dates)!==JSON.stringify(log.daily.dates)) throw Error('Logistic与原模型研究日期不一致');
-    research={...base,forecast:{...base.forecast,...log.forecast},strategies:{
-      dynamic:{...base.strategies.dynamic,...log.strategies.dynamic},fixed:{...base.strategies.fixed,...log.strategies.fixed}}};
+    if (!data?.comparison) throw Error('全部模型的每日比较尚未生成');
+    research=data.comparison;
+    if (research.meta.asof!==data.meta.signal_date) throw Error('比较图与每日信号日期不一致');
     renderResearch();
   }
   catch(error) { $('researchState').textContent='历史研究读取失败：'+error.message; }
@@ -223,4 +221,4 @@ $('resetAllCharts').onclick=()=>Object.values(charts).forEach(chart=>chart.reset
 document.querySelectorAll('[data-reset-chart]').forEach(button=>{
   button.onclick=()=>charts[button.dataset.resetChart]?.resetZoom();
 });
-loadDaily(); loadResearch();
+loadDaily();
