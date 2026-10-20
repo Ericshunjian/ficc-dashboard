@@ -3,6 +3,8 @@
 合并展示于 `forecast_model_comparison.html#entry-rules`，数据 `entry_rules_study.json`。
 只运行已确认的9种组合，不重训模型、不重筛因子、不搜索新门槛，不替换每日策略。
 
+以上为最初固定6日的9套。2026-10-21新增反向离场对照，合计18套，详见 `exit_rules_README.md`；旧固定离场数据不覆盖。
+
 ## 固定输入与规则
 
 预测直接复用 `forecast_model_comparison.json` 中的原Ridge、时序Ridge、时序贝叶斯，初始训练统一截至2025年底；贝叶斯保留原有延迟递推。价格使用 `curve_timing_bayes.json` 的同日3T−TL点数，要求日历完全一致。
