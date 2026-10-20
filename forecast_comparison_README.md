@@ -50,6 +50,8 @@
 
 随后确认新增完整中性区退出，独立写 `neutral_exit_study.json`，详见 `neutral_exit_README.md`。页面并列27组配置，纯方向重复项明确标注；不开新门槛、不做55／45缓冲。原18套、训练测试边界和生产均不改。
 
+接着按用户确认，对两套时序Ridge候选做月／季度、近30／60日、多空、最好3笔和6起点稳定性检查，同时诊断时序贝叶斯的已归档系数更新，结果 `strategy_stability.json` 展示于本页 `#stability`。详见 `strategy_stability_README.md`；不新增交易规则，不按最好起点重选生产。
+
 ## 运行
 
 ```powershell
