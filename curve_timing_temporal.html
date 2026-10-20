@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,"><title>3T−TL · 历史特征与时序模型</title>
+<script src="vendor/chart.umd.min.js"></script><script src="vendor/hammer.min.js"></script><script src="vendor/chartjs-plugin-zoom.min.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#fff;color:#253449;font:14px/1.65 'Microsoft YaHei',sans-serif}main{max-width:1450px;margin:auto;padding:24px}header,.tools{display:flex;align-items:center;gap:14px;flex-wrap:wrap}header{justify-content:space-between}h1{font-size:24px;margin:0}h2{font-size:17px;margin:0 0 10px}p{margin:8px 0}a{color:#5470c6;text-decoration:none}.muted,small{font-size:12px;color:#68798b}.panel{border:1px solid #e4e9f0;border-radius:9px;padding:18px;margin:16px 0;min-width:0}.notice{border-left:4px solid #5470c6;background:#f5f8ff;padding:12px 16px;margin:16px 0}.warning{border-color:#b88435;background:#fff8ed}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.grid .panel{margin:0}.chart{height:285px;width:100%;min-width:0;position:relative}.chart canvas{max-width:100%}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.stats>div{border:1px solid #e4e9f0;border-radius:7px;padding:12px}.stats b{display:block;font-size:24px;color:#5470c6}.scroll{overflow:auto}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:12px}th,td{padding:8px 10px;border-bottom:1px solid #edf0f4;text-align:left}th{background:#f8fafc;color:#68798b}.num{text-align:right;font-variant-numeric:tabular-nums}.wrap{white-space:normal;min-width:200px;max-width:460px}select,button{font:inherit;color:#253449;border:1px solid #d4deeb;border-radius:5px;padding:5px 9px;background:#fff}summary{cursor:pointer;color:#5470c6}.pill{font-size:11px;padding:1px 5px;background:#edf3ff;border-radius:3px;color:#5470c6}@media(max-width:900px){main{padding:16px}.grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.chart{height:250px}h1{font-size:21px}}
+</style>
+</head>
+<body><main>
+<header><div><h1>3T−TL · 历史特征与时序模型</h1><div class="muted">原Ridge／时序Ridge／时序贝叶斯／时序XGBoost · 统一交易规则</div></div><nav><a href="ridge_daily.html">每日策略</a>　<a href="curve_timing_bayes.html">贝叶斯研究</a>　<a href="curve_timing_thresholds.html">门槛研究</a>　<a href="index.html">首页</a></nav></header>
+<div id="state" class="notice">正在读取时序研究…</div>
+<section class="panel">
+<h2>这次增加什么信息</h2>
+<p><b>原输入28项：</b>固定20因子＋8基准，名单不重新筛选。<b>新增64项：</b>3T−TL的过去1／3／10日变动、20日波动率，共4项；固定20因子分别增加滞后1日、滞后5日、当前值减5日前值，共60项。三个时序模型统一使用92项，8基准不额外展开。</p>
+<p><b>目标与数据时点：</b>S＝3T−TL，预测S[t+6]−S[t]；所有历史特征只回看期货交易日。20日波动率是20个日度价差变动的标准差（ddof=0，不年化），不是期货价格收益率波动。价差、价格、利率及技术指标不缩尾；指定机构金额及其历史项沿用训练1%／99%缩尾，缺失用各自训练中位数填补。</p>
+<p><b>公平比较：</b>初始训练均截至2025-12-31，649条已完成标签；调参模型只训练至2025-06-30，在下半年120条完整标签验证。Ridge收缩强度、贝叶斯漂移参数和XGBoost轮数按验证RMSE选择，未依据2026年收益选择。另列同收缩强度的归因对照。</p>
+<p><b>交易规则不变：</b>预测在过去250日预测中的百分位，至少60条且排除当日；严格低于40%做空、高于60%做多，中间和边界空仓。方向由百分位决定，不受预测正负限制。t收盘观察，t+1代理开盘价＝t收盘价；固定±1／0，转中性退出、反向可反手，同向不重置持有期，最长6个交易日，未扣成本。</p>
+<div class="tools"><label>重点模型 <select id="model"><option value="ridge_temporal">时序Ridge</option><option value="ridge_original">原Ridge</option><option value="dlm_temporal">时序贝叶斯递推</option><option value="xgb_temporal">时序XGBoost</option></select></label><label>排名初始化 <select id="mode"><option value="cold">严格：2026年冷启动</option><option value="seeded">探索：训练末历史评分初始化</option></select></label><button id="reset">重置全部图</button><a href="curve_timing_temporal.json" download>下载研究结果</a></div>
+<div id="modeNote" class="notice"></div><div id="summary" class="stats"></div>
+</section>
+<div id="finding" class="notice warning"></div>
+<section class="panel"><h2>四组模型的预测与交易结果</h2><p class="muted" id="comparisonHint"></p><div class="scroll"><table><thead><tr><th>模型</th><th class="num">输入数</th><th class="num">Rank IC</th><th class="num">RMSE</th><th class="num">方向准确率</th><th class="num">累计盈亏</th><th class="num">最大回撤</th><th class="num">已平／未平</th><th class="num">交易胜率</th><th class="num">每笔盈亏</th><th class="num">盈亏比</th></tr></thead><tbody id="comparison"></tbody></table></div><p class="muted" id="zeroReference"></p></section>
+<div class="grid">
+<section class="panel"><h2>累计盈亏（价差点）</h2><p class="muted">滚轮缩放横轴、拖拽平移、双击恢复；图例可隐藏曲线。</p><div class="chart"><canvas id="equity"></canvas></div></section>
+<section class="panel"><h2>最大回撤路径（点）</h2><p class="muted">逐日盯市，累计盈亏与回撤都包括未平仓浮动。</p><div class="chart"><canvas id="drawdown"></canvas></div></section>
+<section class="panel"><h2>六日预测与实际变动（点）</h2><p class="muted">重点模型；贝叶斯额外展示80%预测区间，不参与交易。</p><div class="chart"><canvas id="prediction"></canvas></div></section>
+<section class="panel"><h2>预测历史百分位（%）</h2><p class="muted">历史排名不是走扩概率；冷启动最初60条没有排名。</p><div class="chart"><canvas id="rank"></canvas></div></section>
+<section class="panel"><h2>重点模型逐月多空盈亏（点）</h2><p class="muted">按每日持仓盈亏归属月份，跨月交易不集中算在平仓月。</p><div class="chart"><canvas id="monthly"></canvas></div></section>
+<section class="panel"><h2>每日信号与实际模拟持仓</h2><p class="muted">信号日t的方向，与当日已持仓方向不同；当日信号用于下一交易日。</p><div class="chart"><canvas id="position"></canvas></div></section>
+</div>
+<section class="panel"><h2>归因对照：历史信息还是收缩强度</h2><p>主实验的时序Ridge同时增加了历史输入、重新选择了收缩参数。下表保留两个交叉对照：在相同alpha下比较输入，避免把所有差异都归因于历史特征。此表用于诊断，不据此挑选2026年盈利最高者。</p><div class="scroll"><table><thead><tr><th>输入与模型</th><th class="num">alpha</th><th class="num">Rank IC</th><th class="num">RMSE</th><th class="num">累计盈亏</th><th class="num">最大回撤</th></tr></thead><tbody id="controls"></tbody></table></div></section>
+<section class="panel"><h2>各模型逐月盈亏（点）</h2><div class="scroll"><table><thead><tr><th>月份</th><th class="num">原Ridge</th><th class="num">时序Ridge</th><th class="num">时序贝叶斯</th><th class="num">时序XGBoost</th></tr></thead><tbody id="months"></tbody></table></div></section>
+<section class="panel"><h2>研究区间末日信号</h2><p class="muted">独立研究结果，不替换每日主报，不确认账户持仓或实际成交。</p><div class="scroll"><table><thead><tr><th>模型</th><th>信号日期</th><th class="num">预测变动（点）</th><th class="num">历史百分位</th><th>方向信号</th><th>当日模拟持仓</th><th>下一交易日目标</th></tr></thead><tbody id="latest"></tbody></table></div></section>
+<section class="panel"><h2>重点模型多空交易拆分</h2><div class="scroll"><table><thead><tr><th>方向</th><th class="num">已平／未平</th><th class="num">交易胜率</th><th class="num">平均盈利</th><th class="num">平均亏损绝对值</th><th class="num">盈亏比</th><th class="num">每笔盈亏</th><th class="num">已实现盈亏</th><th class="num">浮动盈亏</th></tr></thead><tbody id="sides"></tbody></table></div></section>
+<section class="panel"><h2>重点模型历史开平仓记录</h2><div class="scroll"><table><thead><tr><th>信号日</th><th>入场日</th><th>方向</th><th class="num">入场价</th><th>平仓日</th><th class="num">平仓价</th><th class="num">天数</th><th class="num">盈亏</th><th>状态／离场原因</th></tr></thead><tbody id="trades"></tbody></table></div></section>
+<section class="panel"><details><summary>展开全部历史多空信号</summary><p class="muted">每格为方向／预测百分位，未满60条历史时显示“空仓／—”；最后一日仅为下一交易日计划。</p><div class="scroll"><table><thead><tr><th>信号日期</th><th class="num">3T−TL</th><th>原Ridge</th><th>时序Ridge</th><th>时序贝叶斯</th><th>时序XGBoost</th></tr></thead><tbody id="history"></tbody></table></div></details></section>
+<section class="panel"><h2>训练期验证与参数</h2><div id="parameters"></div><details><summary>展开2025年验证结果</summary><div class="scroll"><table><thead><tr><th>模型／候选</th><th>参数</th><th class="num">RMSE</th><th class="num">Rank IC</th><th class="num">方向准确率</th><th>选择</th></tr></thead><tbody id="validation"></tbody></table></div></details></section>
+<section class="panel"><details><summary>展开92项输入、Ridge系数与XGBoost重要性</summary><p class="muted">Ridge系数为训练标准化单位的条件系数，不是资金权重。XGBoost为平均分裂增益归一化占比，不是收益贡献，也不能直接与Ridge系数比较。高度相关输入之间会分摊系数／重要性。可在表格中横向滚动。</p><div class="scroll"><table><thead><tr><th>输入</th><th>类别</th><th class="num">最新原值</th><th class="num">训练缺失数</th><th>缩尾</th><th class="num">Ridge系数</th><th class="num">贝叶斯末日系数</th><th class="num">XGB增益占比</th></tr></thead><tbody id="features"></tbody></table></div></details></section>
+<div class="notice warning"><b>研究边界：</b>固定20因子沿用截至10月的全历史筛选，仍含选择前视；2026年已经反复观察。本页是探索比较，尚未证明新历史特征有稳定增量。原值、滞后5日与5日变动在预处理前存在代数冗余；Ridge可以处理共线，但变动项不是额外独立信息。没有因结果不理想而扩大参数搜索或更改交易门槛。</div>
+<p class="muted">初始模型和预处理冻结；仅贝叶斯按已兑现结果递推。该模型通过2025年验证允许discount=1，表示不增加状态漂移，仍会更新后验系数。回测代理开盘价与收盘价相同，未考虑真实开盘跳变与成本。所有既有生产文件及研究预测保持原样。</p>
+</main><script src="curve_timing_temporal.js?v=20261020"></script></body></html>
