@@ -23,7 +23,15 @@ def reverses(direction, prediction, action, entry_rule):
     return direction*action<0 if entry_rule=='rank' else direction*prediction<0
 
 
-def simulate_reverse(dates, level, prediction, gate, entry_rule, negative_cut, horizon=6):
+def early_exit_reason(direction, prediction, action, entry_rule, exit_policy):
+    if exit_policy=='neutral':
+        return 'neutral' if action==0 else 'reverse' if direction*action<0 else None
+    return 'reverse' if reverses(direction,prediction,action,entry_rule) else None
+
+
+def simulate_reverse(dates, level, prediction, gate, entry_rule, negative_cut, horizon=6, exit_policy='reverse'):
+    if exit_policy not in ('reverse','neutral'):
+        raise ValueError('Unknown exit policy')
     level,prediction=np.asarray(level,float),np.asarray(prediction,float)
     n=len(dates)
     if n==0 or len(level)!=n or len(prediction)!=n or not np.isfinite(level).all() or not np.isfinite(prediction).all():
@@ -46,16 +54,17 @@ def simulate_reverse(dates, level, prediction, gate, entry_rule, negative_cut, h
         action=int(gate['signal'][t]) if gate['eligible'][t] else 0
         reason=None
         if active is not None:
+            early=early_exit_reason(active['direction'],prediction[t],action,entry_rule,exit_policy)
             if t-active['entry_index']>=horizon:
                 reason='max_hold';finish(t,reason)
-            elif reverses(active['direction'],prediction[t],action,entry_rule) and t+1<n:
-                reason='reverse';finish(t,reason)
+            elif early and t+1<n:
+                reason=early;finish(t,reason)
         opened=False
         if active is None and action and t+1<n:
             ranked=entry_rule=='rank'
             active={'entry_index':t,'signal_date':day,'entry_session':dates[t+1],
                     'entry_price':float(level[t]),'direction':action,'entry_prediction':float(prediction[t]),
-                    'entry_rule':entry_rule,'exit_rule':'reverse','entry_threshold':None,
+                    'entry_rule':entry_rule,'exit_rule':exit_policy,'entry_threshold':None,
                     'entry_percentile':float(gate['percentile'][t]) if ranked else None,
                     'entry_history_n':int(gate['history_n'][t]) if ranked else None,
                     'entry_cutoff':(60. if action==1 else 40.) if ranked else
@@ -64,8 +73,9 @@ def simulate_reverse(dates, level, prediction, gate, entry_rule, negative_cut, h
             opened=True
         next_position=active['direction'] if active else 0
         if t==n-1:
-            if active is not None and reverses(active['direction'],prediction[t],action,entry_rule):
-                reason='reverse';next_position=action
+            early=early_exit_reason(active['direction'],prediction[t],action,entry_rule,exit_policy) if active else None
+            if early:
+                reason=early;next_position=action
             elif active is None:
                 next_position=action
         decisions.append({'date':day,'next_position':next_position,'exit_reason':reason,'opened':opened})
@@ -89,11 +99,11 @@ def simulate_reverse(dates, level, prediction, gate, entry_rule, negative_cut, h
             'drawdown':dd.tolist(),'trades':trades,'decisions':decisions,'metrics':metrics}
 
 
-def summarize(dates, level, prediction, gate, entry_rule, cut, fixed):
+def summarize(dates, level, prediction, gate, entry_rule, cut, fixed, exit_policy='reverse'):
     # Entry diagnostics are identical to the original report; replace only the
     # simulated execution and execution-dependent summaries in this new artifact.
     row=copy.deepcopy(fixed)
-    sim=simulate_reverse(dates,level,prediction,gate,entry_rule,cut)
+    sim=simulate_reverse(dates,level,prediction,gate,entry_rule,cut,exit_policy=exit_policy)
     row.update(sim=sim,trade_stats=trade_stats(sim['trades']),
                sides={str(d):trade_stats([t for t in sim['trades'] if t['direction']==d]) for d in (-1,1)})
     pnl=np.array(sim['daily_pnl']);position=np.array(sim['position'])
@@ -103,7 +113,7 @@ def summarize(dates, level, prediction, gate, entry_rule, cut, fixed):
                    for mask in [np.array([day.startswith(month) for day in dates])]}
     row['latest'].update(position=sim['position'][-1],next_position=sim['decisions'][-1]['next_position'])
     row['exit_counts']={reason:sum(t['closed'] and t['reason']==reason for t in sim['trades'])
-                        for reason in ('max_hold','reverse')}
+                        for reason in (('max_hold','reverse','neutral') if exit_policy=='neutral' else ('max_hold','reverse'))}
     if 'years' in row:
         row['years']={year:interval_summary(dates,row,np.array([d.startswith(year) for d in dates]))
                        for year in sorted({d[:4] for d in dates})}

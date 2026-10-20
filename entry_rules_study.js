@@ -1,8 +1,8 @@
 (()=>{
 'use strict';
-const el=id=>document.getElementById('entry-'+id),keys=['ridge_original','ridge_temporal','dlm_temporal'],rules=['sign','asymmetric','rank'],exitKeys=['fixed','reverse'],exitNames={fixed:'固定6日',reverse:'反向离场·最长6日'},colors=['#5470c6','#16847b','#c78b42'],charts={};let data,history,exits;
+const el=id=>document.getElementById('entry-'+id),keys=['ridge_original','ridge_temporal','dlm_temporal'],rules=['sign','asymmetric','rank'],exitKeys=['fixed','reverse','neutral'],exitNames={fixed:'固定6日',reverse:'反向离场·最长6日',neutral:'中性或反向退出·最长6日'},colors=['#5470c6','#16847b','#c78b42'],charts={};let data,history,exits,neutral;
 const fmt=(v,n=4)=>v==null||!Number.isFinite(v)?'—':v.toFixed(n),pct=v=>v==null?'—':fmt(v*100,1)+'%',side=v=>v===1?'多':v===-1?'空':'空仓';
-const reasonName=r=>({reverse:'方向反转',max_hold:'满6日',open:'未平浮动'}[r]||'—');
+const reasonName=r=>({reverse:'方向反转',neutral:'进入中性区',max_hold:'满6日',open:'未平浮动'}[r]||'—');
 function graph(id,dates,series,bounds){
  if(charts[id])charts[id].destroy();
  const cut=dates.findIndex(d=>d>'2025-12-31');
@@ -13,12 +13,13 @@ function graph(id,dates,series,bounds){
 function render(){
  if(!data)return;
  const period=el('period').value,key=el('model').value,rule=el('rule').value,exit=el('exit').value,isHistory=period.startsWith('history_'),p=(isHistory?history:data).periods[period],dates=p.dates;
- const get=(k,q,x)=>(x==='fixed'?p.models:exits.periods[period].models)[k][q],models=exit==='fixed'?p.models:exits.periods[period].models,m=models[key],r=m[rule];
+ const modelsFor=x=>x==='fixed'?p.models:x==='reverse'?exits.periods[period].models:neutral.periods[period].models;
+ const get=(k,q,x)=>modelsFor(x)[k][q],models=modelsFor(exit),m=models[key],r=m[rule];
  const prediction=p.prediction?.[key]||data.models[key].prediction.slice(p.start_index),names=data.meta.rules;
  el('state').textContent=isHistory?`全历史拟合回放：${dates[0]}至${dates.at(-1)}，${dates.length}个价格日期。模型初始训练截至2025-12-31；此前是样本内回看，2026沿用原已归档预测。不是从2023年起真实发布的信号，也不是全期样本外业绩。`:`研究快照截至${data.meta.asof}；初始训练截至${data.meta.train_through}，2026年共${data.meta.forecast_n}条预测、${data.meta.completed_n}条六日标签完成。沿用既定预测，贝叶斯保留原有延迟递推。`;
  el('state').classList.toggle('warning',isHistory);
  el('period-note').textContent=`${dates[0]}至${dates.at(-1)}，共${dates.length}个收盘日期。`+(isHistory?p.note:period==='common'?data.meta.common_note:data.meta.full_note);
- el('download').href=exit==='reverse'?'exit_rules_study.json':isHistory?'entry_rules_history.json':'entry_rules_study.json';
+ el('download').href=exit==='neutral'?'neutral_exit_study.json':exit==='reverse'?'exit_rules_study.json':isHistory?'entry_rules_history.json':'entry_rules_study.json';
  el('rank-note').textContent=isHistory?'仅排名规则使用；不含当日，从2023年起先等待60条评分。2026继承样本内回溯排名，不是当时发布的预测历史。':'仅排名规则使用；不含当日，2026冷启动，先等待60条。';
  for(const id of ['history-note','stage-panel','year-panel'])el(id).hidden=!isHistory;
  if(isHistory){
@@ -26,11 +27,12 @@ function render(){
   el('stages').innerHTML=keys.flatMap(k=>rules.flatMap(q=>exitKeys.map(x=>{const v=get(k,q,x);return `<tr><td>${data.models[k].label}</td><td>${names[q]}</td><td>${exitNames[x]}</td><td class="num">${fmt(v.stages.train?.total)}</td><td class="num">${fmt(v.stages.test?.total)}</td><td class="num">${fmt(v.sim.metrics.total)}</td></tr>`;}))).join('');
   el('years').innerHTML=Object.keys(r.years).map(year=>`<tr><td>${year}${year<'2026'?'（样本内）':'（继承账户）'}</td>${rules.map(q=>`<td class="num">${fmt(m[q].years[year].total)}</td>`).join('')}<td class="num">${fmt(r.years[year].long_pnl)}</td><td class="num">${fmt(r.years[year].short_pnl)}</td></tr>`).join('');
  }
+ el('summary').innerHTML=keys.flatMap(k=>rules.map(q=>{const f=get(k,q,'fixed'),v=get(k,q,'reverse'),n=get(k,q,'neutral'),s=n.sim.metrics;return `<tr${k===key&&q===rule?' class="selected"':''}><td>${data.models[k].label}</td><td>${names[q]}</td><td class="num">${fmt(f.sim.metrics.total)}</td><td class="num">${fmt(v.sim.metrics.total)}</td><td class="num">${fmt(s.total)}${n.same_as_reverse?'<br><small>同反向退出</small>':''}</td><td class="num">${fmt(s.total-v.sim.metrics.total)}</td><td class="num">${fmt(s.max_drawdown)}</td><td class="num">${n.trade_stats.closed_n}</td><td class="num">${pct(n.trade_stats.win_rate)}</td></tr>`;})).join('');
  el('comparison').innerHTML=keys.flatMap(k=>rules.flatMap(q=>exitKeys.map(x=>{const v=get(k,q,x),s=v.sim.metrics,t=v.trade_stats;return `<tr${k===key&&q===rule&&x===exit?' class="selected"':''}><td>${data.models[k].label}</td><td>${names[q]}</td><td>${exitNames[x]}</td><td class="num">${fmt(s.total)}</td><td class="num">${fmt(s.max_drawdown)}</td><td class="num">${t.closed_n}／${t.open_n}</td><td class="num">${pct(t.win_rate)}</td><td class="num">${fmt(t.mean_pnl)}</td><td class="num">${fmt(s.average_holding,2)}</td><td class="num">${fmt(t.payoff_ratio,2)}</td><td class="num">${fmt(t.floating_pnl)}</td><td class="num">${pct(s.exposure)}</td></tr>`;}))).join('');
- const fixed=get(key,rule,'fixed'),rev=get(key,rule,'reverse'),delta=rev.sim.metrics.total-fixed.sim.metrics.total;
- el('finding').textContent=`所选${data.models[key].label}／${names[rule]}：固定6日盈利${fmt(fixed.sim.metrics.total)}点，反向离场盈利${fmt(rev.sim.metrics.total)}点，差额${fmt(delta)}点；最大回撤分别为${fmt(fixed.sim.metrics.max_drawdown)}／${fmt(rev.sim.metrics.max_drawdown)}点。离场改变后，后续入场日期和交易节奏也会改变，不能只在原账本上删掉某几天。`+(isHistory?'全历史含训练期拟合，不据总盈利确定模型；2026连续段继承此前持仓及排名。':'请同时比较完整2026与共同起点；单一起点领先不代表稳定优势。');
- el('exit-stats').textContent=`当前账本：${data.models[key].label}／${names[rule]}／${exitNames[exit]}。已平${r.trade_stats.closed_n}笔，平均持有${fmt(r.sim.metrics.average_holding,2)}日；反向离场${r.sim.trades.filter(t=>t.closed&&t.reason==='reverse').length}笔，满6日退出${r.sim.trades.filter(t=>t.closed&&t.reason==='max_hold').length}笔。`;
- for(const field of ['equity','drawdown'])graph(field,dates,rules.flatMap((q,i)=>exitKeys.map(x=>({label:names[q]+'·'+exitNames[x],data:get(key,q,x).sim[field],color:colors[i],dash:x==='fixed'?[4,3]:[]}))));
+ const rev=get(key,rule,'reverse'),neu=get(key,rule,'neutral'),delta=neu.sim.metrics.total-rev.sim.metrics.total;
+ el('finding').textContent=`所选${data.models[key].label}／${names[rule]}：中性退出相对仅反向退出，盈亏变化${fmt(delta)}点；最大回撤从${fmt(rev.sim.metrics.max_drawdown)}变为${fmt(neu.sim.metrics.max_drawdown)}点。`+(neu.same_as_reverse?'两版当前交易路径相同，不能当作独立新信号。':'离场改变也会改变后续开仓和持有节奏。')+(isHistory?'全历史含训练期拟合；2026连续段继承此前持仓及排名。':'请同时看完整2026与共同起点，不因单一期限领先就替换生产。');
+ el('exit-stats').textContent=`当前账本：${data.models[key].label}／${names[rule]}／${exitNames[exit]}。已平${r.trade_stats.closed_n}笔，平均持有${fmt(r.sim.metrics.average_holding,2)}日；中性退出${r.sim.trades.filter(t=>t.closed&&t.reason==='neutral').length}笔，反向退出${r.sim.trades.filter(t=>t.closed&&t.reason==='reverse').length}笔，满6日退出${r.sim.trades.filter(t=>t.closed&&t.reason==='max_hold').length}笔。`;
+ for(const field of ['equity','drawdown'])graph(field,dates,exitKeys.map((x,i)=>({label:exitNames[x],data:get(key,rule,x).sim[field],color:['#a6afbd','#5470c6','#16847b'][i],dash:x==='fixed'?[4,3]:[]})));
  graph('position',dates,[{label:'收盘新开仓信号',data:r.signal,color:'#c78b42',stepped:true},{label:'实际区间持仓',data:r.sim.position,color:'#16847b',stepped:true}],{min:-1.2,max:1.2,ticks:{stepSize:1}});
  graph('rank',dates,[{label:'历史预测百分位',data:m.rank.percentile,color:'#5470c6'},{label:'60%',data:dates.map(()=>60),color:'#a6afbd',dash:[4,4]},{label:'40%',data:dates.map(()=>40),color:'#a6afbd',dash:[4,4]}],{min:0,max:100});
  el('months').innerHTML=Object.keys(r.months).map(month=>`<tr><td>${month}</td>${rules.map(q=>`<td class="num">${fmt(m[q].months[month].total)}</td>`).join('')}<td class="num">${fmt(r.months[month].long)}</td><td class="num">${fmt(r.months[month].short)}</td></tr>`).join('');
@@ -43,11 +45,12 @@ function init(){
  const m=data.meta;
  el('cuts').textContent='固定做空边界（预测须严格低于）：'+keys.map(k=>data.models[k].label+' '+fmt(-m.negative_cuts[k],6)+'点').join('；')+'。来自2025年负预测绝对幅度的2/3分位。校准模型训练至2025年6月，最终模型训练至年底，两者预测分布可能变化；2026年不重划边界。';
  const requested=new URLSearchParams(location.search).get('entry_period');
- el('exit').value=new URLSearchParams(location.search).get('entry_exit')==='reverse'?'reverse':'fixed';
+ const requestedExit=new URLSearchParams(location.search).get('entry_exit');
+ el('exit').value=exitKeys.includes(requestedExit)?requestedExit:'fixed';
  el('period').value=requested&&({...data.periods,...history.periods})[requested]?requested:m.default_period;el('model').value=m.default_model;el('rule').value=m.default_rule;render();
 }
 for(const id of ['model','period','rule','exit'])el(id).onchange=render;
 const reset=()=>Object.values(charts).forEach(c=>c.resetZoom());
 el('reset').onclick=reset;document.getElementById('reset').addEventListener('click',reset);
-Promise.all(['entry_rules_study.json','entry_rules_history.json','exit_rules_study.json'].map(file=>fetch(file+'?v='+Date.now(),{cache:'no-store'}).then(r=>{if(!r.ok)throw Error(file+' '+r.status);return r.json();}))).then(([d,h,e])=>{data=d;history=h;exits=e;init();}).catch(e=>{el('state').textContent='交易比较读取失败：'+e.message;});
+Promise.all(['entry_rules_study.json','entry_rules_history.json','exit_rules_study.json','neutral_exit_study.json'].map(file=>fetch(file+'?v='+Date.now(),{cache:'no-store'}).then(r=>{if(!r.ok)throw Error(file+' '+r.status);return r.json();}))).then(([d,h,e,n])=>{data=d;history=h;exits=e;neutral=n;init();}).catch(e=>{el('state').textContent='交易比较读取失败：'+e.message;});
 })();
