@@ -20,6 +20,7 @@ from prepare_temporal_study import PROTECTED as TEMPORAL_PROTECTED, restore_xgb,
 ROOT = Path(__file__).resolve().parent
 OUTPUT = 'forecast_model_comparison.json'
 MODELS = 'forecast_model_comparison_models.json'
+SHORTLIST = 'forecast_model_shortlist.json'
 KEYS = ('ridge_original', 'dlm_original', 'xgb_original', 'ridge_temporal', 'dlm_temporal', 'xgb_temporal')
 LABELS = ('原Ridge', '原动态贝叶斯', '原XGBoost', '时序Ridge', '时序贝叶斯递推', '时序XGBoost')
 PROTECTED = TEMPORAL_PROTECTED + ('curve_timing_temporal.json', 'curve_timing_temporal_models.json')
@@ -269,6 +270,13 @@ def build():
                                      'quarters_positive_ic': sum(q['rank_ic'] is not None and q['rank_ic'] > 0 for q in sufficient)},
                        'fitting_mode': '已兑现标签递推' if key.startswith('dlm') else '系数冻结'}
     selection = select_candidates(rows, benchmarks)
+    retained = read(SHORTLIST)
+    if len(retained['selected']) != len(set(retained['selected'])) or not set(retained['selected']) <= set(KEYS):
+        raise ValueError('User shortlist contains duplicate or unknown model versions')
+    if not set(retained['user_added']) <= set(retained['selected']):
+        raise ValueError('User-added models must be retained')
+    if not all(k in retained['roles'] for k in retained['selected']):
+        raise ValueError('Each retained model requires an explicit role')
     selected_pairs = {}
     for a in selection['selected']:
         for b in selection['selected']:
@@ -297,7 +305,7 @@ def build():
                           'xgb_temporal': '92输入；深度2，2025验证早停1轮，冻结'}}
     result = {'meta': meta, 'dates': td, 'target': raw_numbers(ty),
                'label_exit_dates': [td[i + 6] if i + 6 < len(td) else None for i in range(len(td))],
-               'benchmarks': benchmarks, 'models': models, 'selection': selection,
+               'benchmarks': benchmarks, 'models': models, 'selection': selection, 'retained': retained,
                'benchmark_rolling': {'zero': rolling_metrics(np.zeros(len(td)), ty)},
                'paired_intervals': intervals, 'selected_pairs': selected_pairs,
                'xgb_original_validation': xgb['validation'],

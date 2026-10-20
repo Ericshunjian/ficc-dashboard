@@ -131,6 +131,10 @@ class PredictionArtifactTests(unittest.TestCase):
         self.assertEqual(study.select_candidates(rows,r['benchmarks']),r['selection'])
         self.assertLessEqual(len(r['selection']['selected']),2)
         self.assertEqual(r['selection']['selected'],['ridge_temporal','ridge_original'])
+        self.assertEqual(r['retained'],study.read(study.SHORTLIST))
+        self.assertEqual(r['retained']['selected'],['ridge_temporal','ridge_original','dlm_temporal'])
+        self.assertEqual(r['retained']['user_added'],['dlm_temporal'])
+        self.assertNotIn('dlm_temporal',r['selection']['selected'])
         self.assertIsNone(r['selection']['amplitude_candidate'])
         ci=r['paired_intervals']['ridge_temporal']['direction_accuracy']
         self.assertLess(ci['low'],0)

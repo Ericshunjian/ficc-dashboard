@@ -1,0 +1,1 @@
+{"decided_on":"2026-10-20","source":"用户确认保留原Ridge、时序Ridge，并额外保留时序贝叶斯。","selected":["ridge_temporal","ridge_original","dlm_temporal"],"user_added":["dlm_temporal"],"roles":{"ridge_temporal":"方向候选","ridge_original":"排序对照候选","dlm_temporal":"自适应观察候选（用户保留）"},"note":"自动筛选记录仍保留两组；第三组为用户指定保留，不改写为自动入选。每日策略不变，尚未批准新交易映射。"}
