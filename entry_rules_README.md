@@ -28,6 +28,21 @@
 
 固定六日先隔离开仓规则差异，本轮不加入动态离场、止盈止损或模型投票。规则在观察2026年结果后提出，仍属于探索回放；原固定名单也含全历史筛选前视。所有9组完整保留，不按盈利最高者自动改生产。
 
+## 用户确认补充全历史（2026-10-20）
+
+`prepare_entry_rules_history.py` 生成独立 `entry_rules_history.json`，旧2026归档不变。共同价差从2023-04-21开始，844个收盘日期；2025年底前655个价格日期、649条已完成训练标签。使用已冻结2025年底系数、预处理和2025校准边界回看，早期缺失使用训练中位数，因此2023—2025明确标为样本内拟合，不能当作当时能获得的交易信号。
+
+贝叶斯在2025年底以前只用冻结初始后验均值评分，等于时序Ridge；不伪造更早的递推预测，不重复吸收初始训练标签。2026三模型均逐值复制已归档预测。两组早期预测相同不代表过滤交易也相同，因为模型各自强负边界不同。
+
+新增“全历史连续回放”和“仅2023—2025样本内”两个选项。全历史账户保持跨年持仓、六日到期节奏和过去250条排名；2026排名参考此前样本内评分。阶段／年度表按每日盯市拆分，不在边界重置。2026段不等于原“2026空仓冷启动”，两种均保留；不使用全历史混合盈利替代原预测筛选或确定新模型。
+
+仅训练期账户最后六条目标不引用2026标签，未平交易按2025最后收盘盯市；全历史可以包含跨年交易，最后六日仍按当前实际价格记浮动。图表竖虚线标明2026开始。
+
+```powershell
+& 'D:\Applicaitons\Anaconda\python.exe' -X utf8 prepare_entry_rules_history.py
+& 'D:\Applicaitons\Anaconda\python.exe' -X utf8 -m unittest discover -s tests -p test_entry_rules_history.py
+```
+
 ```powershell
 & 'D:\Applicaitons\Anaconda\python.exe' -X utf8 prepare_entry_rules_study.py
 & 'D:\Applicaitons\Anaconda\python.exe' -X utf8 -m unittest discover -s tests -p test_entry_rules_study.py
