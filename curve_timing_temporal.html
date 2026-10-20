@@ -11,6 +11,7 @@
 <body><main>
 <header><div><h1>3T−TL · 历史特征与时序模型</h1><div class="muted">原Ridge／时序Ridge／时序贝叶斯／时序XGBoost · 统一交易规则</div></div><nav><a href="ridge_daily.html">每日策略</a>　<a href="curve_timing_bayes.html">贝叶斯研究</a>　<a href="curve_timing_thresholds.html">门槛研究</a>　<a href="index.html">首页</a></nav></header>
 <div id="state" class="notice">正在读取时序研究…</div>
+<div class="notice"><a href="forecast_model_comparison.html"><b>先看六模型纯预测能力筛选</b></a>：统一比较原／时序Ridge、贝叶斯、XGBoost的方向准确率、误差和排序；暂留候选，不用交易盈利选模型。</div>
 <section class="panel">
 <h2>这次增加什么信息</h2>
 <p><b>原输入28项：</b>固定20因子＋8基准，名单不重新筛选。<b>新增64项：</b>3T−TL的过去1／3／10日变动、20日波动率，共4项；固定20因子分别增加滞后1日、滞后5日、当前值减5日前值，共60项。三个时序模型统一使用92项，8基准不额外展开。</p>
