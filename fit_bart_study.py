@@ -20,7 +20,7 @@ import numpy as np
 from scipy.special import ndtr
 
 ROOT = Path(__file__).resolve().parent
-CACHE = ROOT / 'output' / 'bayes'
+CACHE = ROOT / 'output' / 'bayes' / 'train_202512'
 SEED, CHAINS, DRAWS, BURNIN = 20261020, 4, 1500, 1500
 
 
@@ -39,8 +39,10 @@ def main():
     data = np.load(source)
     metadata = json.loads((CACHE / 'study_inputs.json').read_text(encoding='utf-8'))
     x, y, score = data['x_train'], data['y_train'], data['x_score']
-    if x.shape != (765, 28):
+    if x.shape != (metadata['train_n'], 28) or metadata['train_through'] != '2025-12-31':
         raise ValueError('Unexpected training population')
+    if np.any(data['train_label_exit_dates'] > '2025-12-31'):
+        raise ValueError('A training label crosses the 2025 cutoff')
     noise = metadata['noise_variance']
     print(f'Classic MCMC BART: {len(y)} training labels, 28 features; no test Y.', flush=True)
     model = BARTModel()

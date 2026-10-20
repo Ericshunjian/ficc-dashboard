@@ -49,10 +49,14 @@ class StudyArtifactTests(unittest.TestCase):
             self.skipTest('Local optional training cache is not distributed with the website')
         data = np.load(study.CACHE / 'bart_inputs.npz')
         meta = json.loads((study.CACHE / 'study_inputs.json').read_text(encoding='utf-8'))
-        self.assertEqual(set(data.files), {'x_train', 'y_train', 'x_score', 'train_indices', 'n_seed', 'score_dates'})
-        self.assertEqual(data['x_train'].shape, (765, 28))
-        self.assertEqual(meta['last_train_label_exit'], '2026-06-30')
-        self.assertLessEqual(meta['last_train_signal'], '2026-06-22')
+        self.assertEqual(set(data.files), {'x_train', 'y_train', 'x_score', 'train_indices', 'n_seed', 'score_dates',
+                                          'train_signal_dates', 'train_label_exit_dates'})
+        self.assertEqual(data['x_train'].shape, (649, 28))
+        self.assertTrue(np.all(data['train_label_exit_dates'] <= '2025-12-31'))
+        self.assertEqual(meta['last_train_label_exit'], '2025-12-31')
+        self.assertLessEqual(meta['last_train_signal'], '2025-12-23')
+        self.assertEqual(meta['validation_initial_through'], '2025-06-30')
+        self.assertGreaterEqual(meta['test_start'], '2026-01-01')
         self.assertEqual(meta['discount'], min((r for r in meta['validation'] if r['discount'] < 1),
                                                key=lambda r: r['rmse'])['discount'])
         self.assertFalse(any(f['clip_enabled'] for f in meta['scaler_model']['features'][:8]))
@@ -64,11 +68,15 @@ class StudyArtifactTests(unittest.TestCase):
         data = json.loads(path.read_text(encoding='utf-8'))
         self.assertTrue(data['meta']['factor_selection_lookahead'])
         self.assertEqual(set(data['meta']['protected_hashes']), set(study.PROTECTED))
-        self.assertEqual(data['meta']['last_train_label_exit'], '2026-06-30')
+        self.assertEqual(data['meta']['last_train_label_exit'], '2025-12-31')
+        self.assertTrue(all(day.startswith('2026-') for day in data['dates']))
+        self.assertEqual(set(data['variants']), {'ridge20', 'dlm20', 'bayes20', 'bart20'})
         self.assertFalse(any(f['clip_enabled'] for f in data['meta']['preprocessing'][:8]))
         n = len(data['dates'])
         self.assertEqual(sum(y is not None for y in data['target']), n - 6)
         for model in data['variants'].values():
+            self.assertEqual(model['train_through'], '2025-12-31')
+            self.assertEqual(model['train_n'], 649)
             for mode, item in model['modes'].items():
                 sim = item['sim']
                 self.assertEqual(len(sim['equity']), n)
@@ -82,6 +90,16 @@ class StudyArtifactTests(unittest.TestCase):
                 self.assertTrue(all(s > 0 for s in model['predictive_std']))
                 self.assertTrue(all(0 <= p <= 1 for p in model['probability_positive']))
                 self.assertTrue(all(a < b for a, b in zip(model['interval80']['low'], model['interval80']['high'])))
+
+    def test_actual_updates_never_use_unmatured_or_overlapping_labels(self):
+        path = study.ROOT / study.OUTPUT
+        if not path.exists():
+            self.skipTest('Report not built yet')
+        data = json.loads(path.read_text(encoding='utf-8'))
+        updates = data['diagnostics']['dlm']['updates']
+        self.assertTrue(all(u['label_exit'] == u['asof'] for u in updates))
+        self.assertTrue(all(u['origin'] < u['asof'] for u in updates))
+        self.assertTrue(all(b['origin_index'] - a['origin_index'] >= 6 for a, b in zip(updates, updates[1:])))
 
 
 if __name__ == '__main__':

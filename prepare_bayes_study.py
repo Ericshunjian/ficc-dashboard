@@ -2,7 +2,7 @@
 
 Stages: inputs (base Python), bart (isolated StochTree environment), report (base Python).
 The BART worker receives no post-cutoff labels. All hyperparameter selection ends
-at June 2026. Artifacts under output/bayes/ are local training caches.
+at December 2025. Artifacts under output/bayes/ are local training caches.
 """
 from __future__ import annotations
 
@@ -22,9 +22,10 @@ from prepare_ridge_retrain_202606 import gate_and_simulate
 from prepare_strategy_model import make_offset_labels
 
 ROOT = Path(__file__).resolve().parent
-CACHE = ROOT / 'output' / 'bayes'
-CUTOFF = '2026-06-30'
-VALIDATION_CUTOFF = '2025-12-31'
+CACHE = ROOT / 'output' / 'bayes' / 'train_202512'
+CUTOFF = '2025-12-31'
+VALIDATION_CUTOFF = '2025-06-30'
+INITIAL_MODELS = 'bayes_study_models_202512.json'
 OUTPUT = 'curve_timing_bayes.json'
 PROTECTED = ('ridge_daily_models.json', 'ridge_daily_signals.json',
              'curve_timing_capacity_factor_sets.json', 'ridge_retrain_202606_models.json',
@@ -115,7 +116,7 @@ def dynamic_forecast(z, y, start, last_train, mean, covariance, noise, discount,
 def prepare_inputs():
     CACHE.mkdir(parents=True, exist_ok=True)
     dates, level, x, y, features, cut, train = load_data()
-    # One causal validation period, wholly before July; no test-based tuning.
+    # One causal validation period wholly within 2025; no 2026 tuning.
     val_cut = max(i for i, d in enumerate(dates) if d <= VALIDATION_CUTOFF)
     inner_train = completed_indices(level, y, val_cut, 6)
     inner_scaler = TypeAwareScaler(features).fit(x[inner_train])
@@ -135,21 +136,30 @@ def prepare_inputs():
     scaler = model[0]
     z = scaler.transform(x)
     mean, cov, noise = initial_state(z[train], y[train])
-    # Check same center as the already published June Ridge experiment.
-    old_record = read('ridge_retrain_202606_models.json')['models']['f20']
-    expected = np.r_[old_record['intercept'], [f['coef'] for f in old_record['features']]]
-    if not np.allclose(mean, expected, atol=1e-10):
-        raise ValueError('June Ridge initialization differs from frozen reference')
+    frozen_initial = {'train_through': CUTOFF, 'train_n': len(train),
+                      'last_train_signal': dates[train[-1]], 'last_label_exit': dates[train[-1] + 6],
+                      'validation_initial_through': VALIDATION_CUTOFF, 'validation': tuning,
+                      'discount': discount, 'scaler_model': model_record(model, features),
+                      'mean': mean.tolist(), 'covariance': cov.tolist(), 'noise_variance': noise}
+    initial_path = ROOT / INITIAL_MODELS
+    if initial_path.exists():
+        if read(INITIAL_MODELS) != frozen_initial:
+            raise ValueError('Frozen 2025 initial model changed; create a new study version')
+    else:
+        write_json_skip_unchanged(str(initial_path), frozen_initial)
     seed_start = cut + 1 - 250
     bart_path = CACHE / 'bart_inputs.npz'
     # BART receives ONLY training Y. No test targets in this file.
     np.savez_compressed(bart_path, x_train=z[train], y_train=y[train],
                         x_score=z[seed_start:], train_indices=train,
+                        train_signal_dates=np.array([dates[i] for i in train]),
+                        train_label_exit_dates=np.array([dates[i + 6] for i in train]),
                         n_seed=np.array(250), score_dates=np.array(dates[seed_start:]))
     meta = {'train_through': CUTOFF, 'validation_initial_through': VALIDATION_CUTOFF,
             'validation': tuning, 'discount': discount, 'train_n': len(train),
             'last_train_signal': dates[train[-1]], 'last_train_label_exit': dates[train[-1] + 6],
-            'asof': dates[-1], 'features': [{'id': f['id'], 'label': f['label']} for f in features],
+            'asof': dates[-1], 'test_start': dates[cut + 1],
+            'features': [{'id': f['id'], 'label': f['label']} for f in features],
             'scaler_model': model_record(model, features), 'initial_mean': mean.tolist(),
             'initial_covariance': cov.tolist(), 'noise_variance': noise,
             'initial_state_index': int(train[-1]), 'score_start': dates[seed_start],
@@ -235,18 +245,18 @@ def build_report():
     bart_meta['chain_sensitivity'] = chain_sensitivity
     bart_meta['posterior_artifact_sha256'] = digest(CACHE / 'bart_model.json.gz')
     bart_meta['convergence_caution'] = bool(bart_meta['latent_rhat_p95'] > 1.05)
-    prior_study = read('ridge_retrain_202606.json')
-    variants = {'old20': prior_study['variants']['old20'], 'expanded20': prior_study['variants']['expanded20'],
+    ridge_prediction = np.column_stack([np.ones(len(td)), z[start:]]) @ meta['initial_mean']
+    variants = {'ridge20': summarize_variant('岭回归·固定系数', ridge_prediction, seed, td, tl, target),
                 'dlm20': dlm, 'bart20': bart}
-    variants['old20']['label'] = '岭回归·训练至2024年底'
-    variants['expanded20']['label'] = '岭回归·训练至2026年6月'
-    if prior_study['dates'] != td:
-        raise ValueError('Ridge reference comparison dates differ')
     static_dyn = dynamic_forecast(z, y, start, meta['initial_state_index'], np.array(meta['initial_mean']),
                                   np.array(meta['initial_covariance']), meta['noise_variance'], 1., dates)
     sm, ss = static_dyn['mean'], static_dyn['std']
     variants['bayes20'] = summarize_variant('贝叶斯递推·无状态漂移对照', sm, seed, td, tl, target, ss,
                                            (sm - 1.281551565545 * ss, sm + 1.281551565545 * ss), ndtr(sm / ss))
+    for key, variant in variants.items():
+        variant['train_through'] = CUTOFF
+        variant['train_n'] = len(train)
+        variant['fitting_mode'] = 'delayed-online-update' if key in ('dlm20', 'bayes20') else 'frozen'
     momentum_index = next(i for i, f in enumerate(features) if f['id'] == 'baseline|spread_mom5')
     diagnostics = {'bart': bart_meta, 'dlm': {'discount': meta['discount'], 'validation': meta['validation'],
                      'updates': dyn['updates'], 'update_count': len(dyn['updates']),
@@ -259,13 +269,15 @@ def build_report():
                        'horizon': 6, 'features_n': len(features), 'default_mode': 'cold',
                        'factor_selection_lookahead': True,
                        'caveat': '固定因子名单来自截至10月的全历史筛选，含选择前视；方案在观察10月亏损后提出，属于探索研究。',
-                       'cold': '仅用7月后实际按时间产生的预测，至少60条后计算排名；前期无交易。',
-                       'seeded': '以6月底冻结模型对此前250日的训练期历史评分初始化；DLM使用6月底初始系数评分。这些不是当时发布的预测。',
+                       'cold': '仅用2026年起按历史推进产生的预测，至少60条后计算排名；前期无交易。',
+                       'seeded': '以2025年底冻结模型对此前250日回溯评分初始化；DLM使用2025年底初始系数评分。这些不是当时发布的预测。',
                        'interval': '80%区间为未来六日实际价差变动的模型预测区间，不是均值区间；概率仅观察，不用于交易。',
                        'inputs_sha256': meta['inputs_sha256'], 'protected_hashes': meta['protected_hashes'],
                        'last_train_signal': meta['last_train_signal'],
                        'last_train_label_exit': meta['last_train_label_exit'],
-                       'preprocessing': meta['scaler_model']['features']},
+                       'preprocessing': meta['scaler_model']['features'],
+                       'initial_models_sha256': digest(ROOT / INITIAL_MODELS),
+                       'prior_study_archive': 'research_snapshots/bayes_train_202606/curve_timing_bayes.json'},
               'dates': td, 'target': raw_numbers(target), 'level': raw_numbers(tl),
               'variants': variants, 'diagnostics': diagnostics}
     write_json_skip_unchanged(str(ROOT / OUTPUT), result)
