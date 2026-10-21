@@ -73,7 +73,14 @@ class DailyArtifactTests(unittest.TestCase):
         n=len(source['predictions']['bayes_temporal_new'])
         for k in study.KEYS:
             self.assertEqual([v['models'][k]['prediction'] for v in r['records'][:n]],source['predictions'][k])
-            self.assertEqual(r['simulation']['models'][k]['ytd'],source['periods']['full']['models'][k]['sign']['reverse']['sim'])
+            current=r['simulation']['models'][k]['ytd']
+            prior=source['periods']['full']['models'][k]['sign']['reverse']['sim']
+            # New sessions extend the account; only the archived prefix is
+            # required to equal the old research path and its closed trades.
+            for field in ('position','daily_pnl','equity','drawdown'):
+                np.testing.assert_allclose(current[field][:n],prior[field],atol=1e-12,rtol=0)
+            closed=[t for t in prior['trades'] if t['closed']]
+            self.assertEqual([t for t in current['trades'] if t['closed']][:len(closed)],closed)
         std=params['grid']['d0.995_c1']['std']
         np.testing.assert_allclose([v['models']['bayes_temporal_new']['predictive_std'] for v in r['records'][:n]],std,atol=0,rtol=0)
         self.assertEqual(r['meta']['model_version'],'new-temporal-bayes-d0995-c1-alpha500')
@@ -92,7 +99,10 @@ class DailyArtifactTests(unittest.TestCase):
                 s=m[kind]
                 self.assertAlmostEqual(sum(t['pnl'] for t in s['trades']),sum(s['daily_pnl']),places=8)
                 self.assertLessEqual(s['metrics']['max_holding'],6)
-        self.assertTrue(all(v['origin']=='research-backfill' for v in r['records'] if v['date']<study.DEPLOYMENT))
+        for v in r['records']:
+            expected=('research-backfill' if v['date']<=r['meta']['research_until'] else
+                      'deployment-backfill' if v['date']<study.DEPLOYMENT else 'daily-review')
+            self.assertEqual(v['origin'],expected)
 
     def test_repeated_run_is_idempotent_and_does_not_fit(self):
         names=study.PROTECTED+(study.OUTPUT,'factor_library.json','data_version.json')
