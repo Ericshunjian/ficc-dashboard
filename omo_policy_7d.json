@@ -2,8 +2,8 @@
   "name": "中国人民银行公开市场7天期逆回购操作利率",
   "unit": "%",
   "method": "按已公布的生效日期记录政策利率；其后交易日沿用最近一次已生效值。不是每日操作成交利率，也不将14天或隔夜逆回购混入。",
-  "verified_through": "2026-10-19",
-  "latest_verification": "https://www.cnfin.com/zs-lb/detail/20261019/4482989_1.html",
+  "verified_through": "2026-10-20",
+  "latest_verification": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026102008563058059/index.html",
   "changes": [
     {
       "date": "2021-01-04",
@@ -47,5 +47,16 @@
       "source": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/5896228/index.html"
     }
   ],
-  "latest_verified_rate": 1.4
+  "latest_verified_rate": 1.4,
+  "latest_verification_note": "已核验央行2026年第202号公告：10月20日7天逆回购操作量为零，未公布当日操作利率。按本序列沿用最近已公布7天利率的定义，沿用10月19日第201号公告的1.40%；不是10月20日新成交利率，不将零操作量记为零利率，也不混入隔夜工具。",
+  "verification_evidence": {
+    "asof": "2026-10-20",
+    "checked_on": "2026-10-21",
+    "operation_amount_billion_yuan": 0,
+    "method": "carry_forward_last_announced_7d_rate_on_zero_operation_day",
+    "last_announced_rate_date": "2026-10-19",
+    "last_announced_rate": 1.4,
+    "last_announced_rate_source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026101908495975924/index.html",
+    "current_day_source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026102008563058059/index.html"
+  }
 }
