@@ -2,8 +2,8 @@
   "name": "中国人民银行公开市场7天期逆回购操作利率",
   "unit": "%",
   "method": "按已公布的生效日期记录政策利率；其后交易日沿用最近一次已生效值。不是每日操作成交利率，也不将14天或隔夜逆回购混入。",
-  "verified_through": "2026-10-26",
-  "latest_verification": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026102608470458194/index.html",
+  "verified_through": "2026-10-27",
+  "latest_verification": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026102708510355509/index.html",
   "changes": [
     {
       "date": "2021-01-04",
@@ -48,15 +48,15 @@
     }
   ],
   "latest_verified_rate": 1.4,
-  "latest_verification_note": "已核验央行2026年第206号公告：10月26日以固定利率、数量招标开展了560亿元7天期逆回购，操作利率1.40%，全额满足一级交易商需求；另开展3980亿元隔夜逆回购。当日公告明确给出7天期操作利率，据此记录1.40%，与2025-05-08生效值一致；不混入隔夜工具。",
+  "latest_verification_note": "已核验央行2026年第207号公告：10月27日以固定利率、数量招标开展了4120亿元7天期逆回购，操作利率1.40%，全额满足一级交易商需求；另开展10000亿元隔夜逆回购。当日公告明确给出7天期操作利率，据此记录1.40%，与2025-05-08生效值一致；不混入隔夜工具。",
   "verification_evidence": {
-    "asof": "2026-10-26",
-    "checked_on": "2026-10-27",
-    "operation_amount_billion_yuan": 560,
+    "asof": "2026-10-27",
+    "checked_on": "2026-10-28",
+    "operation_amount_billion_yuan": 4120,
     "method": "announced_7d_rate_on_operation_day",
-    "last_announced_rate_date": "2026-10-26",
+    "last_announced_rate_date": "2026-10-27",
     "last_announced_rate": 1.4,
-    "last_announced_rate_source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026102608470458194/index.html",
-    "current_day_source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026102608470458194/index.html"
+    "last_announced_rate_source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026102708510355509/index.html",
+    "current_day_source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026102708510355509/index.html"
   }
 }
