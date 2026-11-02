@@ -1175,6 +1175,10 @@ def _latest_repo_report():
                 continue
             candidates.extend(glob.glob(os.path.join(d, "质押式回购市场交易情况总结日报_*.xlsx")))
             candidates.extend(glob.glob(os.path.join(d, "质押式回购市场交易情况总结日报_*.xls")))
+            candidates.extend(glob.glob(os.path.join(d, "分机构日资金流向分析（质押）*.xlsx")))
+
+            candidates.extend(glob.glob(os.path.join(d, "分机构日资金流向分析（质押）*.xls")))
+
         candidates = [p for p in candidates if os.path.isfile(p)]
         return max(candidates, key=os.path.getmtime) if candidates else None
     except Exception:
@@ -1184,8 +1188,14 @@ def _latest_repo_report():
 def _latest_daily_report():
     """返回 USER_PREPROCESS_CWD 下最新的一份机构行为日报 xlsx，没有则 None"""
     try:
-        files = [f for f in glob.glob(os.path.join(USER_PREPROCESS_CWD, "现券市场交易情况总结日报_*.xlsx"))
-                 if os.path.isfile(f)]
+        files = []
+
+        for pattern in ("现券市场交易情况总结日报_*.xlsx", "现券成交分机构统计*.xlsx"):
+
+            files.extend(f for f in glob.glob(os.path.join(USER_PREPROCESS_CWD, pattern))
+
+                         if os.path.isfile(f))
+
         return max(files, key=os.path.getmtime) if files else None
     except Exception:
         return None
