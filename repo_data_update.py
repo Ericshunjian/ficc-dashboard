@@ -43,7 +43,11 @@ REPO_DIR_2026 = os.path.join(REPO_BASE, "2026年")          # 2026-01-05 ~ 新�
 REPO_JSON_OUT = os.path.join(SCRIPT_DIR, "repo_trading_data.json")
 REPO_XLSX_OUT = os.path.join(REPO_DIR_2026, "repo_data_test.xlsx")
 
-REPORT_PATTERN = re.compile(r"质押式回购市场交易情况总结日报_(\d{8})\.(xls|xlsx)$", re.IGNORECASE)
+REPORT_PATTERN = re.compile(
+    r"(?:质押式回购市场交易情况总结日报_|分机构日资金流向分析[（(]质押[）)])"
+    r"(\d{8})(?:-\d{8})?\.(xls|xlsx)$",
+    re.IGNORECASE,
+)
 
 INSTITUTIONS = [
     "大型银行", "中小型银行", "证券公司", "保险公司",
@@ -64,6 +68,7 @@ OLD_TO_NEW = {
     "理财子公司及理财类产品": "理财子公司及理财类产品",
     "其他产品类": "其他",
     "其他": "其他",
+    "其它": "其他",
 }
 
 # 数值字段（单位换算：百万 → 亿）
@@ -86,7 +91,7 @@ def _num(v):
     if v is None:
         return None
     if isinstance(v, str):
-        s = v.strip()
+        s = v.strip().replace(",", "")
         if s in ("-", "", "—", "--"):
             return None
         try:
@@ -131,11 +136,14 @@ def parse_report(path):
             t2_head = i
         elif c1 == "债券类型" and t3_head is None:
             t3_head = i
-    if t2_head is None or t3_head is None:
-        log.warning(f"  未找到表头（表二={t2_head}, 表三={t3_head}）: {os.path.basename(path)}")
+    if t2_head is None:
+        log.warning(f"  未找到期限表头: {os.path.basename(path)}")
         return None
-    if t3_head <= t2_head:
-        t3_head = n  # 容错：表三缺失则表二解析到文件尾
+    has_collateral_table = t3_head is not None and t3_head > t2_head
+    if not has_collateral_table:
+        # 2026-10-30 起『分机构日资金流向分析（质押）』不再提供押品表。
+        t3_head = n
+        log.info(f"  {os.path.basename(path)} 无押品表，押品字段置空")
 
     recs = {}
 
@@ -154,7 +162,8 @@ def parse_report(path):
         if cur is None:
             continue
         tenor = str(c1).strip() if isinstance(c1, str) and c1.strip() else None
-        if not tenor:
+        if not tenor or tenor == "合计":
+            # 新版逐机构增加『合计』行；期限行求和已覆盖，不能再算一遍。
             continue
         r = recs[cur]
         repo_amt = _num(df.iloc[i, 4])
@@ -193,6 +202,12 @@ def parse_report(path):
         r = recs[cur]
         _add(r["coll"][coll], "repo", _num(df.iloc[i, 3]), 0.01)
         _add(r["coll"][coll], "rev", _num(df.iloc[i, 5]), 0.01)
+
+    if not has_collateral_table:
+        for r in recs.values():
+            for coll in COLLATERALS:
+                r["coll"][coll]["repo"] = None
+                r["coll"][coll]["rev"] = None
 
     # 派生利率
     out = {}
@@ -395,7 +410,7 @@ def main():
         "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "note": "旧格式11→8机构映射（股份制并入大型银行，按新格式官方口径）；"
                 "金额/余额单位亿元；净融出=逆回购余额-正回购余额；"
-                "加权利率按当日成交金额加权",
+                "加权利率按当日成交金额加权；2026-10-30起新版源表无押品表，对应押品字段为空",
     }
 
     payload = {"meta": meta, "dates": dates, "inst": inst_blk}
