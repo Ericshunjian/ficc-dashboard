@@ -125,6 +125,7 @@
   <div class="sidebar-header">
     <h2>因子库 · L0 原始池</h2>
     <div class="subtitle" id="metaInfo">加载中…</div>
+    <div class="subtitle"><a href="irr_factor_checkup.html">IRR与IRR差：6日因子体检</a></div>
     <a class="back-home" href="index.html">首页</a>
   </div>
   <div class="filter-body">
@@ -271,7 +272,7 @@ function buildAll(){
              name:'回购·'+s.label+'·'+s.inst, unit:(s.field==='rate_spread'?'百分点':'亿元') };
   });
   state.curveList = D.curve.map(function(s){
-    return { g:'curve', id:s.name, cat:s.cat, i0:s.i0, v:s.v, name:'曲线·'+s.cat+'·'+s.name, unit:'%' };
+    return { g:'curve', id:s.name, cat:s.cat, i0:s.i0, v:s.v, name:'曲线·'+s.cat+'·'+s.name, unit:s.unit||'%', formula:s.formula||'' };
   });
   state.derivedList = (D.derived||[]).map(function(s){
     return { g:'derived', id:s.op+'/'+s.n+'/'+(s.inst||'-')+'/'+s.tenor, cat:s.cls, op:s.op,

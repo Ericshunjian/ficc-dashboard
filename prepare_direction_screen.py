@@ -327,6 +327,10 @@ def load_candidates():
             cat, source_key = key.split("|")
             formula = next(s["formula"] for s in lib["carry"] if s["key"] == source_key and s["cat"] == cat)
         if group == "curve" and key.endswith("主力"): unit = "点"
+        if group == "curve":
+            definition=next((s for s in lib['curve'] if s['name']==key),{})
+            unit=definition.get('unit',unit)
+            formula=definition.get('formula',formula)
         if group == "repo": unit = "百分点" if key.endswith("rate_spread") else "亿元"
         candidates.append({"id": group + "|" + key, "group": group, "key": key, "label": label,
                            "unit": unit, "formula": formula, "values": values})

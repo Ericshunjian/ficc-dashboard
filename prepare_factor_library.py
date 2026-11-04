@@ -200,7 +200,7 @@ def build(prefer_compact=False):
 
     # ---------- 曲线 ----------
     curve_out = []
-    curve_cats = curve["meta"].get("categories", {})
+    curve_cats = {k:list(v) for k,v in curve["meta"].get("categories", {}).items()}
     cat_of = {}
     for c, names in curve_cats.items():
         for nm in names:
@@ -217,7 +217,14 @@ def build(prefer_compact=False):
         vals = [None] * (arr[-1][0] - i0 + 1)
         for i, v in arr:
             vals[i - i0] = round(v, 4)
-        curve_out.append({"name": name, "cat": cat_of.get(name, "其他"), "i0": i0, "v": vals})
+        row={"name": name, "cat": cat_of.get(name, "其他"), "i0": i0, "v": vals}
+        if 'IRR' in name.upper():
+            row.update(unit='%',formula='Wind主力合约IRR原始年化百分数；1.4表示1.4%，不是0.014')
+        curve_out.append(row)
+    from factor_irr import build as build_irr, CATEGORY as IRR_CATEGORY
+    irr_rows=build_irr(curve,dates)
+    curve_out.extend(irr_rows)
+    if irr_rows:curve_cats[IRR_CATEGORY]=[s['name'] for s in irr_rows]
     curve_out.sort(key=lambda x: (x["cat"], x["name"]))
 
     # ---------- Carry 结构因子 ----------
