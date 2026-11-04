@@ -2,8 +2,8 @@
   "name": "中国人民银行公开市场7天期逆回购操作利率",
   "unit": "%",
   "method": "按已公布的生效日期记录政策利率；其后交易日沿用最近一次已生效值。不是每日操作成交利率，也不将14天或隔夜逆回购混入。自2026-11-02起7天期不再每日公布单一操作利率，改按 maintenance_rule 恒定记录1.40%，仅在央行下调隔夜逆回购操作利率时同步下调同等幅度。",
-  "verified_through": "2026-11-02",
-  "latest_verification": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026110208540841613/index.html",
+  "verified_through": "2026-11-03",
+  "latest_verification": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026110309140391220/index.html",
   "changes": [
     {
       "date": "2021-01-04",
@@ -48,21 +48,21 @@
     }
   ],
   "latest_verified_rate": 1.4,
-  "latest_verification_note": "已核验央行2026年第211号公告：11月2日以固定利率、数量招标开展了5410亿元隔夜期逆回购，操作利率1.25%，为换锚后首次操作；当日未开展7天期逆回购（按新机制7天期只在税期、月末等时点开展，符合预期）。隔夜利率维持1.25%未下调，按 maintenance_rule 7天期政策利率继续记录1.40%，本次不新增 changes[] 条目。",
+  "latest_verification_note": "已核验央行2026年第212号公告：11月3日以固定利率、数量招标开展了6210亿元隔夜期逆回购，操作利率1.25%，全额满足一级交易商需求；当日未开展7天期逆回购（按新机制7天期只在税期、月末等时点开展，符合预期）。隔夜利率维持1.25%未下调，按 maintenance_rule 7天期政策利率继续记录1.40%，本次不新增 changes[] 条目。",
   "verification_evidence": {
-    "asof": "2026-11-02",
-    "checked_on": "2026-11-03",
+    "asof": "2026-11-03",
+    "checked_on": "2026-11-04",
     "operation_amount_billion_yuan": null,
     "method": "no_7d_operation_under_new_framework",
     "last_announced_rate_date": "2026-10-30",
     "last_announced_rate": 1.4,
     "last_announced_rate_source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026103008462393538/index.html",
-    "current_day_source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026110208540841613/index.html",
+    "current_day_source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026110309140391220/index.html",
     "overnight_operation": {
-      "date": "2026-11-02",
-      "amount_billion_yuan": 5410,
+      "date": "2026-11-03",
+      "amount_billion_yuan": 6210,
       "rate": 1.25,
-      "note": "换锚后首次隔夜逆回购操作，固定利率、数量招标"
+      "note": "换锚后第二个工作日的隔夜逆回购操作，固定利率、数量招标，全额满足"
     }
   },
   "policy_regime_change": {
@@ -87,15 +87,15 @@
     "effective_from": "2026-11-02",
     "method": "固定利率、数量招标，每个工作日开展；自2026-11-02起事实上成为主要政策利率。本字段仅用于监测并触发7天利率的同步下调，不参与任何因子的直接计算。",
     "source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026103008462393538/index.html",
-    "last_verified_on": "2026-11-02",
+    "last_verified_on": "2026-11-03",
     "last_operation": {
-      "date": "2026-11-02",
-      "amount_billion_yuan": 5410,
+      "date": "2026-11-03",
+      "amount_billion_yuan": 6210,
       "rate": 1.25,
-      "source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026110208540841613/index.html",
-      "note": "换锚后首次操作；同日未开展7天期逆回购"
+      "source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026110309140391220/index.html",
+      "note": "第212号公告；同日未开展7天期逆回购"
     },
-    "note": "1.25% 较原7天期1.40%低15bp。10月DR001均值约1.2805%，已在1.25%—1.30%区间运行。截至2026-11-02未发生下调，故未触发7天期同步下调。"
+    "note": "1.25% 较原7天期1.40%低15bp。10月DR001均值约1.2805%，已在1.25%—1.30%区间运行。截至2026-11-03未发生下调，故未触发7天期同步下调。"
   },
   "maintenance_rule": {
     "decided_on": "2026-11-02",
