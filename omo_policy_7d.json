@@ -3,7 +3,7 @@
   "unit": "%",
   "method": "按已公布的生效日期记录政策利率；其后交易日沿用最近一次已生效值。不是每日操作成交利率，也不将14天或隔夜逆回购混入。自2026-11-02起7天期不再每日公布单一操作利率，改按 maintenance_rule 恒定记录1.40%，仅在央行下调隔夜逆回购操作利率时同步下调同等幅度。",
   "verified_through": "2026-11-04",
-  "latest_verification": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026110309140391220/index.html",
+  "latest_verification": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026110408563592581/index.html",
   "changes": [
     {
       "date": "2021-01-04",
@@ -50,19 +50,19 @@
   "latest_verified_rate": 1.4,
   "latest_verification_note": "已核验央行2026年第213号公告：11月4日以固定利率、数量招标开展了2575亿元隔夜期逆回购，操作利率1.25%，全额满足一级交易商需求；当日未开展7天期逆回购（按新机制7天期只在税期、月末等时点开展，符合预期）。隔夜利率维持1.25%未下调，按 maintenance_rule 7天期政策利率继续记录1.40%，本次不新增 changes[] 条目。",
   "verification_evidence": {
-    "asof": "2026-11-03",
-    "checked_on": "2026-11-04",
+    "asof": "2026-11-04",
+    "checked_on": "2026-11-05",
     "operation_amount_billion_yuan": null,
     "method": "no_7d_operation_under_new_framework",
     "last_announced_rate_date": "2026-10-30",
     "last_announced_rate": 1.4,
     "last_announced_rate_source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026103008462393538/index.html",
-    "current_day_source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026110309140391220/index.html",
+    "current_day_source": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026110408563592581/index.html",
     "overnight_operation": {
-      "date": "2026-11-03",
-      "amount_billion_yuan": 6210,
+      "date": "2026-11-04",
+      "amount_billion_yuan": 2575,
       "rate": 1.25,
-      "note": "换锚后第二个工作日的隔夜逆回购操作，固定利率、数量招标，全额满足"
+      "note": "已读取央行第213号公告原文；隔夜操作利率未变，按既定maintenance_rule保持7天因子锚1.40%。"
     }
   },
   "policy_regime_change": {
