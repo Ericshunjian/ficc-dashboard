@@ -791,7 +791,7 @@ FACTOR_DEFS = [
         "institution": "基金公司及产品",
         "bond_type": "国债",
         "maturity": "20-30年",
-        "description": "基金公司及产品对20-30年国债净买入的MA10在过去100天的百分位（再MA10）",
+        "description": "基金公司及产品对20-30年国债净买入的MA10在过去60天的百分位",
     },
     {
         "name": "中小型银行·超长国债净买入因子",
@@ -800,7 +800,7 @@ FACTOR_DEFS = [
         "institution": "中小型银行",
         "bond_type": "国债",
         "maturity": "20-30年",
-        "description": "中小型银行对20-30年国债净买入的MA10在过去100天的百分位（再MA10）",
+        "description": "中小型银行对20-30年国债净买入的MA10在过去60天的百分位",
     },
     {
         "name": "基金公司及产品·7-10年国开债净买入因子",
@@ -809,7 +809,7 @@ FACTOR_DEFS = [
         "institution": "基金公司及产品",
         "bond_type": "政金债",
         "maturity": "7-10年",
-        "description": "基金公司及产品对7-10年政金债净买入的MA10在过去100天的百分位（再MA10）",
+        "description": "基金公司及产品对7-10年政金债净买入的MA10在过去60天的百分位",
     },
     {
         "name": "保险公司·超长国债净买入因子",
@@ -818,7 +818,7 @@ FACTOR_DEFS = [
         "institution": "保险公司",
         "bond_type": "国债",
         "maturity": "20-30年",
-        "description": "保险公司对20-30年国债净买入的MA10在过去100天的百分位（再MA10）",
+        "description": "保险公司对20-30年国债净买入的MA10在过去60天的百分位",
     },
     {
         "name": "中小型银行·7-10年国债净买入因子",
@@ -827,7 +827,7 @@ FACTOR_DEFS = [
         "institution": "中小型银行",
         "bond_type": "国债",
         "maturity": "7-10年",
-        "description": "中小型银行对7-10年国债净买入的MA10在过去100天的百分位（再MA10）",
+        "description": "中小型银行对7-10年国债净买入的MA10在过去60天的百分位",
     },
     {
         "name": "基金公司及产品·7-10年国债+国开债净买入合力因子",
@@ -836,7 +836,39 @@ FACTOR_DEFS = [
         "institution": "基金公司及产品",
         "bond_types": ["国债", "政金债"],  # 多券种求和
         "maturity": "7-10年",
-        "description": "基金公司及产品对7-10年国债+政金债净买入合计的MA10在过去100天的百分位（再MA10）",
+        "description": "基金公司及产品对7-10年国债+政金债净买入合计的MA10在过去60天的百分位",
+    },
+]
+
+# ── 基金超长债动能因子（MA5-MA20 及其 125 日百分位）──
+# 2026-11-06 新增：检验基金对 20-30 年国债净买入的短期动能与后续 30 年利率的关系。
+# 因子 A = MA5-MA20 原始差值（亿元，有正负，raw_value=True，页面 y 轴自适应）；
+# 因子 B = 该差值在过去 125 个交易日（约半年）的百分位（0-100）。
+# 与现有「基金·超长债因子」（净买入→MA10→60天百分位）并列，构造口径相互独立。
+# ⚠ 两处独立副本（daily_update.py / prepare_factor_data.py），改参数必须同步。
+MA_SPREAD_SHORT = 5
+MA_SPREAD_LONG = 20
+MA_SPREAD_PERC_WINDOW = 125
+MA_SPREAD_PERC_MIN_PERIODS = 60
+MA_SPREAD_FACTOR_DEFS = [
+    {
+        "name": "基金公司及产品·超长国债净买入MA5-MA20动能因子",
+        "short_name": "基金·超长债MA5-MA20",
+        "category": "机构行为",
+        "institution": "基金公司及产品",
+        "bond_type": "国债",
+        "maturity": "20-30年",
+        "raw_value": True,
+        "description": "基金公司及产品对20-30年国债净买入的MA5减MA20（亿元，原始值）；正=近5日买盘强于近20日均值、买盘加速",
+    },
+    {
+        "name": "基金公司及产品·超长国债净买入MA5-MA20动能125日百分位因子",
+        "short_name": "基金·超长债动能·125日分位",
+        "category": "机构行为",
+        "institution": "基金公司及产品",
+        "bond_type": "国债",
+        "maturity": "20-30年",
+        "description": "基金公司及产品对20-30年国债净买入的MA5-MA20在过去125个交易日（约半年）的百分位（0-100）",
     },
 ]
 
@@ -853,21 +885,21 @@ TECHNICAL_FACTOR_DEFS = [
     },
 ]
 
-# 估值因子定义（数据源：yield_curve_data.json，利差→MA10→100天百分位→再MA10）
+# 估值因子定义（数据源：yield_curve_data.json，利差→MA10→60天百分位）
 VALUATION_FACTOR_DEFS = [
     {
         "name": "资金利差因子（10年国债-DR001-MA10）",
         "short_name": "资金利差因子",
         "category": "估值因子",
         "spread_components": ["10年国债", "DR001-MA10"],
-        "description": "10年国债收益率与DR001-MA10之差的MA10在过去100天的百分位（再MA10），反映长债相对隔夜资金中枢的carry空间，百分位越高=长债相对资金面越便宜",
+        "description": "10年国债收益率与DR001-MA10之差的MA10在过去60天的百分位，反映长债相对隔夜资金中枢的carry空间，百分位越高=长债相对资金面越便宜",
     },
     {
         "name": "期限利差因子（10年国债-SHIBOR3M）",
         "short_name": "期限利差因子",
         "category": "估值因子",
         "spread_components": ["10年国债", "SHIBOR:3个月"],
-        "description": "10年国债收益率与SHIBOR3M之差的MA10在过去100天的百分位（再MA10），反映10Y-3M期限结构估值，百分位越高=期限利差处于历史高位",
+        "description": "10年国债收益率与SHIBOR3M之差的MA10在过去60天的百分位，反映10Y-3M期限结构估值，百分位越高=期限利差处于历史高位",
     },
 ]
 
@@ -925,7 +957,7 @@ def _compute_factor_series(df_detail, factor_def):
 
 
 def _compute_valuation_factors():
-    """从 yield_curve_data.json 计算估值因子（利差→MA10→100天百分位→再MA10）
+    """从 yield_curve_data.json 计算估值因子（利差→MA10→60天百分位）
     返回 (factors_dict, factor_defs_used)
     """
     if not os.path.exists(CURVE_OUTPUT):
@@ -1023,6 +1055,54 @@ def _compute_technical_factors():
     return factors, defs_used
 
 
+def _compute_ma_spread_factors(df_detail):
+    """基金·20-30年国债净买入 → MA5 / MA20 → 差值(原始值) 与 125日百分位。
+
+    返回 (factors_dict, defs_used)。两条序列各按自身有效起点输出：
+      原始差值自第 MA_SPREAD_LONG 个交易日起；
+      百分位自差值序列第 MA_SPREAD_PERC_MIN_PERIODS 个有效值起。
+    """
+    mask = (
+        (df_detail["institution"] == "基金公司及产品") &
+        (df_detail["bond_type"] == "国债") &
+        (df_detail["maturity"] == "20-30年")
+    )
+    sub = df_detail[mask]
+    if len(sub) == 0:
+        log.warning("  MA5-MA20 因子: 基金/国债/20-30年 无数据，跳过")
+        return {}, []
+    daily = sub.groupby("date")["value"].sum().sort_index()
+    ma5 = daily.rolling(window=MA_SPREAD_SHORT, min_periods=MA_SPREAD_SHORT).mean()
+    ma20 = daily.rolling(window=MA_SPREAD_LONG, min_periods=MA_SPREAD_LONG).mean()
+    spread = (ma5 - ma20).dropna()
+    if len(spread) == 0:
+        log.warning("  MA5-MA20 因子: 差值序列为空，跳过")
+        return {}, []
+    perc = spread.rolling(
+        window=MA_SPREAD_PERC_WINDOW, min_periods=MA_SPREAD_PERC_MIN_PERIODS
+    ).apply(_percentile_rank, raw=False)
+    pvalid = perc.dropna()
+
+    def _pack(idx, values):
+        return {
+            "dates": list(idx),
+            "values": [round(float(v), 4) for v in values],
+            "net_buys": [round(float(v), 4) if pd.notna(v) else None for v in daily.reindex(idx).tolist()],
+            "ma5": [round(float(v), 4) if pd.notna(v) else None for v in ma5.reindex(idx).tolist()],
+            "ma20": [round(float(v), 4) if pd.notna(v) else None for v in ma20.reindex(idx).tolist()],
+            "ma_spread": [round(float(v), 4) if pd.notna(v) else None for v in spread.reindex(idx).tolist()],
+        }
+
+    factors = {
+        "基金·超长债MA5-MA20": _pack(spread.index, spread.values),
+        "基金·超长债动能·125日分位": _pack(pvalid.index, pvalid.values),
+    }
+    for fd in MA_SPREAD_FACTOR_DEFS:
+        log.info(f"  {fd['short_name']}: 有效天数 {len(factors[fd['short_name']]['dates'])}, "
+                     f"最新值 {factors[fd['short_name']]['values'][-1]}")
+    return factors, MA_SPREAD_FACTOR_DEFS
+
+
 def update_merged_data():
     """追加新数据到合并后的 JSON（增量更新，不重新解析旧文件）"""
     if not os.path.exists(FACTOR_MERGED_DATA):
@@ -1113,6 +1193,14 @@ def update_factor_data():
         all_factor_defs.append(fd)
         log.info(f"      有效天数: {len(result['dates'])}")
 
+    # 基金超长债 MA5-MA20 动能因子（原始差值 + 125日百分位）
+    log.info("    计算基金超长债 MA5-MA20 动能因子...")
+    ma_factors, ma_defs = _compute_ma_spread_factors(df)
+    for fd in ma_defs:
+        factors[fd["short_name"]] = ma_factors[fd["short_name"]]
+        categories.setdefault(fd["category"], []).append(fd["short_name"])
+        all_factor_defs.append(fd)
+
     # 估值因子（数据源：yield_curve_data.json）
     log.info("    计算估值因子（利差百分位）...")
     val_factors, val_defs = _compute_valuation_factors()
@@ -1148,13 +1236,17 @@ def update_factor_data():
                 "percentile_window": FACTOR_PERC_WINDOW,
                 "percentile_min_periods": FACTOR_PERC_MIN_PERIODS,
                 "final_ma": FACTOR_FINAL_MA,
+                "ma_spread_short": MA_SPREAD_SHORT,
+                "ma_spread_long": MA_SPREAD_LONG,
+                "ma_spread_percentile_window": MA_SPREAD_PERC_WINDOW,
+                "ma_spread_percentile_min_periods": MA_SPREAD_PERC_MIN_PERIODS,
             },
         },
         "series": factors,
     }
 
     jsonio.write_json_skip_unchanged(FACTOR_OUTPUT, output, log)
-    log.info(f"  因子数: {len(factors)}")
+    log.info(f"  因子数: {len(factors)}（机构行为 {len(FACTOR_DEFS)} + 动能 {len(ma_defs)} + 估值 {len(val_defs)} + 技术 {len(tech_defs)}）")
     return True
 
 
