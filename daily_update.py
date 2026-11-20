@@ -468,7 +468,10 @@ def update_ficc_yield_data():
                 continue
             seen_codes.add(code_str)
             category = col_category[c]
-            duration = float(duration_row[c]) if pd.notna(duration_row[c]) else None
+            try:
+                duration = float(duration_row[c]) if pd.notna(duration_row[c]) else None
+            except (TypeError, ValueError):
+                duration = None  # Wind 期限公式未刷新，稍后由上一版递推
             terms.setdefault(category, []).append(code_str)
             col_info[c] = {'code': code_str, 'duration': duration, 'category': category}
 
@@ -503,6 +506,27 @@ def update_ficc_yield_data():
         cat = col_category.get(c)
         if cat and cat not in terms_sorted:
             terms_sorted[cat] = terms.get(cat, [])
+
+    # Wind 期限行偶发未刷新（整行 Fetching...）：用上一版 duration 按日历天数递推
+    missing_dur = [c for c, s in series.items() if s['duration'] is None]
+    if missing_dur and os.path.exists(FICC_OUTPUT):
+        try:
+            with open(FICC_OUTPUT, encoding='utf-8') as _f:
+                _prev = json.load(_f)
+            _d0 = _prev['meta']['date_range'][1]
+            _d1 = max(s['dates'][-1] for s in series.values())
+            _delta = (pd.Timestamp(_d1) - pd.Timestamp(_d0)).days / 365.0
+            _recovered = 0
+            for _code, _s in series.items():
+                if _s['duration'] is None:
+                    _pv = _prev.get('series', {}).get(_code, {}).get('duration')
+                    if _pv is not None:
+                        _s['duration'] = round(float(_pv) - _delta, 4)
+                        _recovered += 1
+            log.warning(f'  期限行未刷新：{len(missing_dur)} 只券 duration 由上一版({_d0})递推至 {_d1}，'
+                        f'递减 {_delta:.6f} 年，成功 {_recovered} 只。下次导出请等 Wind 刷新完再保存。')
+        except Exception as _e:
+            log.warning(f'  期限行递推失败，缺失 duration 保持 None: {_e}')
 
     # meta.date_range 用实际序列日期（已过滤 0/NaN），避免最新一天值未填入时范围虚高
     if series:
