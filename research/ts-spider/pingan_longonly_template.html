@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>平安期货「只做多」策略 · 择机增量检验</title>
+<style>
+:root{--bg:#f5f7fa;--card:#fff;--tx:#1c2532;--tx2:#5c6878;--tx3:#8a94a3;--line:#e4e9f0;
+--accent:#2c5aa0;--up:#d64545;--down:#2f9e6f;--warn:#c8781a;--chip:#eef2f8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:13.5px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 22px 70px}
+h1{font-size:24px;margin:0 0 6px;letter-spacing:.3px}
+.sub{color:var(--tx2);margin:0 0 18px;font-size:13px}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.badge{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 11px;font-size:12px;color:var(--tx2)}
+.badge b{color:var(--tx)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:16px;box-shadow:0 1px 2px rgba(20,40,80,.03)}
+.card h2{font-size:16px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+.card h2:before{content:"";width:3px;height:15px;background:var(--accent);border-radius:2px}
+.desc{color:var(--tx2);font-size:12.5px;margin:0 0 14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px;margin:12px 0 4px}
+.kpi{background:#fafbfd;border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.kpi .k{color:var(--tx3);font-size:11.5px}
+.kpi .v{font-size:19px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums}
+.kpi .n{font-size:11px;color:var(--tx3)}
+.up{color:var(--up)} .down{color:var(--down)} .neu{color:var(--tx)}
+.verdict{border-left:4px solid var(--warn);background:#fffbf4;border-radius:8px;padding:16px 20px;margin-bottom:16px}
+.verdict h2{font-size:16px;margin:0 0 10px;color:#8a5310}
+.verdict ol{margin:0;padding-left:20px} .verdict li{margin:7px 0}
+.tagY{display:inline-block;background:#e8f4ec;color:#1c7a4a;border-radius:4px;padding:0 5px;font-size:11px;margin-right:6px}
+.tagN{display:inline-block;background:#fceaea;color:#b03a3a;border-radius:4px;padding:0 5px;font-size:11px;margin-right:6px}
+table{border-collapse:collapse;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{background:#f7f9fc;color:var(--tx2);font-weight:600;position:sticky;top:0;z-index:1}
+th:first-child,td:first-child{text-align:left}
+tbody tr:hover{background:#f8fbff}
+.scroll{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.chart{width:100%;overflow:visible}
+.chart svg{width:100%;height:auto;display:block}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--tx2);margin:8px 0 0}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.btn{border:1px solid var(--line);background:#fff;color:var(--tx2);border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer}
+.btn:hover{border-color:var(--accent)} .btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0}
+.chip{display:flex;align-items:center;gap:6px;background:#fafbfd;border:1px solid var(--line);border-radius:6px;padding:4px 9px;font-size:12px;cursor:pointer;color:var(--tx2)}
+.chip i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.chip.off{opacity:.42}
+.note{background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:13px 16px;color:var(--tx2);font-size:12.5px;margin-top:12px}
+.rule{background:#f4f8ff;border:1px solid #d7e3f5;border-radius:8px;padding:14px 18px;font-size:13px}
+.rule b{color:var(--accent)}
+.rule ul{margin:8px 0 0;padding-left:20px} .rule li{margin:5px 0}
+.small{font-size:11.5px;color:var(--tx3)}
+.hl{background:#fff3cd;padding:0 3px;border-radius:3px}
+a{color:var(--accent);text-decoration:none}
+.foot{text-align:center;color:var(--tx3);font-size:12px;margin-top:26px}
+</style>
+</head>
+<body><div class="wrap">
+<h1>平安期货「只做多」策略 · 择机增量检验</h1>
+<p class="sub">承接「逆势加多」检验：关掉做空腿，只择机做多 · 数据 2021-01-04 ~ 2026-11-23 · 单文件离线</p>
+<div class="badges" id="badges"></div>
+
+<div class="verdict" id="verdict"></div>
+
+<div class="card">
+  <h2>按上一轮口述锁定的规则（参数一个不改，只是不做空）</h2>
+  <div class="rule" id="ruleBox"></div>
+  <div class="kpis" id="kpiPreset"></div>
+  <div class="scroll" style="max-height:160px;margin-top:12px"><table id="segTable"></table></div>
+  <div class="note" id="expoNote"></div>
+</div>
+
+<div class="card">
+  <h2>① 先回答「删掉做空腿是不是事后偷看」</h2>
+  <div class="desc">如果 2023 年底之前做空腿就已经亏钱，那「只做多」可以用当时的数据正当化，<b>验证段（2024 起）就是干净的样本外</b>。</div>
+  <div class="grid2">
+    <div><table id="dropTable"></table><div class="note" id="dropNote"></div></div>
+    <div><div id="chartDrop" class="chart"></div><div class="legend" id="dropLegend"></div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>② 净值：只做多 vs 多空都做 vs 买入持有 vs 随机择时</h2>
+  <div class="btns" id="navBtns"></div>
+  <div class="chips" id="navChips"></div>
+  <div class="desc" id="navDesc" style="margin-top:10px"></div>
+  <div id="chartNav" class="chart"></div>
+  <div class="note">固定 5 手 TS（名义 1000 万、单倍杠杆、不复利）：净值 = 1 + 累计盈亏点数/100，逐笔直接累加。买入持有 = 全程持 5 手、同口径。随机择时中位数 = 从全交易日池抽同等密度信号日、跑<b>相同状态机</b>得到的典型路径。</div>
+</div>
+
+<div class="card">
+  <h2>③ 择机到底赚了谁的钱：三层分解</h2>
+  <div class="desc">左边是<b>逐笔独立</b>口径（每个信号日都算一笔、允许重叠，看每笔平均点数）；右边是<b>状态机</b>口径（真实可执行、单仓位不叠加，看累计点数）。两套口径各归各，别混。</div>
+  <div class="grid2">
+    <div>
+      <div id="chartPool" class="chart"></div>
+      <div class="legend" id="poolLegend"></div>
+      <table id="poolTable" style="margin-top:12px"></table>
+    </div>
+    <div>
+      <div id="chartState" class="chart"></div>
+      <div class="legend" id="stateLegend"></div>
+      <table id="stateTable" style="margin-top:12px"></table>
+    </div>
+  </div>
+  <div class="note" id="incrNote"></div>
+</div>
+
+<div class="card">
+  <h2>④ 零假设：哪一组才算数</h2>
+  <div class="desc">点下面的方法切换。<b>主判据是「抖动 ±3 日 · 仍收跌」</b>：它保持收跌条件、信号密度和成簇结构，只打乱平安到底挑了哪一天。其余方法会连「成簇 / 不叠加」的执行结构一起打乱，把纪律的功劳错记成平安。</div>
+  <div class="btns" id="nullBtns"></div>
+  <div class="grid2">
+    <div><div id="chartNull" class="chart"></div><div class="legend" id="nullLegend"></div></div>
+    <div><table id="nullTable"></table><div class="note" id="nullNote"></div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>⑤ 那 1.6 点从哪来：单仓位「不追单」</h2>
+  <div class="grid2">
+    <div>
+      <div class="desc">162 个信号日只成交 113 笔。被跳过的 49 个是紧跟着前一笔试单的连续加多，事后看平均亏钱 —— <b>这是规则内生的执行纪律，不是平安的预测力</b>。</div>
+      <div id="chartSkip" class="chart"></div>
+    </div>
+    <div>
+      <div class="desc">把信号日在收跌日范围内前后挪 3 天，收益还在多少？<b>还在 2.35 点（p=0.104，不显著）</b> ⇒ 平安挑中具体哪天并没有独立信息。</div>
+      <div id="chartJitter" class="chart"></div>
+      <div class="legend" id="jitterLegend"></div>
+    </div>
+  </div>
+  <div class="note" id="skipNote"></div>
+</div>
+
+<div class="card">
+  <h2>⑥ 参数热力图：力度分位 × 持有天数</h2>
+  <div class="btns" id="heatBtns"></div>
+  <div class="desc" id="heatDesc"></div>
+  <div id="chartHeat" class="chart"></div>
+  <div class="legend" id="heatLegend"></div>
+  <div class="note" id="robustNote"></div>
+</div>
+
+<div class="card">
+  <h2>⑦ 横截面安慰剂 / 成本 / 分年 / walk-forward</h2>
+  <div class="grid2">
+    <div>
+      <div class="desc">同一套纯多头规则套到 9 个序列。平安排第一，但序列高度同源，「9 个里排第一」的随机概率就有 1/9。</div>
+      <div id="chartPlacebo" class="chart"></div>
+      <table id="placeboTable" style="margin-top:10px"></table>
+    </div>
+    <div>
+      <div class="desc">成本按每笔来回扣点数（TS 一个最小变动价位 = 0.005 点）。</div>
+      <div id="chartCost" class="chart"></div>
+      <table id="costTable" style="margin-top:10px"></table>
+    </div>
+  </div>
+  <div class="grid2" style="margin-top:16px">
+    <div><div class="desc">分年（口述规则，零成本）</div><table id="yearTable"></table></div>
+    <div><div class="desc">walk-forward：每年只用之前的数据选参数</div><table id="wfTable"></table>
+      <div class="note" id="wfNote"></div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>⑧ 逐笔明细</h2>
+  <div class="btns" id="trBtns"></div>
+  <div class="desc" id="trDesc"></div>
+  <div class="scroll"><table id="trTable"></table></div>
+</div>
+
+<div class="card">
+  <h2>方法与边界</h2>
+  <div class="note" id="methodNote"></div>
+</div>
+
+<div class="foot">数据来自 Wind 导出 · 仅供个人研究，不构成投资建议 · <a href="./index.html">← 返回研究目录</a></div>
+</div>
+<script>
+const D=/*__DATA__*/;
+const $=id=>document.getElementById(id);
+const fmt=(v,n=2)=>(v==null||!isFinite(v))?'—':Number(v).toFixed(n);
+const pct=(v,n=2)=>(v==null||!isFinite(v))?'—':(Number(v)*100).toFixed(n)+'%';
+const cls=v=>v>0?'up':(v<0?'down':'neu');
+const sg=v=>(v>0?'+':'')+fmt(v,3);
+const C=v=>'<span class="'+cls(v)+'">'+sg(v)+'</span>';
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function tableHtml(cols,rows){let h='<thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+ rows.forEach(r=>{h+='<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>';});return h+'</tbody>';}
+const W=900;
+const E=x=>(typeof x==='string'?$(x):x);
+const PAL=['#2c5aa0','#d64545','#2f9e6f','#c8781a','#7b61b8','#3f8fa8','#8a94a3','#b0557a'];
+function svgWrap(h,body){return '<svg viewBox="0 0 '+W+' '+h+'" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'+body+'</svg>';}
+function txt(x,y,s,o){o=o||{};return '<text x="'+x+'" y="'+y+'" font-size="'+(o.fs||11)+'" fill="'+(o.fill||'#5c6878')+'" text-anchor="'+(o.anchor||'start')+'"'+(o.rotate?' transform="rotate('+o.rotate+' '+x+' '+y+')"':'')+'>'+esc(s)+'</text>';}
+function line(x1,y1,x2,y2,c,dash,w){return '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="'+c+'" stroke-width="'+(w||1)+'"'+(dash?' stroke-dasharray="'+dash+'"':'')+'/>';}
+
+function drawLine(el,series,o){
+ el=E(el);
+ o=o||{};const h=o.h||270,P={l:62,r:16,t:14,b:30};
+ const from=o.from||0,to=(o.to==null?D.dates.length-1:o.to);
+ let vals=[];series.forEach(s=>{let a=s.data.slice(from,to+1);
+   if(o.rebase){const b=a[0]-1;a=a.map(v=>v-b);}vals=vals.concat(a.filter(isFinite));});
+ if(!vals.length){el.innerHTML='';return;}
+ let mn=Math.min.apply(null,vals),mx=Math.max.apply(null,vals);if(mn===mx){mn-=.001;mx+=.001;}
+ const pad=(mx-mn)*.10;mn-=pad;mx+=pad;
+ const X=i=>P.l+(i-from)/Math.max(1,to-from)*(W-P.l-P.r);
+ const Y=v=>P.t+(mx-v)/(mx-mn)*(h-P.t-P.b);
+ let b='';for(let k=0;k<=4;k++){const v=mn+(mx-mn)*k/4,y=Y(v);
+   b+=line(P.l,y,W-P.r,y,'#e9edf3','3,3')+txt(P.l-7,y+3.5,(o.yfmt?o.yfmt(v):fmt(v,3)),{anchor:'end',fs:10.5});}
+ // 年份刻度
+ let lastY=null;for(let i=from;i<=to;i++){const y=D.dates[i].slice(0,4);if(y!==lastY){lastY=y;
+   b+=line(X(i),P.t,X(i),h-P.b,'#f0f3f7')+txt(X(i)+3,h-9,y,{fs:10,fill:'#8a94a3'});}}
+ if(o.markIdx!=null&&o.markIdx>=from&&o.markIdx<=to){const x=X(o.markIdx);
+   b+=line(x,P.t,x,h-P.b,'#c8781a','5,4',1.4)+txt(x+4,P.t+11,o.markLabel||'验证段起',{fs:10,fill:'#c8781a'});}
+ series.forEach((s,k)=>{let a=s.data.slice(from,to+1);if(o.rebase){const b0=a[0]-1;a=a.map(v=>v-b0);}
+   let d='';for(let i=0;i<a.length;i++){if(!isFinite(a[i]))continue;d+=(d?'L':'M')+X(from+i)+' '+Y(a[i]);}
+   if(d)b+='<path d="'+d+'" fill="none" stroke="'+(s.color||PAL[k%PAL.length])+'" stroke-width="'+(s.w||1.9)+'"'+(s.dash?' stroke-dasharray="'+s.dash+'"':'')+' stroke-linejoin="round"/>';});
+ el.innerHTML=svgWrap(h,b);
+}
+function drawBars(el,items,o){
+ el=E(el);
+ o=o||{};const h=o.h||250,P={l:62,r:16,t:16,b:o.rotate?58:34};
+ const vs=items.map(x=>x.value).filter(isFinite);if(!vs.length){el.innerHTML='';return;}
+ let mn=Math.min(0,Math.min.apply(null,vs)),mx=Math.max(0,Math.max.apply(null,vs));
+ if(mn===mx){mn-=.001;mx+=.001;}const pad=(mx-mn)*.12;mn-=pad;mx+=pad;
+ const Y=v=>P.t+(mx-v)/(mx-mn)*(h-P.t-P.b);
+ const bw=(W-P.l-P.r)/items.length, bar=Math.min(52,bw*.62);
+ let b='';for(let k=0;k<=4;k++){const v=mn+(mx-mn)*k/4,y=Y(v);
+   b+=line(P.l,y,W-P.r,y,'#e9edf3','3,3')+txt(P.l-7,y+3.5,(o.yfmt?o.yfmt(v):fmt(v,2)),{anchor:'end',fs:10.5});}
+ b+=line(P.l,Y(0),W-P.r,Y(0),'#9aa5b3',null,1.2);
+ items.forEach((it,i)=>{const cx=P.l+bw*(i+.5),x=cx-bar/2,y0=Y(0),y1=Y(it.value);
+   const col=it.color||(it.value>=0?'#d64545':'#2f9e6f');
+   b+='<rect x="'+x+'" y="'+Math.min(y0,y1)+'" width="'+bar+'" height="'+Math.max(1,Math.abs(y1-y0))+'" rx="2" fill="'+col+'" opacity="'+(it.color?0.92:0.85)+'"><title>'+esc(it.tip||it.label)+'</title></rect>';
+   if(o.showVal!==false)b+=txt(cx,it.value>=0?Math.min(y0,y1)-5:Math.max(y0,y1)+13,(o.vfmt?o.vfmt(it.value):fmt(it.value,2)),{anchor:'middle',fs:10,fill:'#5c6878'});
+   const lab=String(it.label);const short=lab.length>12?lab.slice(0,11)+'…':lab;
+   if(o.rotate)b+=txt(cx-3,h-P.b+16,short,{anchor:'end',fs:9.5,rotate:-32});
+   else b+=txt(cx,h-9,short,{anchor:'middle',fs:10});});
+ el.innerHTML=svgWrap(h,b);
+}
+function drawHist(el,d,o){
+ el=E(el);
+ o=o||{};const h=o.h||250,P={l:62,r:16,t:16,b:34};
+ const arr=(d.hist||[]).filter(isFinite);if(!arr.length){el.innerHTML='';return;}
+ let lo=Math.min.apply(null,arr.concat([d.real])),hi=Math.max.apply(null,arr.concat([d.real]));
+ if(lo===hi){lo-=.5;hi+=.5;}const pad=(hi-lo)*.06;lo-=pad;hi+=pad;
+ const NB=26,bw=(hi-lo)/NB,cnt=new Array(NB).fill(0);
+ arr.forEach(v=>{let k=Math.floor((v-lo)/bw);if(k<0)k=0;if(k>=NB)k=NB-1;cnt[k]++;});
+ const mx=Math.max.apply(null,cnt)||1;
+ const X=v=>P.l+(v-lo)/(hi-lo)*(W-P.l-P.r);
+ const Y=c=>P.t+(mx-c)/mx*(h-P.t-P.b);
+ let b='';[0,.5,1].forEach(f=>{const y=Y(mx*f);b+=line(P.l,y,W-P.r,y,'#e9edf3','3,3')+txt(P.l-7,y+3.5,fmt(mx*f,0),{anchor:'end',fs:10.5});});
+ cnt.forEach((c,k)=>{const x0=X(lo+bw*k),x1=X(lo+bw*(k+1));
+   b+='<rect x="'+x0+'" y="'+Y(c)+'" width="'+Math.max(.5,x1-x0-1)+'" height="'+(h-P.b-Y(c))+'" fill="#8fa9ce" opacity=".85"><title>'+fmt(lo+bw*k,2)+' ~ '+fmt(lo+bw*(k+1),2)+'：'+c+' 次</title></rect>';});
+ b+=line(X(d.real),P.t,X(d.real),h-P.b,'#d64545',null,2.2);
+ b+=txt(Math.min(W-P.r-70,X(d.real)+5),P.t+13,'真实 '+fmt(d.real,3),{fs:11,fill:'#d64545'});
+ for(let k=0;k<=4;k++){const v=lo+(hi-lo)*k/4;b+=txt(X(v),h-9,fmt(v,2),{anchor:'middle',fs:10});}
+ el.innerHTML=svgWrap(h,b);
+}
+function drawHeat(el,o){
+ el=E(el);
+ o=o||{};const rows=D.meta.thresholds,cols=D.meta.holds;
+ const h=o.h||214,P={l:78,r:16,t:26,b:28};
+ const cw=(W-P.l-P.r)/cols.length,ch=(h-P.t-P.b)/rows.length;
+ const map={};D.grid.cells.forEach(c=>{map[c.source+'|'+c.mode+'|'+c.th+'|'+c.H]=c[o.seg]['累计点数'];});
+ let vals=[];rows.forEach(r=>cols.forEach(c=>{const v=map[o.source+'|'+o.mode+'|'+r+'|'+c];if(isFinite(v))vals.push(v);}));
+ const mx=Math.max(1e-9,Math.max.apply(null,vals.map(Math.abs)));
+ let b='';cols.forEach((c,j)=>{b+=txt(P.l+cw*(j+.5),P.t-9,'H='+c,{anchor:'middle',fs:10.5});});
+ rows.forEach((r,i)=>{b+=txt(P.l-9,P.t+ch*(i+.5)+4,'≥'+Math.round(r*100)+'%',{anchor:'end',fs:10.5});
+   cols.forEach((c,j)=>{const v=map[o.source+'|'+o.mode+'|'+r+'|'+c];
+     const t=Math.min(1,Math.abs(v||0)/mx),alpha=.10+t*.72;
+     const col=(v||0)>=0?'rgba(214,69,69,'+alpha.toFixed(2)+')':'rgba(47,158,111,'+alpha.toFixed(2)+')';
+     b+='<rect x="'+(P.l+cw*j+2)+'" y="'+(P.t+ch*i+2)+'" width="'+(cw-4)+'" height="'+(ch-4)+'" rx="3" fill="'+col+'" stroke="#e4e9f0" stroke-width=".6"><title>th='+r+' H='+c+' → '+fmt(v,3)+' 点</title></rect>';
+     b+=txt(P.l+cw*(j+.5),P.t+ch*(i+.5)+4,fmt(v,2),{anchor:'middle',fs:10,fill:'#1c2532'});});});
+ el.innerHTML=svgWrap(h,b);
+}
+
+// ---------- 顶部 ----------
+(function(){
+ const M=D.meta,P=D.preset,ex=P.exposure;
+ $('badges').innerHTML=[['样本',M.start+' ~ '+M.end],['交易日',M.n_days],['主口径','收跌 + dNet≥80分位 → 做多'],
+  ['持有','3 个交易日'],['探索段',M.explore.join(' ~ ')],['验证段',M.verify.join(' ~ ')],
+  ['净值','固定名义点数累加·不复利'],['成本','主结果零成本']].map(x=>'<span class="badge">'+x[0]+' <b>'+esc(x[1])+'</b></span>').join('');
+ $('verdict').innerHTML='<h2>'+esc(D.conclusion.headline)+'</h2><ol>'+D.conclusion.points.map(p=>'<li>'+p+'</li>').join('')+'</ol>';
+ $('ruleBox').innerHTML='<b>'+esc(P.desc)+'</b><ul>'+
+  '<li>力度：平安净持仓日变动 dNet 在过去 '+M.win+' 个有效日的百分位（含当日，只用当时可得数据，无前视）</li>'+
+  '<li>阈值：≥80 分位；近 250 日约 <b>+'+fmt(P.th_hands['上阈值手数'],0)+' 手</b>（口径同上一轮，未重新调参）</li>'+
+  '<li>执行：T 日盘后信号 → T+1 开盘买 5 手 TS → 持有 3 个交易日 → T+4 收盘平仓；单仓位、期间不叠加</li>'+
+  '<li><b>不做空</b>：上一轮「价涨减多→跌」这一半已被证伪，且做空腿在探索段就亏钱</li></ul>';
+ const k=[['累计点数',fmt(P.all['累计点数'],3)+' 点','全样本'],['夏普比率',fmt(P.all['夏普比率'],2),'零成本'],
+  ['交易笔数',P.all['交易笔数'],P.signal_days+' 个信号日'],['胜率',pct(P.all['胜率'],1),'盈亏比 '+fmt(P.all['盈亏比'],2)],
+  ['最大回撤',pct(P.all['最大回撤'],2),'逐笔 t '+fmt(P.all['逐笔t值'],2)],
+  ['验证段',fmt(P.verify['累计点数'],3)+' 点','夏普 '+fmt(P.verify['夏普比率'],2)],
+  ['在场时间',pct(ex['在场时间占比'],1),'按占用资金年化 '+pct(ex['按占用资金年化'],2)],
+  ['买入持有',fmt(D.benchmark.buy_hold['累计点数'],3)+' 点','全程持 5 手']];
+ $('kpiPreset').innerHTML=k.map(x=>'<div class="kpi"><div class="k">'+x[0]+'</div><div class="v '+(x[0]==='验证段'?'up':'')+'">'+x[1]+'</div><div class="n">'+x[2]+'</div></div>').join('');
+ $('segTable').innerHTML=tableHtml(['区间','累计点数','累计收益率','年化','夏普','最大回撤','笔数','胜率','逐笔 t'],
+  [['探索段',C(P.explore['累计点数']),pct(P.explore['累计收益率']),pct(P.explore['年化收益率']),fmt(P.explore['夏普比率'],2),pct(P.explore['最大回撤'],2),P.explore['交易笔数'],pct(P.explore['胜率'],1),fmt(P.explore['逐笔t值'],2)],
+   ['验证段',C(P.verify['累计点数']),pct(P.verify['累计收益率']),pct(P.verify['年化收益率']),fmt(P.verify['夏普比率'],2),pct(P.verify['最大回撤'],2),P.verify['交易笔数'],pct(P.verify['胜率'],1),fmt(P.verify['逐笔t值'],2)],
+   ['全样本',C(P.all['累计点数']),pct(P.all['累计收益率']),pct(P.all['年化收益率']),fmt(P.all['夏普比率'],2),pct(P.all['最大回撤'],2),P.all['交易笔数'],pct(P.all['胜率'],1),fmt(P.all['逐笔t值'],2)]]);
+ $('expoNote').innerHTML='<b>怎么读绝对收益</b>：策略只在场 '+pct(ex['在场时间占比'],1)+' 的时间，累计 '+
+  fmt(P.all['累计点数'],3)+' 点，低于买入持有的 '+fmt(D.benchmark.buy_hold['累计点数'],3)+
+  ' 点；但按资金被占用的时间折算年化 '+pct(ex['按占用资金年化'],2)+'%。两者不矛盾——前者是「总收益」，后者是「资金效率」。';
+})();
+
+// ---------- ① 删腿依据 ----------
+(function(){
+ const dr=D.drop_leg_evidence;
+ $('dropTable').innerHTML=tableHtml(['区间','做多笔数','做多点数','做空笔数','做空点数'],
+  dr.rows.map(r=>['<b>'+r['区间']+'</b>',r['做多笔数'],C(r['做多点数']),r['做空笔数'],C(r['做空点数'])]));
+ $('dropNote').innerHTML='<span class="tagY">样本外成立</span>'+esc(dr.verdict)+'<br><br>'+
+  '注：这是本轮唯一能称得上「事前」的部分。其余所有数字仍是看过上一轮结果之后才做的分析，验证段只能防参数过拟合，防不了规则被反复修改。';
+ drawBars('chartDrop',dr.rows.map(r=>({label:r['区间'],value:r['做空点数'],
+   tip:r['区间']+' 做空腿累计 '+fmt(r['做空点数'],3)+' 点'})),{h:220,yfmt:v=>fmt(v,2),vfmt:v=>fmt(v,3),showVal:true});
+ $('dropLegend').innerHTML='<span><i style="background:#2f9e6f"></i>做空腿累计点数（负=亏钱）</span>';
+})();
+
+// ---------- ② 净值 ----------
+(function(){
+ const S=[
+  {name:'只做多（主口径）',data:D.preset.nav,color:PAL[0],w:2.4},
+  {name:'多空都做（上一轮）',data:D.drop_leg_evidence.full_nav,color:PAL[7]},
+  {name:'只看收跌日做多',data:D.decomposition.state_variants[1].nav,color:PAL[2]},
+  {name:'只看平安力度做多',data:D.decomposition.state_variants[2].nav,color:PAL[3]},
+  {name:'随机择时中位数',data:D.benchmark.random_median_nav_full,color:'#8a94a3',dash:'5,4'},
+  {name:'买入持有 5 手',data:D.benchmark.buy_hold.nav,color:'#7b61b8',dash:'3,3'}];
+ const on=S.map((_,i)=>i<4);
+ const ranges=[['全样本',0,D.dates.length-1],['验证段起',D.benchmark.verify_start_idx,D.dates.length-1],
+  ['2024 起',D.dates.findIndex(d=>d>='2024-01-01'),D.dates.length-1],['2021–2023',0,D.benchmark.verify_start_idx-1]];
+ let ri=0;
+ function render(){
+  const [lab,a,b]=ranges[ri];
+  const ss=S.filter((_,i)=>on[i]);
+  drawLine('chartNav',ss,{h:290,from:a,to:b,rebase:true,yfmt:v=>fmt(v,4),
+    markIdx:(a<=D.benchmark.verify_start_idx&&b>=D.benchmark.verify_start_idx)?D.benchmark.verify_start_idx:null});
+  $('navDesc').innerHTML='区间 <b>'+lab+'</b>（'+D.dates[a]+' ~ '+D.dates[b]+'），起点重归一到 1.0。'+
+   '点下方色块可显示/隐藏曲线。';
+ }
+ $('navBtns').innerHTML=ranges.map((r,i)=>'<button class="btn'+(i===0?' on':'')+'" data-i="'+i+'">'+r[0]+'</button>').join('');
+ $('navBtns').onclick=e=>{const t=e.target.closest('button');if(!t)return;ri=+t.dataset.i;
+  [...$('navBtns').children].forEach((b,i)=>b.className='btn'+(i===ri?' on':''));render();};
+ $('navChips').innerHTML=S.map((s,i)=>'<span class="chip'+(on[i]?'':' off')+'" data-i="'+i+'"><i style="background:'+s.color+'"></i>'+s.name+'</span>').join('');
+ $('navChips').onclick=e=>{const t=e.target.closest('.chip');if(!t)return;const i=+t.dataset.i;on[i]=!on[i];
+  [...$('navChips').children].forEach((c,j)=>c.className='chip'+(on[j]?'':' off'));render();};
+ render();
+})();
+
+// ---------- ③ 三层分解 ----------
+(function(){
+ const dc=D.decomposition;
+ const ps=dc.pool_stats.map((p,i)=>({label:p['名称'].replace(/（.*?）/g,''),value:(p['每笔均值点数']||0)*1000,
+   tip:p['名称']+'：n='+p.n+'，每笔 '+fmt(p['每笔均值点数'],5)+' 点，胜率 '+pct(p['胜率'],1)+'，t='+fmt(p['t值'],2),
+   color:i===3?'#2c5aa0':null}));
+ drawBars('chartPool',ps,{h:250,rotate:true,yfmt:v=>fmt(v,0),vfmt:v=>fmt(v,1),showVal:true});
+ $('poolLegend').innerHTML='<span>纵轴 = 每笔平均未来 3 日点数 <b>× 1000</b>（放大便于显示）</span><span><i style="background:#2c5aa0"></i>主口径信号池</span>';
+ $('poolTable').innerHTML=tableHtml(['信号池','n','每笔点数','胜率','t'],
+  dc.pool_stats.map(p=>[esc(p['名称']),p.n,fmt(p['每笔均值点数'],5),pct(p['胜率'],1),fmt(p['t值'],2)]));
+ const sv=dc.state_variants.map((v,i)=>({label:v['名称'].replace(/：.*/,''),value:v['all']['累计点数'],
+   tip:v['名称']+'：'+fmt(v['all']['累计点数'],3)+' 点 / '+v['all']['交易笔数']+' 笔',
+   color:i===0?'#2c5aa0':null}));
+ drawBars('chartState',sv,{h:250,rotate:true,yfmt:v=>fmt(v,2),vfmt:v=>fmt(v,2),showVal:true});
+ $('stateLegend').innerHTML='<span><i style="background:#2c5aa0"></i>主口径</span><span>纵轴 = 状态机累计点数</span>';
+ $('stateTable').innerHTML=tableHtml(['规则','探索段','验证段','全样本','笔数','夏普'],
+  dc.state_variants.map(v=>[esc(v['名称']),C(v['explore']['累计点数']),C(v['verify']['累计点数']),
+    C(v['all']['累计点数']),v['all']['交易笔数'],fmt(v['all']['夏普比率'],2)]));
+ const c=dc.contribution;
+ $('incrNote').innerHTML='<b>同构随机择时分解</b>：随机择时基准 μA = '+fmt(c['随机择时基准 μA'],3)+
+  ' 点 → 加上「只在收跌日做多」μB = '+fmt(c['加价格条件后 μB'],3)+' 点（价格条件贡献 '+sg(c['其中价格条件贡献'])+
+  ' 点）→ 真实主口径 '+fmt(c['真实主口径'],3)+' 点（余下 '+sg(c['其中平安条件贡献'])+
+  ' 点，混着成簇/不叠加的执行结构）。<b>三项加总自洽</b>。逐笔独立口径下平安条件增量只有 '+
+  fmt(dc.incremental['价跌+平安 vs 价跌（平安条件增量）'],5)+' 点、Welch t='+fmt(dc.incremental['平安条件 Welch_t'],2)+'，并不显著。';
+})();
+
+// ---------- ④ 零假设 ----------
+(function(){
+ const rn=D.decomposition.random_null,ns=D.null_shift;
+ const sets=[];
+ Object.keys(rn.full).forEach(k=>sets.push({key:'full / '+k,d:rn.full[k],seg:'全样本'}));
+ Object.keys(rn.verify).forEach(k=>sets.push({key:'verify / '+k,d:rn.verify[k],seg:'验证段'}));
+ Object.keys(ns).forEach(k=>sets.push({key:'移位 / '+k,d:{hist:ns[k].hist,real:ns[k].real,mean:ns[k].mean,p95:ns[k].p95,p:ns[k].p,p_verify:ns[k].p_verify},seg:'全样本'}));
+ const mainIdx=sets.findIndex(s=>s.key.indexOf('抖动±3日·仍收跌')>=0&&s.seg==='全样本');
+ let cur=mainIdx>=0?mainIdx:0;
+ const notes={
+  '全交易日池':'从全部交易日抽同等密度信号日。打乱了收跌条件、成簇结构与簇的时间位置 ⇒ p 最小，但不能归因给平安。',
+  '收跌日池':'从收跌日抽同等密度信号日。控制了价格条件，但把「成簇 + 不叠加」的结构打散了。',
+  '按年分层收跌池':'再按年保持信号数，排除「信号恰好集中在上涨年份」。仍打散了成簇结构。',
+  '抖动±3日·仍收跌':'★ 主判据：每个信号日在收跌日范围内前后挪 3 天，保持价格条件、密度与成簇结构，只打乱平安挑了哪一天。',
+  '抖动±5日·仍收跌':'同主判据但抖动 ±5 天。如实并列：p 会变小，说明精确时点仍有部分价值。',
+  '抖动±3日·不限':'不限制仍落在收跌日。价格条件一旦丢失收益就崩 ⇒ 策略依赖的是「收跌」，不是平安。',
+  '整条信号移位':'整条 0/1 信号循环移位，簇结构保留但时间位置整体平移。',
+  '只打乱平安力度':'循环移位 dNet 分位后重算信号，同时改变了信号日集合与成簇结构。'};
+ function render(){
+  const s=sets[cur],d=s.d;
+  drawHist('chartNull',{hist:d.hist,real:d.real},{h:250});
+  $('nullLegend').innerHTML='<span><i style="background:#8fa9ce"></i>随机/扰动后的累计点数分布（'+
+   (d.hist?d.hist.length:0)+' 次）</span><span><i style="background:#d64545"></i>真实值 '+fmt(d.real,3)+' 点</span>';
+  const rows=[['方法',esc(s.key)],['真实累计',fmt(d.real,3)+' 点'],['随机均值',fmt(d.mean,3)+' 点'],
+   ['随机 95 分位',fmt(d.p95,3)+' 点'],['真实值分位',pct(d.pct,1)],
+   ['p（随机≥真实）','<b class="'+(d.p<0.05?'up':'neu')+'">'+fmt(d.p,4)+'</b>']];
+  if(d.p_verify!=null)rows.push(['p（验证段）',fmt(d.p_verify,4)]);
+  if(d['每笔均值点数']!=null)rows.push(['扰动后每笔均值',fmt(d['每笔均值点数'],5)+' 点'],['平均成交笔数',fmt(d['平均成交笔数'],1)]);
+  rows.push(['判读','<span class="'+(d.p<0.05?'tagN':'tagY')+'">'+(d.p<0.05?'显著':'不显著')+'</span>']);
+  $('nullTable').innerHTML=tableHtml(['项目','值'],rows);
+  const k=Object.keys(notes).find(x=>s.key.indexOf(x)>=0);
+  $('nullNote').innerHTML='<b>这组控制了什么、没控制什么</b>：'+(k?esc(notes[k]):'—')+
+   '<br><br>所有 p 值均为单尾 P(随机累计 ≥ 真实累计)，'+
+   fmt(D.meta.n_perm,0)+' 次同构状态机抽样（分层 '+fmt(D.meta.n_strat||1000,0)+
+   ' 次、抖动 '+fmt(D.meta.n_jitter||800,0)+' 次、循环移位 '+fmt(D.meta.n_shift,0)+' 次）。';
+ }
+ $('nullBtns').innerHTML=sets.map((s,i)=>'<button class="btn'+(i===cur?' on':'')+'" data-i="'+i+'"'+(i===mainIdx?' style="border-color:#c8781a"':'')+'>'+esc(s.key)+(i===mainIdx?' ★':'')+'</button>').join('');
+ $('nullBtns').onclick=e=>{const t=e.target.closest('button');if(!t)return;cur=+t.dataset.i;
+  [...$('nullBtns').children].forEach((b,i)=>b.className='btn'+(i===cur?' on':''));render();};
+ render();
+})();
+
+// ---------- ⑤ 成簇 / 不追单 ----------
+(function(){
+ const sk=D.decomposition.skipped,rn=D.decomposition.random_null.full,P=D.preset;
+ drawBars('chartSkip',[
+  {label:'成交的 113 笔',value:sk['成交信号未来均值点数']*1000,tip:'成交信号未来 3 日均值 '+fmt(sk['成交信号未来均值点数'],5)+' 点'},
+  {label:'被跳过的 49 个',value:sk['被跳过信号未来均值点数']*1000,tip:'被跳过信号未来 3 日均值 '+fmt(sk['被跳过信号未来均值点数'],5)+' 点'},
+  {label:'全部 162 个信号',value:(sk['成交信号未来均值点数']*sk['成交笔数']+sk['被跳过信号未来均值点数']*sk['被跳过'])/(sk['成交笔数']+sk['被跳过'])*1000,tip:'全部信号日均值'}],
+  {h:230,yfmt:v=>fmt(v,0),vfmt:v=>fmt(v,1),showVal:true});
+ const jit=[{label:'真实（不抖动）',value:P.all['累计点数'],color:'#2c5aa0'}];
+ ['抖动±3日·仍收跌','抖动±5日·仍收跌','抖动±3日·不限'].forEach(k=>{
+  jit.push({label:k.replace('抖动','').replace('·',' '),value:rn[k].mean,tip:k+'：均值 '+fmt(rn[k].mean,3)+' 点，p='+fmt(rn[k].p,4)});});
+ drawBars('chartJitter',jit,{h:230,yfmt:v=>fmt(v,2),vfmt:v=>fmt(v,2),showVal:true});
+ $('jitterLegend').innerHTML='<span><i style="background:#2c5aa0"></i>真实</span><span><i style="background:#d64545"></i>抖动后平均累计点数</span>';
+ $('skipNote').innerHTML='<b>说人话</b>：平安大幅加多经常连着好几天出现（信号成簇）。单仓位规则只在第一天进场，后面几天的追单一律跳过；'+
+  '而被跳过的那些恰好平均亏 '+fmt(Math.abs(sk['被跳过信号未来均值点数']),5)+' 点。所以净值被抬高，'+
+  '靠的是「不在连续下跌里连续加仓」这条纪律，不是平安比别人更会挑日子。'+
+  '把挑中的日子在收跌日里前后挪 3 天，累计还有 '+fmt(rn['抖动±3日·仍收跌'].mean,3)+
+  ' 点、p='+fmt(rn['抖动±3日·仍收跌'].p,3)+'（不显著），就是这个道理。';
+})();
+
+// ---------- ⑥ 热力图 ----------
+(function(){
+ const st={source:'dNet',mode:'down',seg:'all'};
+ const segs=[['all','全样本'],['explore','探索段'],['verify','验证段']];
+ function render(){
+  drawHeat('chartHeat',st);
+  $('heatDesc').innerHTML='当前：<b>'+st.source+'</b> / <b>'+(st.mode==='down'?'只在收跌日':'不加价格条件')+'</b> / <b>'+
+   (segs.find(x=>x[0]===st.seg)||[])[1]+'</b>。格子数字 = 该参数组合的累计点数；颜色越深绝对值越大（红=正、绿=负）。';
+ }
+ const mk=(id,items,get,set)=>{
+  $(id).innerHTML=items.map(x=>'<button class="btn" data-v="'+x[0]+'">'+x[1]+'</button>').join('');
+  $(id).addEventListener('click',e=>{const t=e.target.closest('button');if(!t)return;set(t.dataset.v);
+   [...$(id).children].forEach(b=>b.className='btn'+(b.dataset.v===get()?' on':''));render();});
+  [...$(id).children].forEach(b=>{if(b.dataset.v===get())b.className='btn on';});
+ };
+ $('heatBtns').innerHTML='<div id="hSrc" style="display:flex;gap:6px"></div><div id="hMode" style="display:flex;gap:6px"></div><div id="hSeg" style="display:flex;gap:6px"></div>';
+ $('heatBtns').style.gap='10px';
+ mk('hSrc',[['dNet','力度源 dNet'],['dB','力度源 dB']],()=>st.source,v=>st.source=v);
+ mk('hMode',[['down','只在收跌日'],['only','不加价格条件']],()=>st.mode,v=>st.mode=v);
+ mk('hSeg',segs,()=>st.seg,v=>st.seg=v);
+ $('heatLegend').innerHTML='<span><i style="background:rgba(214,69,69,.7)"></i>正收益</span><span><i style="background:rgba(47,158,111,.7)"></i>负收益</span><span>行=力度分位阈值，列=持有天数 H</span>';
+ const rb=D.grid.robust,best=D.grid.best;
+ $('robustNote').innerHTML='<b>参数面稳健性</b>：验证段 '+pct(rb['验证段为正比例'],1)+' 的格子为正，'+
+  '探索段前 10 名在验证段有 '+rb['探索段前10验证段为正数']+' 个仍为正、平均 '+fmt(rb['探索段前10验证段平均点数'],3)+
+  ' 点；但两段相关只有 '+fmt(rb['两段相关'],2)+'。探索段最优是 <b>'+best.params.source+'/'+best.params.mode+
+  '/th='+best.params.th+'/H='+best.params.H+'</b>，全样本 '+fmt(best.all['累计点数'],3)+' 点 —— '+
+  '<b>仅供刻度</b>：持有期从口述的 3 天漂到 10 天，walk-forward 也一路选 H=10，说明「持有几天」并不稳定。';
+ render();
+})();
+
+// ---------- ⑦ 安慰剂 / 成本 / 分年 / WF ----------
+(function(){
+ const pl=D.placebo.rows;
+ drawBars('chartPlacebo',pl.map((p,i)=>({label:p['席位'].replace('（合成）',''),value:p['all']['累计点数'],
+   color:p['席位']===D.meta.target?'#2c5aa0':null,tip:p['席位']+'：'+fmt(p['all']['累计点数'],3)+' 点 / '+p['all']['交易笔数']+' 笔'})),
+  {h:250,rotate:true,yfmt:v=>fmt(v,2),vfmt:v=>fmt(v,2),showVal:true});
+ $('placeboTable').innerHTML=tableHtml(['席位','探索段','验证段','全样本','笔数','夏普'],
+  pl.map(p=>[esc(p['席位']),C(p['explore']['累计点数']),C(p['verify']['累计点数']),C(p['all']['累计点数']),p['all']['交易笔数'],fmt(p['all']['夏普比率'],2)]));
+ const pn=document.getElementById('placeboNote');
+ if(!pn){const d=document.createElement('div');d.id='placeboNote';d.className='small';d.style.marginTop='8px';
+  $('placeboTable').insertAdjacentElement('afterend',d);}
+ $('placeboNote').textContent='平安排名 '+D.placebo.rank_of_target+' / '+D.placebo.n_seats+'。'+D.placebo.note;
+ drawBars('chartCost',D.cost_sensitivity.map(c=>({label:fmt(c['成本点'],3),value:c['累计点数'],
+   tip:'成本 '+fmt(c['成本点'],3)+' 点 → '+fmt(c['累计点数'],3)+' 点，夏普 '+fmt(c['夏普比率'],2)})),
+  {h:230,yfmt:v=>fmt(v,2),vfmt:v=>fmt(v,2),showVal:true});
+ $('costTable').innerHTML=tableHtml(['每笔成本(点)','累计点数','夏普','胜率','笔数'],
+  D.cost_sensitivity.map(c=>[fmt(c['成本点'],3),C(c['累计点数']),fmt(c['夏普比率'],2),pct(c['胜率'],1),c['交易笔数']]));
+ $('yearTable').innerHTML=tableHtml(['年份','累计点数','笔数','胜率','夏普','逐笔 t'],
+  D.yearly.map(y=>[y['年份'],C(y['累计点数']),y['交易笔数'],pct(y['胜率'],1),fmt(y['夏普比率'],2),fmt(y['逐笔t值'],2)]));
+ $('wfTable').innerHTML=tableHtml(['年份','当年选出的参数','累计点数','笔数'],
+  D.walk_forward.rows.map(r=>[r['年份'],'<span class="small">'+esc(r['参数'])+'</span>',C(r['累计点数']),r['交易笔数']]));
+ $('wfNote').innerHTML='walk-forward 全样本 '+fmt(D.walk_forward.all['累计点数'],3)+' 点。参数连年漂到 H=10，'+
+  '2025 年还是负的 ⇒ 别把某一格「最优持有天数」当结论。';
+})();
+
+// ---------- ⑧ 逐笔 ----------
+(function(){
+ const tr=D.preset.trades;let yr='全部';
+ const years=['全部'].concat([...new Set(tr.map(t=>t.signal_date.slice(0,4)))]);
+ function render(){
+  const rows=tr.filter(t=>yr==='全部'||t.signal_date.slice(0,4)===yr);
+  $('trTable').innerHTML=tableHtml(['信号日','分位','dNet(手)','当日Δ价','建仓日','开仓价','平仓日','平仓价','盈亏(点)'],
+   rows.map(t=>[t.signal_date,fmt(t.q,3),fmt(t.dNet,0),C(t.dP),t.entry_date,fmt(t.entry_px,3),
+    t.exit_date,fmt(t.exit_px,3),C(t.pnl_pts)]));
+  $('trDesc').innerHTML='共 '+rows.length+' 笔（信号日 '+D.preset.signal_days+' 个，其余被单仓位规则跳过）；全部为做多。'+
+   '平均 '+fmt(D.preset.all['每笔平均点数'],5)+' 点 ≈ '+fmt(D.preset.all['每笔平均点数']/0.005,1)+' 个最小变动价位。';
+ }
+ $('trBtns').innerHTML=years.map((y,i)=>'<button class="btn'+(i===0?' on':'')+'" data-v="'+y+'">'+(y==='全部'?'全部':y+' 年')+'</button>').join('');
+ $('trBtns').onclick=e=>{const t=e.target.closest('button');if(!t)return;yr=t.dataset.v;
+  [...$('trBtns').children].forEach(b=>b.className='btn'+(b.dataset.v===yr?' on':''));render();};
+ render();
+})();
+
+// ---------- 方法 ----------
+(function(){
+ const M=D.meta;
+ $('methodNote').innerHTML=
+  '<b>执行口径</b>：'+esc(M.rule)+'<br>'+
+  '<b>净值口径</b>：'+esc(M.nav)+'。TS 面值 200 万/手、报价按 100 元面值 ⇒ 1 点 = 2 万元/手 = 10 万元/组 = 初始资金 1000 万的 1%。<br>'+
+  '<b>无前视</b>：dNet 为 T 日盘后公布的会员持仓变动，dP 为 T 日收盘变动，力度用 T 及之前 60 个有效日的百分位；T+1 开盘才建仓。<br>'+
+  '<b>样本切分</b>：探索段 '+M.explore.join(' ~ ')+'，验证段 '+M.verify.join(' ~ ')+'；主口径参数完全沿用上一轮口述规则，未在本轮重新调参。<br>'+
+  '<b>零假设</b>：同构状态机（相同密度信号日 → 相同单仓位规则），单尾 p = P(随机累计 ≥ 真实累计)。'+
+  '主判据是「抖动 ±3 日 · 仍收跌」，因为它只打乱平安挑了哪一天，保留价格条件、密度与成簇结构。<br>'+
+  '<b>★ 数据窥探警告</b>：'+esc(M.snooping)+' 平安本身也是看过全样本净值后才被挑中的序列；'+
+  '横截面安慰剂与零假设只能部分抵消，不能消除这次选择。<br>'+
+  '<b>定位</b>：刻度 + 证伪。本页所有对照组的目的是拆解收益来源，不是「找到一条更好的策略」。';
+})();
+</script>
+</body></html>
