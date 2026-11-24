@@ -66,16 +66,20 @@ def parse_ranks(body, day):
     return top
 
 
-def parse_prices(body):
+def price_rows(body):
     reader = csv.DictReader(io.StringIO(body.decode('gb18030')))
     expected = {'合约代码', '今开盘', '今收盘', '成交量'}
     if not expected.issubset(reader.fieldnames or ()):
         raise ValueError('日行情列名异常')
-    prices = {}
     for row in reader:
         contract = row['合约代码'].strip()
-        if not re.fullmatch(r'TS\d{4}', contract):
-            continue
+        if re.fullmatch(r'TS\d{4}', contract):
+            yield contract, row
+
+
+def parse_prices(body):
+    prices = {}
+    for contract, row in price_rows(body):
         if (row['今开盘'] or '').strip().lower() in ('', 'null'):
             continue
         numbers = [float(row['今开盘']), float(row['今收盘']), int(row['成交量'])]
@@ -87,6 +91,22 @@ def parse_prices(body):
     return prices
 
 
+def parse_expiry_quotes(body):
+    quotes = {}
+    for contract, row in price_rows(body):
+        volume = int(row['成交量'])
+        opening = float(row['今开盘']) if volume else None
+        settlement = float(row['今结算'])
+        mark = float(row['今收盘']) if volume else settlement
+        numbers = (mark, settlement) if opening is None else (opening, mark, settlement)
+        if not all(math.isfinite(v) and v > 0 for v in numbers):
+            raise ValueError(f'TS 到期基准行情数值异常：{contract}')
+        quotes[contract] = (opening, mark, settlement)
+    if not quotes:
+        raise ValueError('日行情缺少 TS 到期基准报价')
+    return quotes
+
+
 def fetch_session(day):
     stamp = day.strftime('%Y%m%d')
     directory = f'{stamp[:6]}/{stamp[6:]}'
@@ -96,7 +116,8 @@ def fetch_session(day):
         return None
     if prices is None or ranks is None:
         raise ValueError(f'{day} 的行情或持仓榜尚未齐全')
-    return {'positions': parse_ranks(ranks, stamp), 'prices': parse_prices(prices)}
+    return {'positions': parse_ranks(ranks, stamp), 'prices': parse_prices(prices),
+            'expiry_quotes': parse_expiry_quotes(prices)}
 
 
 def refresh_inputs(anchor, target):

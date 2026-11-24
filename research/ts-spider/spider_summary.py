@@ -9,6 +9,7 @@ import numpy as np
 
 import spider_backtest as bt
 import spider_daily_data as exchange
+import spider_expiry_benchmark as expiry
 import spider_pingan_signal as sb
 
 BASE = Path(__file__).resolve().parent
@@ -271,12 +272,14 @@ def main():
                         for k, v in candidate['drivers'].items()},
         })
         nav[name] = np.round(1 + np.cumsum(r), 7).tolist()
+    nav[expiry.NAME] = expiry.net_values(dates, expiry.read_quotes(snapshots), COST, bt.PRICE_REF)
     payload['forward'] = update_forward(
         dates, opens, closes, selected, payload,
         record_today=args.date == exchange.today() and asof == args.date.isoformat(),
     )
     write_if_changed(SIGNALS, json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + '\n')
-    page_data = json.dumps({**payload, 'dates': dates, 'nav': nav}, ensure_ascii=False,
+    page_data = json.dumps({**payload, 'dates': dates, 'nav': nav,
+                            'benchmark': {'name': expiry.NAME, 'color': '#46596f'}}, ensure_ascii=False,
                            separators=(',', ':'), allow_nan=False).replace('<', '\\u003c')
     page = TEMPLATE.read_text(encoding='utf-8').replace('__PAYLOAD__', page_data)
     page = page.replace('__ASOF__', escape(asof))
