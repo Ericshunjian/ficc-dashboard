@@ -32,7 +32,8 @@ STEPS = [
     ('spider_pingan_longonly.py', '⑥ 平安只做多'),
     ('spider_seat_compare.py', '⑦ 9 席位对比 + 中信归因'),
     ('spider_grid_detail.py', '⑧ 网格夏普王 / 点数王补算'),
-    ('spider_summary.py', '⑨ 生成一页汇总'),
+    ('spider_stack_long.py', '⑨ 叠加仓位 vs 单仓位'),
+    ('spider_summary.py', '⑩ 生成一页汇总'),
 ]
 
 OUTPUTS = [
@@ -42,7 +43,7 @@ OUTPUTS = [
     'TS_平安净多策略.json', 'TS_平安净多策略_明细.xlsx', 'TS_平安净多_策略.html',
     'TS_平安纯多头.json', 'TS_平安纯多头_明细.xlsx', 'TS_平安纯多头_策略.html',
     'TS_席位对比.json', 'TS_席位对比_明细.xlsx', 'TS_席位对比_净值.html',
-    'TS_网格优选_明细.json', 'TS_研究汇总.html',
+    'TS_网格优选_明细.json', 'TS_叠加仓位.json', 'TS_研究汇总.html',
 ]
 
 

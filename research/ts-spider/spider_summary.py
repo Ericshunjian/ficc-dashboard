@@ -41,6 +41,7 @@ def main():
     hold = J('TS_持仓整理.json')
     diag = J('TS_规则杠杆归因.json')
     gd = J('TS_网格优选_明细.json')
+    st = J('TS_叠加仓位.json')
 
     dates = seat['dates']
     N = len(dates)
@@ -358,6 +359,27 @@ def main():
                    'trades': tr})
     trades_year = {'year': year, 'asof': M['end'], 'strategies': tp}
 
+    # ---------- ⑧ 持续加仓对比 ----------
+    stack = {
+        'meta': {k: st['meta'][k] for k in ('title', 'rule', 'nav', 'signal_days', 'start', 'end')},
+        'variants': {},
+        'null': {k: {kk: vv for kk, vv in v.items() if kk != 'hist'} |
+                 {'hist': [rnd(x, 4) for x in v['hist']]}
+                 for k, v in st['null'].items()},
+        'compare': st['compare'],
+    }
+    for k, v in st['variants'].items():
+        stack['variants'][k] = {
+            'name': v['name'], 'nav': nav_of(v['nav']),
+            'all': {kk: v['segments']['all'][kk] for kk in
+                    ('累计点数', '夏普比率', '交易笔数', '胜率', '逐笔t值', '最大回撤')},
+            'verify': v['segments']['verify']['累计点数'],
+            'explore': v['segments']['explore']['累计点数'],
+            'costs': [{'成本点': c['成本点'], '累计点数': c['累计点数'],
+                       '交易笔数': c['交易笔数']} for c in v['costs']],
+            'occupancy': v['occupancy'],
+        }
+
     payload = {
         'meta': {
             'title': 'TS 蜘蛛网研究 · 一页汇总',
@@ -381,6 +403,7 @@ def main():
         'cards': cards,
         'extra': extra,
         'trades_year': trades_year,
+        'stack': stack,
     }
 
     with open(os.path.join(BASE, 'spider_summary_template.html'), encoding='utf-8') as f:

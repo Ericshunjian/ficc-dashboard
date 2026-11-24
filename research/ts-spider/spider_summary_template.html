@@ -88,7 +88,8 @@ footer{color:var(--tx3);font-size:11.5px;text-align:center;margin-top:22px;line-
 <div class="anchors">
   <a href="#s1">① 双策略净值</a><a href="#s2">② 指标 / 分年 / 成本</a>
   <a href="#s3">③ 差在哪：A·B·C</a><a href="#s4">④ 证伪零假设</a>
-  <a href="#s5">⑤ 前期 6 项精简</a><a href="#s6">⑥ 今年开平仓</a><a href="#s7">⑦ 口径与文件</a>
+  <a href="#s5">⑤ 前期 6 项精简</a><a href="#s6">⑥ 今年开平仓</a>
+  <a href="#s7">⑦ 持续加仓 vs 单仓位</a><a href="#s8">⑧ 口径与文件</a>
 </div>
 
 <div class="kpis" id="kpis"></div>
@@ -168,7 +169,23 @@ footer{color:var(--tx3);font-size:11.5px;text-align:center;margin-top:22px;line-
 </div>
 
 <div class="card" id="s7">
-  <h2>⑦ 数据口径、警告与文件</h2>
+  <h2>⑦ 持续触发信号时一直加多仓，会更好吗？</h2>
+  <div class="desc">同一条平安信号（当日收跌且分位≥80%、T+1 开盘做多、持 3 日），只改「持仓期间能不能再开新仓」一件事。
+  <b>3 日是口述规则事前锁定的，不是遍历选出来的</b>；参数面见本节末尾。四档叠加的净值都按各自平仓日记账，单利累加不复利。</div>
+  <div class="chart" id="chartStack"></div>
+  <div class="legend" id="legendStack"></div>
+  <div class="scroll" id="stackTable" style="margin-top:14px"></div>
+  <div class="two" style="margin-top:16px">
+    <div><h3>叠加不限组 · 信号日在收跌日内抖动 ±3 天（500 次）</h3>
+      <div class="chart" id="histStack"></div><div class="small" id="histStackNote"></div></div>
+    <div><h3>成本敏感性（每笔来回扣 N 个 tick）</h3>
+      <div class="chart" id="chartStackCost"></div><div class="small" id="stackCostNote"></div></div>
+  </div>
+  <div class="note" id="stackNote"></div>
+</div>
+
+<div class="card" id="s8">
+  <h2>⑧ 数据口径、警告与文件</h2>
   <div id="foot"></div>
 </div>
 
@@ -516,7 +533,55 @@ $('cards').innerHTML=D.cards.map(c=>'<div class="mini"><span class="tag">'+esc(c
  '<h3>'+c.no+' '+esc(c.title)+'</h3><ul>'+c.points.map(p=>'<li>'+p+'</li>').join('')+
  '</ul><a class="go" href="'+c.href+'">打开详细页 →</a></div>').join('');
 
-/* ---------------- ⑦ 页脚 ---------------- */
+/* ---------------- ⑦ 持续加仓对比 ---------------- */
+const ST=D.stack, SV=ST.variants;
+const SKEYS=['SINGLE','STACK2','STACK3','STACK5','STACKALL'];
+const SCOL={SINGLE:'#d64545',STACK2:'#2c5aa0',STACK3:'#7b61b8',STACK5:'#b7791f',STACKALL:'#5c6878'};
+function renderStack(){
+  const ss=SKEYS.map(k=>({name:SV[k].name,color:SCOL[k],width:k==='SINGLE'?2.7:1.5,
+    values:SV[k].nav.slice().map(v=>(v-1)*100)}));
+  const svg=drawLine('chartStack',ss,{h:330,zeroLine:0,yfmt:v=>(v>=0?'+':'')+fmt(v,2)+'点',
+    vline:SPLIT,vlabel:'2024 起 = 样本外'});
+  $('legendStack').innerHTML=ss.map(s=>'<span><i style="background:'+s.color+'"></i>'+esc(s.name)+
+    ' <b>'+fmt(s.values[s.values.length-1],3)+' 点</b></span>').join('');
+  const HEAD=['口径','累计点数','夏普','笔数','胜率','逐笔t','探索段','验证段','扣2tick','并存峰值','在场比例','峰值敞口'];
+  const ROWS=SKEYS.map(k=>{const v=SV[k],o=v.occupancy;return [
+    esc(v.name)+(k==='SINGLE'?' <span class="small">现行</span>':''),C(v.all['累计点数']),
+    fmt(v.all['夏普比率'],3),v.all['交易笔数'],pct(v.all['胜率'],1),fmt(v.all['逐笔t值'],2),
+    C(v.explore),C(v.verify),C(v.costs[3]['累计点数']),o['最大并存组数']+' 组',
+    pct(o['在场比例'],1),fmt(o['峰值名义敞口万元'],0)+' 万'];});
+  $('stackTable').innerHTML=tableHtml(HEAD,ROWS);
+  const hn=ST.null.STACKALL;
+  drawHist('histStack',hn.hist,{real:hn.real,h:250});
+  $('histStackNote').innerHTML='随机均值 '+fmt(hn.mean,3)+' 点、p95 '+fmt(hn.p95,3)+
+    '，真实 '+fmt(hn.real,3)+' 点，p='+fmt(hn.p,4)+'（'+(hn.p<0.05?'显著':'不显著')+'）。'+
+    '保持成簇与收跌日密度，只打乱平安挑的具体日子。';
+  const cseries=SKEYS.map(k=>({name:SV[k].name,color:SCOL[k],
+    values:SV[k].costs.map(c=>c['累计点数'])}));
+  drawLine('chartStackCost',cseries.map(s=>({name:s.name,color:s.color,width:1.7,
+    values:s.values})),{h:270,zeroLine:0,yfmt:v=>fmt(v,2)+'点',
+    xticks:[0,1,2,3,4].map(i=>({x:PAD.l+(W-PAD.l-PAD.r)*i/4,
+      label:['0','1 tick','2 tick','4 tick','8 tick'][i],anchor:i===0?'start':(i===4?'end':'middle')}))});
+  $('stackCostNote').innerHTML='横轴依次为 0 / 1 / 2 / 4 / 8 tick 来回；叠加版笔数多（162 vs 113），'+
+    '成本拖累更重，扣 2 tick 后 '+fmt(SV.STACKALL.costs[3]['累计点数'],3)+' 点，低于单仓位的 '+
+    fmt(SV.SINGLE.costs[3]['累计点数'],3)+' 点。';
+  const o=SV.STACKALL.occupancy;
+  $('stackNote').innerHTML='<b>答案</b>：一直加仓<b>没有更好</b>。单仓位 '+fmt(SV.SINGLE.all['累计点数'],3)+
+    ' 点 / 夏普 '+fmt(SV.SINGLE.all['夏普比率'],2)+' → 不限组数 '+fmt(SV.STACKALL.all['累计点数'],3)+
+    ' 点 / 夏普 '+fmt(SV.STACKALL.all['夏普比率'],2)+'。162 个信号日里被单仓位规则跳过的 49 笔追单合计亏 '+
+    fmt(SV.SINGLE.all['累计点数']-SV.STACKALL.all['累计点数'],3)+' 点，正好是差额。'+
+    '叠加后峰值 '+o['最大并存组数']+' 组同时在场、名义敞口 '+fmt(o['峰值名义敞口万元'],0)+
+    ' 万元（4 倍杠杆），收益反而更少 ⇒ <b>该策略赚的是「成簇只进第一笔」的执行纪律，不是信号密度</b>。<br>'+
+    '<b>关于持有 3 日</b>：它是用户口述规则（「持有几天」）事前锁定的参数，<b>不是遍历挑的</b>。'+
+    '确实遍历过 120 格（2 源 × 2 价格条件 × 5 阈值 × 6 持有期）：按点数最高的是 dNet/不看涨跌/阈值 0.75/持 10 日（4.528 点），'+
+    '按夏普最高的是 dNet/当日收跌/0.75/持 3 日（3.863 点），都比 3.096 高。'+
+    '但探索段与验证段点数相关只有 '+fmt(X.grid_corr,2)+'，逐年重选参数的 walk-forward 合计仅 '+
+    fmt(X.grid_wf_pts,3)+' 点 / 夏普 '+fmt(X.grid_wf_sharpe,2)+'（2025 年 −0.546 点）⇒ '+
+    '<b>这些「更好的参数」是事后挑出来的刻度，不能当结论、更不能上仓</b>。';
+}
+renderStack();
+
+/* ---------------- ⑧ 页脚 ---------------- */
 $('foot').innerHTML=
  '<ul class="pts">'+
  '<li><b>净值口径</b>：固定 5 手 TS（面值 200 万/手，报价按 100 元面值 ⇒ 1 点 = 2 万元/手 = 10 万元/组 = 初始 1000 万的 1%），'+
