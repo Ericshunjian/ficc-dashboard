@@ -21,12 +21,15 @@ SELECTION_END = '2026-11-23'
 COST = 0.005  # Fixed round-trip points for comparable research metrics.
 COLORS = ('#2e65c2', '#0d836a', '#ac542f', '#7951b5', '#9a690b')
 SEATS = ('前5大合计', '前10大合计', '前20大合计', '中信期货', '平安期货',
-         '华泰期货', '国泰君安')
+         '国泰君安')
 RULES = {
     'static': ('持仓双变动', '多增空减做多，反向做空，T+2 收盘平仓，可提前平仓'),
     'long': ('逢跌纯多', '收跌且净持仓变化达到 60 日 80% 分位，T+{exit} 收盘平仓'),
     'both': ('逆势多空', '收跌且净增达到 80% 分位做多，收涨且净变动低于或等于 20% 分位做空，T+{exit} 收盘平仓'),
+    'gridpts': ('网格·点数王', '平安 dNet 60日分位≥75%，不看当日涨跌 → T+1开盘做多、T+{exit}收盘平仓'),
+    'gridsharp': ('网格·夏普王', '当日收跌 且 平安 dNet 60日分位≥75% → T+1开盘做多、T+{exit}收盘平仓'),
 }
+GRID = (('gridpts', 10), ('gridsharp', 3))  # 用户指定保留：120格事后挑参，仅作刻度
 
 
 def append_sessions(dates, opens, closes, positions, snapshots):
@@ -77,9 +80,14 @@ def signal_inputs(closes, positions, rule):
         raw = ((buy > 0) & (sell < 0)).astype(int) - ((buy < 0) & (sell > 0)).astype(int)
         return raw, np.isfinite(net), {'duo': buy[-1], 'kong': sell[-1]}
     q = sb.rolling_pct(net)
-    raw = sb.make_signal(q, change, 'contra', 0.8)
-    if rule == 'long':
-        raw = np.maximum(raw, 0)
+    if rule == 'gridpts':
+        raw = np.maximum(sb.make_signal(q, change, 'none', 0.75), 0)
+    elif rule == 'gridsharp':
+        raw = np.maximum(sb.make_signal(q, change, 'contra', 0.75), 0)
+    else:
+        raw = sb.make_signal(q, change, 'contra', 0.8)
+        if rule == 'long':
+            raw = np.maximum(raw, 0)
     return raw, np.isfinite(q) & np.isfinite(change), {'dnet': net[-1], 'pct': q[-1], 'price_change': change[-1]}
 
 
@@ -109,6 +117,8 @@ def rank_candidates(dates, opens, closes, positions):
     candidates = []
     for seat in SEATS:
         for rule in RULES:
+            if rule in dict(GRID):
+                continue
             raw, valid, drivers = signal_inputs(closes, positions[seat], rule)
             if valid[max(0, cutoff - 59):cutoff + 1].mean() < 0.9:
                 continue
@@ -120,13 +130,21 @@ def rank_candidates(dates, opens, closes, positions):
                     continue
                 candidates.append({'seat': seat, 'rule': rule, 'hold': hold, 'raw': raw, 'valid': valid,
                                    'drivers': drivers, 'full': full, 'recent': recent, 'rank': 0})
+    # 网格两条由用户指定保留，不参与排名，直接占两席；事后挑参，只作刻度。
+    forced = []
+    for rule, hold in GRID:
+        raw, valid, drivers = signal_inputs(closes, positions['平安期货'], rule)
+        _, full, _ = run_rule(dates, opens, closes, raw, rule, 0, cutoff, hold=hold)
+        _, recent, _ = run_rule(dates, opens, closes, raw, rule, split, cutoff, hold=hold)
+        forced.append({'seat': '平安期货', 'rule': rule, 'hold': hold, 'raw': raw, 'valid': valid,
+                       'drivers': drivers, 'full': full, 'recent': recent, 'rank': 0, 'forced': True})
     for metric in ('累计收益率', '夏普比率'):
         for rank, candidate in enumerate(sorted(candidates, key=lambda c: -c['full'][metric])):
             candidate['rank'] += rank
     by_rule = {}
     for candidate in sorted(candidates, key=lambda c: (c['rank'], -c['recent']['夏普比率'])):
         by_rule.setdefault((candidate['seat'], candidate['rule']), candidate)
-    selected = list(by_rule.values())[:5]
+    selected = forced + list(by_rule.values())[:5 - len(forced)]
     if len(selected) != 5:
         raise ValueError(f'历史筛选仅有 {len(selected)} 个合格策略')
     return selected
@@ -224,6 +242,7 @@ def main():
     asof = dates[-1]
     payload = {
         'asof': asof, 'selection_end': SELECTION_END, 'start': dates[0],
+        'selection_note': '用户 2026-11-24 指定：剔除华泰系；保留网格点数王/夏普王（120格事后挑参，仅作刻度，不参与排名）',
         'source': '中金所盘后数据' if asof > anchor.isoformat() else 'Wind 历史快照',
         'close_change': round(float(closes[-1] - closes[-2]), 4),
         'strategies': [],
@@ -235,7 +254,7 @@ def main():
         hold = candidate['hold']
         r, m, state = run_rule(dates, opens, closes, raw, rule, 0, len(dates) - 1, hold=hold, live=True)
         label, description = RULES[rule]
-        name = f'{seat} · {label}' + (f' H={hold}' if rule != 'static' else '')
+        name = label if candidate.get('forced') else f'{seat} · {label}' + (f' H={hold}' if rule != 'static' else '')
         payload['strategies'].append({
             'name': name, 'rule': description.format(exit=hold + 1), 'color': color,
             'total': m['累计收益率'], 'sharpe': m['夏普比率'], 'drawdown': m['最大回撤'],

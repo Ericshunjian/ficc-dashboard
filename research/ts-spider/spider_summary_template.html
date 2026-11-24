@@ -58,7 +58,7 @@ const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 $('source').textContent=d.source+' · 收盘后更新';
 $('delta').textContent='TS 日变动 '+(d.close_change>0?'+':'')+d.close_change.toFixed(3)+' 点';
 $('span').textContent=d.start+' 至 '+d.asof;
-$('method').textContent='以 '+d.selection_end+' 为筛选截止日。完整历史期收益和夏普等权排序，保留全期和 2024 年起筛选段扣成本后都为正、且有至少 40 笔的候选。五条规则固定跟踪。';
+$('method').textContent='以 '+d.selection_end+' 为筛选截止日。完整历史期收益和夏普等权排序，保留全期和 2024 年起筛选段扣成本后都为正、且有至少 40 笔的候选；已剔除华泰系席位。网格·点数王 / 网格·夏普王 由用户指定保留，是 120 格事后挑参的刻度，不参与排名、不能当作样本外证据。';
 $('forward').textContent='前瞻从 '+d.forward.start+' 起算，已记录 '+d.forward.sessions+' 个交易日、'+d.forward.closed+' 笔已平仓交易。';
 $('signals').innerHTML=d.strategies.map(s=>{
   const kind={多:'long',空:'short',数据缺失:'missing'}[s.raw]||'';
