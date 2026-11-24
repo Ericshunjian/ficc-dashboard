@@ -44,7 +44,7 @@ def rnd(x, k=4):
 
 
 def slim(m):
-    keys = ['累计点数', '夏普比率', '交易笔数', '胜率', '逐笔t值', '每笔平均点数', '最大回撤%']
+    keys = ['累计点数', '夏普比率', '交易笔数', '胜率', '逐笔t值', '每笔平均点数', '最大回撤']
     return {k: m.get(k) for k in keys if k in m}
 
 
@@ -111,14 +111,14 @@ def main():
     # 每个 H 用相同 seed、相同调用顺序 ⇒ picked 日期逐轮一致，可做配对差值检验
     jit = {}
     for W in [3, 5]:
-        cand = {i: pool_down[(pool_down >= i - W) & (pool_down <= i + W)] for i in real_idx}
+        cand = sb.jitter_candidates(real_idx, pool_down, W)
         # 显式独立 rng，保证四个 H 在同一轮拿到完全一样的 pick
         rng = np.random.default_rng(SEED + W)
         acc = {H: [] for H in HOLDS_TEST}
         acc_v = {H: [] for H in HOLDS_TEST}
         diff = {H: [] for H in HOLDS_TEST if H != 3}
         for _ in range(N_JITTER):
-            pick = np.unique(np.array([int(rng.choice(cand[i])) for i in real_idx if len(cand[i])], dtype=int))
+            pick = sb.sample_jitter(cand, rng)
             sg = np.zeros(n, dtype=int)
             sg[pick] = 1
             vals = {}
@@ -148,17 +148,20 @@ def main():
                 'hist': [rnd(x) for x in D],
                 'p05': rnd(np.percentile(D, 5)), 'p95': rnd(np.percentile(D, 95)),
                 'p_better': rnd((D >= obs).mean()),
-                'p_better_abs': rnd((np.abs(D) >= abs(obs)).mean()),
+                'p_better_abs': rnd(min(1.0, 2 * min((D >= obs).mean(), (D <= obs).mean()))),
             }
         jit[f'抖动±{W}日·仍收跌'] = block
 
     out['null'] = jit
 
     # ---------- ③ 每年用之前数据选 H（限制在四档） ----------
-    def select_h(a, b, rule='points'):
+    def select_h(a, b, rule='points', *, isolated=False):
         best, bestv = None, -1e9
         for H in HOLDS_TEST:
-            r, tr = runs[H]
+            if isolated:
+                r, tr = sb.run(sig, O, C, H, a=a, b=b)
+            else:
+                r, tr = runs[H]
             m = sb.metrics(r, tr, a, b)
             if m.get('交易笔数', 0) < 12:
                 continue
@@ -169,24 +172,24 @@ def main():
 
     wf_ret = np.zeros(n)
     wf_rows = []
+    wf_trades = []
     for y in range(2023, 2027):
         a = int(np.searchsorted(np.array(dates), f'{y}-01-01'))
         b = int(np.searchsorted(np.array(dates), f'{y+1}-01-01')) - 1
         if b >= n:
             b = n - 1
-        H = select_h(0, a - 1)
+        H = select_h(0, a - 1, isolated=True)
         if H is None:
             continue
-        r, tr = runs[H]
+        r, tr = sb.run(sig, O, C, H, a=a, b=b)
         wf_ret[a:b + 1] = r[a:b + 1]
+        wf_trades.extend(tr)
         m = sb.metrics(r, tr, a, b)
         wf_rows.append({'年份': y, '选中H': H, **slim(m)})
     wf_a = int(np.searchsorted(np.array(dates), '2023-01-01'))
     wf_all = {'固定H=%d' % H: slim(sb.metrics(runs[H][0], runs[H][1], wf_a, n - 1))
               for H in HOLDS_TEST}
-    wf_tr = [{'signal_idx': i, 'pnl_pts': float(wf_ret[i]) * sb.PRICE_REF}
-             for i in range(wf_a, n) if wf_ret[i] != 0]
-    wf_all['逐年重选'] = slim(sb.metrics(wf_ret, wf_tr, wf_a, n - 1))
+    wf_all['逐年重选'] = slim(sb.metrics(wf_ret, wf_trades, wf_a, n - 1))
     out['walk_forward'] = {
         'rows': wf_rows, 'window': [dates[wf_a], dates[-1]],
         'all': wf_all,

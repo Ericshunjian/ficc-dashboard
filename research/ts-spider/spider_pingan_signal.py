@@ -16,7 +16,7 @@
   执行   = T 日盘后拿到持仓 → T+1 开盘建仓 → 持有 H 个交易日 → T+1+H 收盘平仓
            期间不再开新仓（单一仓位、固定 5 手 TS、名义 1000 万、单倍杠杆）
   净值   = 1 + Σ(方向×Δ价 − 成本)/100，固定名义单利累加、不复利（与 spider_backtest.py 一致）
-  成本   = 主结果零成本，另给 0.002 / 0.005 / 0.01 点（TS 一个最小变动价位 = 0.005 点）
+  成本   = 主结果零成本，另给 0.002 / 0.005 / 0.01 点（按固定点数比较，0.005 点为成本情景）
 
 防数据窥探：
   探索段 2021-01-04~2023-12-31 选参数，验证段 2024-01-01~2026-11-23 只报告不调；
@@ -90,7 +90,7 @@ def load():
 
 
 def rolling_pct(x, win=WIN, min_obs=MIN_OBS):
-    """当日值在过去 win 个有效日里的百分位（含当日，只用 t 及之前，无前视）。"""
+    """当日值在最近 win 个交易日的有效观测里的百分位（含当日，只用 t 及之前，无前视）。"""
     out = np.full(len(x), np.nan)
     for i in range(len(x)):
         if np.isnan(x[i]):
@@ -105,7 +105,7 @@ def rolling_pct(x, win=WIN, min_obs=MIN_OBS):
 
 # ---------------------------------------------------------------- 信号与回测
 def make_signal(q, dP, mode, th, flip=False):
-    lo = 1.0 - th
+    lo = round(1.0 - th, 12)
     lng = np.nan_to_num(q, nan=-1.0) >= th
     sht = (np.nan_to_num(q, nan=2.0) <= lo) & (~np.isnan(q))
     lng = lng & (~np.isnan(q))
@@ -116,31 +116,81 @@ def make_signal(q, dP, mode, th, flip=False):
     return -sig if flip else sig
 
 
-def run(sig, O, C, H, cost=0.0, a=0, b=None, tag=''):
-    """单一仓位状态机：信号日 t → t+1 开盘建仓 → t+1+H 收盘平仓，期间不叠加。"""
+def orders(sig, opens, hold, a, b):
+    """Generate non-overlapping orders, including the pending order for the next open."""
+    free = a
+    for t in range(a, b + 1):
+        if t < free or not sig[t]:
+            continue
+        entry = t + 1
+        if entry <= b and not np.isfinite(opens[entry]):
+            continue
+        exit_day = entry + hold
+        yield t, entry, exit_day
+        free = exit_day
+
+
+def mark_trade(ret, opens, closes, entry, exit_day, direction, cost=0.0):
+    ret[entry] += direction * (closes[entry] - opens[entry]) / PRICE_REF
+    ret[entry + 1:exit_day + 1] += direction * (
+        closes[entry + 1:exit_day + 1] - closes[entry:exit_day]
+    ) / PRICE_REF
+    ret[exit_day] -= cost / PRICE_REF
+
+
+def run(sig, O, C, H, cost=0.0, a=0, b=None, tag='', *, block_short=False,
+        mark_open=False):
+    """Simulate a single position and mark its P&L each session."""
     n = len(sig)
     if b is None:
         b = n - 1
     ret = np.zeros(n)
     trades = []
-    free = a
-    for t in range(a, b + 1):
-        if sig[t] == 0 or t < free:
+    for t, e, x in orders(sig, O, H, a, b):
+        if e > b or (sig[t] == -1 and block_short):
             continue
-        e, x = t + 1, t + 1 + H
-        if x > b or np.isnan(O[e]) or np.isnan(C[x]):
+        if x > b and not mark_open:
+            continue
+        last = min(x, b)
+        if not np.isfinite(C[e:last + 1]).all():
+            raise ValueError(f'持仓期间缺少收盘价，索引 {e}–{last}')
+        mark_trade(ret, O, C, e, last, sig[t], cost if x <= b else 0.0)
+        if x > b:
             continue
         pts = float(sig[t] * (C[x] - O[e]) - cost)
-        ret[x] += pts / PRICE_REF
         trades.append({
             'signal_idx': t, 'signal_date': '', 'entry_idx': e, 'exit_idx': x,
-            'dir': int(sig[t]), 'q': None, 'dNet': None, 'dP': None,
-            'entry_px': round(float(O[e]), 4), 'exit_px': round(float(C[x]), 4),
+            'dir': int(sig[t]), 'entry_px': round(float(O[e]), 4), 'exit_px': round(float(C[x]), 4),
             'pnl_pts': round(pts, 5), 'ret': round(pts / PRICE_REF, 8),
             'tag': tag,
         })
-        free = x + 1
     return ret, trades
+
+
+def jitter_candidates(source, pool, window):
+    """One eligibility window per signal, with its original date always eligible."""
+    return [pool[np.abs(pool - i) <= window] for i in source]
+
+
+def sample_jitter(candidates, rng):
+    """Assign each source signal to a distinct eligible date by augmenting paths."""
+    ownership = {}
+    choices = [rng.permutation(row) for row in candidates]
+
+    def assign(i, seen):
+        for day in choices[i]:
+            if day in seen:
+                continue
+            seen.add(day)
+            if day not in ownership or assign(ownership[day], seen):
+                ownership[day] = i
+                return True
+        return False
+
+    for i in rng.permutation(len(choices)):
+        if not assign(i, set()):
+            raise ValueError('无法为全部信号匹配不同的抖动日期')
+    return np.fromiter(ownership, dtype=int, count=len(ownership))
 
 
 def metrics(ret, trades, a=0, b=None):
@@ -155,15 +205,15 @@ def metrics(ret, trades, a=0, b=None):
     ann = float(total * ANN_DAYS / len(r))
     sd = float(np.std(r, ddof=1)) if len(r) > 1 else 0.0
     sharpe = float(np.mean(r) / sd * math.sqrt(ANN_DAYS)) if sd > 0 else 0.0
-    mdd = float((1.0 - cum / np.maximum.accumulate(cum)).max())
-    tr = [t for t in trades if a <= t['signal_idx'] <= b]
+    mdd = float((1.0 - cum / np.maximum.accumulate(np.r_[1.0, cum])[1:]).max())
+    tr = [t for t in trades if a <= t['exit_idx'] <= b]
     pts = [t['pnl_pts'] for t in tr]
     win = [x for x in pts if x > 0]
     loss = [x for x in pts if x < 0]
     tstat = float(np.mean(pts) / (np.std(pts, ddof=1) / np.sqrt(len(pts)))) \
         if len(pts) > 2 and np.std(pts, ddof=1) > 0 else 0.0
     return {
-        '累计点数': round(sum(pts), 4), '累计收益率': round(total, 6),
+        '累计点数': round(total * PRICE_REF, 4), '累计收益率': round(total, 6),
         '年化收益率': round(ann, 6), '最大回撤': round(mdd, 6),
         '夏普比率': round(sharpe, 4),
         '胜率': round(len(win) / len(pts), 4) if pts else None,
@@ -454,6 +504,7 @@ def main():
     # ---------- ⑦ 逐年 walk-forward（每年只用之前的数据选参数） ----------
     wf_ret = np.zeros(n)
     wf_rows = []
+    wf_trades = []
     for y in range(2023, 2027):
         a = int(np.searchsorted(np.array(dates), f'{y}-01-01'))
         b = int(np.searchsorted(np.array(dates), f'{y + 1}-01-01')) - 1
@@ -475,14 +526,13 @@ def main():
         sg = make_signal(q_t[s2], dP, m2, t2)
         r, tr = run(sg, O, C, H2, 0.0, a, b)
         wf_ret[a:b + 1] = r[a:b + 1]
+        wf_trades.extend(tr)
         wf_rows.append({'年份': y, '参数': f'{s2}/{m2}/th={t2}/H={H2}',
                         **metrics(wf_ret, [t for t in tr], a, b)})
     wf_a = int(np.searchsorted(np.array(dates), '2023-01-01'))
-    wf_dummy = [{'signal_idx': i, 'pnl_pts': float(wf_ret[i]) * PRICE_REF}
-                for i in range(wf_a, n) if wf_ret[i] != 0]
     out['walk_forward'] = {'rows': wf_rows, 'nav': nav_from(wf_ret, wf_a, n - 1),
                            'start_idx': int(wf_a),
-                           'all': metrics(wf_ret, wf_dummy, wf_a, n - 1)}
+                           'all': metrics(wf_ret, wf_trades, wf_a, n - 1)}
 
     # ---------- ⑧ 分年绩效 ----------
     yr_rows = []

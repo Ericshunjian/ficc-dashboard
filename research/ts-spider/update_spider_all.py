@@ -11,6 +11,7 @@
 产物只写本地；同步 FICC 主仓与 GitHub 推送由对话中的 SOP 完成。
 """
 import argparse
+import hashlib
 import glob
 import json
 import os
@@ -18,6 +19,7 @@ import re
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 STATE = os.path.join(BASE, 'TS_更新状态.json')
@@ -35,8 +37,6 @@ STEPS = [
     ('spider_stack_long.py', '⑨ 叠加仓位 vs 单仓位'),
     ('spider_hold_period.py', '⑩ 持有期 1/3/5/10 专项'),
     ('spider_summary.py', '⑪ 生成一页汇总'),
-    ('spider_daily_signal.py', '⑫ 每日信号 + 前瞻记录'),
-    ('spider_daily_page.py', '⑬ 每日信号页面'),
 ]
 
 OUTPUTS = [
@@ -46,8 +46,7 @@ OUTPUTS = [
     'TS_平安净多策略.json', 'TS_平安净多策略_明细.xlsx', 'TS_平安净多_策略.html',
     'TS_平安纯多头.json', 'TS_平安纯多头_明细.xlsx', 'TS_平安纯多头_策略.html',
     'TS_席位对比.json', 'TS_席位对比_明细.xlsx', 'TS_席位对比_净值.html',
-    'TS_网格优选_明细.json', 'TS_叠加仓位.json', 'TS_持有期专项.json', 'TS_研究汇总.html',
-    'TS_每日信号.json', 'TS_每日信号.html', 'TS_前瞻记录.json',
+    'TS_网格优选_明细.json', 'TS_叠加仓位.json', 'TS_持有期专项.json', 'TS_研究汇总.html', 'TS_每日信号.json', 'TS_每日信号.html', 'TS_前瞻记录.json',
 ]
 
 
@@ -65,6 +64,12 @@ def source_snapshot():
         st = os.stat(p)
         out[os.path.relpath(p, BASE).replace('\\', '/')] = [st.st_mtime_ns, st.st_size]
     return out
+
+
+def code_snapshot():
+    files = sorted(glob.glob(os.path.join(BASE, '*.py')) +
+                   glob.glob(os.path.join(BASE, '*_template.html')))
+    return {os.path.basename(p): hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in files}
 
 
 def snapshot_summary(snap):
@@ -89,49 +94,20 @@ def verify():
     if missing:
         return ['缺少产物: ' + ', '.join(missing)], False
 
-    with open(os.path.join(BASE, 'TS_席位对比.json'), encoding='utf-8') as f:
-        seat = json.load(f)
-    with open(os.path.join(BASE, 'TS_平安纯多头.json'), encoding='utf-8') as f:
-        pure = json.load(f)
-    with open(os.path.join(BASE, 'TS_持有期专项.json'), encoding='utf-8') as f:
-        hp = json.load(f)
-    with open(os.path.join(BASE, 'TS_研究汇总.html'), encoding='utf-8') as f:
-        html = f.read()
+    with open(os.path.join(BASE, 'TS_持仓整理.json'), encoding='utf-8') as f:
+        holdings = json.load(f)
     with open(os.path.join(BASE, 'TS_每日信号.json'), encoding='utf-8') as f:
         daily = json.load(f)
-    with open(os.path.join(BASE, 'TS_前瞻记录.json'), encoding='utf-8') as f:
-        fwd = json.load(f)
-    daily_html = open(os.path.join(BASE, 'TS_每日信号.html'), encoding='utf-8').read()
-    m = re.search(r'const D=(\{.*?\});</script>', html, re.S)
+    with open(os.path.join(BASE, 'TS_研究汇总.html'), encoding='utf-8') as f:
+        html = f.read()
+    m = re.search(r'<script type="application/json" id="data">(.*?)</script>', html, re.S)
     if not m:
-        return ['汇总页 payload 解析失败'], False
+        return ['汇总页缺少数据'], False
     payload = json.loads(m.group(1))
-    ty = payload.get('trades_year', {})
-    ends = {
-        '席位对比': seat['meta']['end'],
-        '平安纯多': pure['meta']['end'] if 'meta' in pure else pure['preset'].get('end', ''),
-        '汇总页': payload['meta']['end'],
-        '逐笔截至': ty.get('asof', ''),
-        '持有期专项': hp['meta']['end'],
-        '每日信号': daily['meta']['asof'],
-        '前瞻锁定': fwd['start'],
-    }
-    hp_ok = (len(payload.get('hold_period', {}).get('variants', {})) == 4
-             and '持有期 1 / 3 / 5 / 10' in html)
-    daily_ok = (len(daily.get('strategies', {})) == 5
-                and 'const D={' in daily_html
-                and daily['meta']['forward_start'] == fwd['start'])
-    ends_set = set(v for v in ends.values() if v and v != fwd['start'])
-    ok = len(ends_set) == 1 and '今年以来的开平仓记录' in html and hp_ok and daily_ok
-    msgs.append('数据末日: ' + ', '.join('%s=%s' % kv for kv in ends.items()))
-    msgs.append('逐笔: %s 年 / %d 个策略 / %d 笔' %
-                (ty.get('year', '?'), len(ty.get('strategies', [])),
-                 sum(s['n'] for s in ty.get('strategies', []))))
-    msgs.append('汇总页: %d 字符 / %d 条净值 / %d 行指标' %
-                (len(html), len(payload.get('series', {})), len(payload.get('rows', []))))
-    msgs.append('每日信号: %d 策略 / 前瞻 %d 笔 / 锁定 %s' %
-                (len(daily.get('strategies', {})), len(fwd.get('records', [])), fwd['start']))
-    return msgs, ok
+    ok = (payload['asof'] == daily['asof'] and daily['asof'] >= holdings['dates'][-1]
+          and len(daily['strategies']) == 5 and payload['strategies'] == daily['strategies'])
+    return [f"持仓快照 {holdings['dates'][-1]}，日更 {daily['asof']}，"
+            f"{len(daily['strategies'])} 个策略"], ok
 
 
 def main():
@@ -143,6 +119,7 @@ def main():
     snap = source_snapshot()
     ss = snapshot_summary(snap)
     prev = read_state()
+    source_code = code_snapshot()
     print('源 Excel: %d 张会员持仓 + %d 张行情；最新修改 %s' %
           (ss['n_holding'], ss['n_price'],
            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ss['latest'] / 1e9)) if ss['latest'] else '无'))
@@ -153,17 +130,19 @@ def main():
         print('新增/删除: %d；修改: %d' % (len(changed), len(mod)))
         for k in changed[:10] + mod[:10]:
             print('  ', k)
-        lines, _ = verify()
+        lines, ok = verify()
         for line in lines:
             print(' ', line)
-        return 0
+        return 0 if ok else 2
 
-    if prev and prev.get('sources') == snap and not args.force:
-        print('源 Excel 无变化，跳过重跑。需强制重跑请加 --force。')
-        lines, _ = verify()
-        for line in lines:
-            print(' ', line)
-        return 0
+    if prev and prev.get('sources') == snap and prev.get('code') == source_code and not args.force:
+        lines, ok = verify()
+        if ok:
+            print('输入和代码无变化，产物校验通过。')
+            for line in lines:
+                print(' ', line)
+            return 0
+        print('产物校验失败，重新生成。')
 
     if prev:
         diff = sorted(set(snap) ^ set(prev.get('sources', {})))
@@ -191,7 +170,7 @@ def main():
 
     msgs, ok = verify()
     with open(STATE, 'w', encoding='utf-8', newline='\n') as f:
-        json.dump({'updated': time.strftime('%Y-%m-%d %H:%M:%S'), 'sources': snap,
+        json.dump({'updated': time.strftime('%Y-%m-%d %H:%M:%S'), 'sources': snap, 'code': source_code,
                    'steps': results, 'verify': msgs, 'ok': ok}, f, ensure_ascii=False, indent=1)
     print('--- 校验 ---')
     for line in msgs:

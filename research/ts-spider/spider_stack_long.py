@@ -4,7 +4,7 @@
 同一条平安信号（当日收跌 且 dNet 60 日分位≥80%、T+1 开盘做多、持有 3 日），
 只改「持仓期间能否再开新仓」这一件事：
 
-  SINGLE   单仓位（现行主口径，3.096 点）
+  SINGLE   单仓位
   STACK2   最多 2 组并存
   STACK3   最多 3 组并存
   STACK5   最多 5 组并存
@@ -54,36 +54,26 @@ def run_stack(sig, O, C, H, cap, cost=0.0, a=0, b=None):
     mark = np.zeros(n)
     occ = np.zeros(n)          # 当日并存组数（收盘时点）
     trades = []
-    legs = []                   # [(exit_idx, entry_idx, entry_px, dir)]
-    live = []                   # [(exit_idx, entry_idx, entry_px, dir)]
+    live = []                   # 尚未平仓的组的到期日
     for t in range(a, b + 1):
-        # 与 sb.run 的 free=x+1 一致：平仓日当天仍占用，次日才能开新仓
-        live = [p for p in live if p[0] >= t]
+        live = [x for x in live if x > t]
         if sig[t] == 0 or len(live) >= cap:
-            if live:
-                occ[t] = len(live)
             continue
         e, x = t + 1, t + 1 + H
-        if x > b or np.isnan(O[e]) or np.isnan(C[x]):
-            if live:
-                occ[t] = len(live)
+        if x > b or not np.isfinite(O[e]):
             continue
+        if not np.isfinite(C[e:x + 1]).all():
+            raise ValueError(f'持仓期间缺少收盘价，索引 {e}–{x}')
         pts = float(sig[t] * (C[x] - O[e]) - cost)
         pulse[x] += pts / sb.PRICE_REF
-        live.append((x, e, float(O[e]), int(sig[t])))
-        legs.append((x, e, float(O[e]), int(sig[t])))
+        sb.mark_trade(mark, O, C, e, x, sig[t], cost)
+        occ[e:x + 1] += 1
+        live.append(x)
         trades.append({
             'signal_idx': t, 'entry_idx': e, 'exit_idx': x, 'dir': int(sig[t]),
             'entry_px': round(float(O[e]), 4), 'exit_px': round(float(C[x]), 4),
             'pnl_pts': round(pts, 5),
         })
-        occ[t] = len(live)
-    # 每日盯市：建仓日 (C[e]-O[e])，存续日 (C[i]-C[i-1])，总和 = 逐笔总点数
-    for x, e, o, d in legs:
-        if e <= b:
-            mark[e] += d * (C[e] - o) / sb.PRICE_REF
-        for i in range(e + 1, min(x, b) + 1):
-            mark[i] += d * (C[i] - C[i - 1]) / sb.PRICE_REF
     return pulse, mark, trades, occ
 
 
@@ -116,9 +106,9 @@ def main():
     for key, label, cap in RULES:
         r, mk, tr, occ = run_stack(sig, O, C, 3, cap, 0.0, 0, n - 1)
         seg = {
-            'all': sb.metrics(r, tr, 0, n - 1),
-            'explore': sb.metrics(r, tr, 0, split_i - 1),
-            'verify': sb.metrics(r, tr, split_i, n - 1),
+            'all': sb.metrics(mk, tr, 0, n - 1),
+            'explore': sb.metrics(mk, tr, 0, split_i - 1),
+            'verify': sb.metrics(mk, tr, split_i, n - 1),
         }
         # 盯市口径夏普（收益率仍是点数/100，只是记账日不同）
         mk_sharpe = {}
@@ -138,14 +128,14 @@ def main():
             a = next((i for i, d in enumerate(dates) if d.startswith(y)), None)
             b = max((i for i, d in enumerate(dates) if d.startswith(y)), default=None)
             if a is not None and b is not None:
-                m = sb.metrics(r, tr, a, b)
+                m = sb.metrics(mk, tr, a, b)
                 years.append({'年份': y, '累计点数': m['累计点数'],
                               '交易笔数': m['交易笔数'],
                               '最大并存': int(occ[a:b + 1].max()) if b >= a else 0})
         inpos = int((occ > 0).sum())
         out['variants'][key] = {
             'name': label, 'cap': cap,
-            'nav': nav_of(r), 'daily_ret': [round(float(v), 8) for v in r],
+            'nav': nav_of(mk), 'daily_ret': [round(float(v), 8) for v in r],
             'mark_ret': [round(float(v), 8) for v in mk],
             'trades': [{'信号日': dates[t['signal_idx']], '开仓日': dates[t['entry_idx']],
                         '开仓价': t['entry_px'], '平仓日': dates[t['exit_idx']],
@@ -165,17 +155,16 @@ def main():
                seg['all']['交易笔数'], v['occupancy']['最大并存组数'],
                100 * v['occupancy']['在场比例'], seg['verify']['累计点数']), flush=True)
 
-    # 零假设：把信号日在收跌日内抖动 ±3 天，保持成簇密度与价格条件
+    # 零假设：把信号日在收跌日内抖动 ±3 天，保留信号日数与价格条件
     down = np.where(dP < 0)[0]
-    down = down[(down >= 1) & (down <= n - 5)]
     real_idx = np.where(sig == 1)[0]
-    cand = {i: down[(down >= i - 3) & (down <= i + 3)] for i in real_idx}
+    cand = sb.jitter_candidates(real_idx, down, 3)
     real_all = out['variants']['STACKALL']['segments']['all']['累计点数']
     real_cap3 = out['variants']['STACK3']['segments']['all']['累计点数']
     rng = np.random.default_rng(SEED)
     hists = {'STACKALL': [], 'STACK3': []}
     for _ in range(N_JITTER):
-        pick = np.unique(np.array([int(rng.choice(cand[i])) for i in real_idx if len(cand[i])], dtype=int))
+        pick = sb.sample_jitter(cand, rng)
         sg = np.zeros(n, dtype=int)
         sg[pick] = 1
         for key, cap in [('STACKALL', 10 ** 6), ('STACK3', 3)]:

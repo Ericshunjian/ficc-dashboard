@@ -44,7 +44,7 @@ OUT_HTML = os.path.join(BASE, 'TS_蜘蛛网_策略回测.html')
 INIT_CAPITAL = 10_000_000.0
 PRICE_REF = 100.0       # 报价面值；1 点 = 初始资金的 1%（固定名义，不用浮动开仓价做分母）
 ANN_DAYS = 243          # 实测每年 242~245 个交易日
-COST_POINTS = [0.0, 0.002, 0.005]   # 每笔来回成本（价格点）；TS 最小变动 0.005
+COST_POINTS = [0.0, 0.002, 0.005]   # 每笔来回成本（价格点）；固定点数
 
 # 报告公布的 TS 静态策略绩效（回测区间 2020-01-01~2025-04-10），仅用于对照
 REPORT_BASELINE = {
@@ -97,7 +97,7 @@ def metrics(daily_ret, trades, nav=None):
     ann = float(total * ANN_DAYS / n)  # 单利年化，与净值口径一致
     sd = float(np.std(r, ddof=1)) if n > 1 else 0.0
     sharpe = float(np.mean(r) / sd * math.sqrt(ANN_DAYS)) if sd > 0 else 0.0
-    mdd = float((1.0 - cum / np.maximum.accumulate(cum)).max())
+    mdd = float((1.0 - cum / np.maximum.accumulate(np.r_[1.0, cum])[1:]).max())
     tr = [t['ret'] for t in trades]
     wins = [x for x in tr if x > 0]
     loss = [x for x in tr if x < 0]
@@ -114,11 +114,11 @@ def metrics(daily_ret, trades, nav=None):
 
 def nav_series(daily_ret):
     cum = 1.0 + np.cumsum(np.asarray(daily_ret, dtype=float))
-    dd = 1.0 - cum / np.maximum.accumulate(cum)
+    dd = 1.0 - cum / np.maximum.accumulate(np.r_[1.0, cum])[1:]
     return cum.tolist(), dd.tolist()
 
 
-def run_state(dates, opens, closes, sig_map, lo, hi, cost_pt=0.0):
+def run_state(dates, opens, closes, sig_map, lo, hi, cost_pt=0.0, *, live=False):
     """报告口径：仓位状态机。反向信号只平仓不反手；开仓后 T+2 收盘强平。"""
     n = hi - lo + 1
     ret = [0.0] * n
@@ -130,7 +130,8 @@ def run_state(dates, opens, closes, sig_map, lo, hi, cost_pt=0.0):
         nonlocal pos, entry_price, entry_k, exit_k
         r = pos * (px - entry_price) / PRICE_REF - cost_pt / PRICE_REF
         j = k - lo
-        ret[j] += r
+        ref = entry_price if k == entry_k else closes[k - 1]
+        ret[j] += (pos * (px - ref) - cost_pt) / PRICE_REF
         trades.append({
             '信号日': dates[entry_k - 1] if entry_k is not None and entry_k > 0 else '',
             '开仓日': dates[entry_k] if entry_k is not None else '',
@@ -149,18 +150,22 @@ def run_state(dates, opens, closes, sig_map, lo, hi, cost_pt=0.0):
             pos, entry_price, entry_k, exit_k = pend_open, opens[k], k, k + 1
         pend_open = 0
         # 2) 收盘执行到期的强制平仓（T+2）
-        if pos != 0 and exit_k == k:
-            close_at(k, closes[k], 'T+2收盘')
+        if pos != 0:
+            if exit_k == k:
+                close_at(k, closes[k], 'T+2收盘')
+            else:
+                ref = entry_price if k == entry_k else closes[k - 1]
+                ret[k - lo] += pos * (closes[k] - ref) / PRICE_REF
         # 3) 依据 T 日信号，安排下一交易日动作
         sig = sig_map.get(dates[k])
-        if sig in (1, -1) and k + 2 <= hi:
-            if pos == 0:
+        if sig in (1, -1):
+            if pos == 0 and (live or k + 2 <= hi):
                 pend_open = sig
-            elif sig == -pos:
+            elif sig == -pos and (live or k + 1 <= hi):
                 pend_close = True
-    # 区间末若仍有持仓，按最后一日收盘强平（避免虚挂）
-    if pos != 0:
-        close_at(hi, closes[hi], '区间末强平')
+    if live:
+        return ret, trades, {'position': pos, 'entry': entry_k, 'exit': exit_k,
+                             'next_open': pend_open, 'next_close': pend_close}
     return ret, trades
 
 
@@ -175,7 +180,8 @@ def run_independent(dates, opens, closes, sig_map, lo, hi, cost_pt=0.0):
             continue
         e, x = opens[k + 1], closes[k + 2]
         r = sig * (x - e) / PRICE_REF - cost_pt / PRICE_REF
-        ret[k + 2 - lo] += r
+        ret[k + 1 - lo] += sig * (closes[k + 1] - e) / PRICE_REF
+        ret[k + 2 - lo] += (sig * (x - closes[k + 1]) - cost_pt) / PRICE_REF
         trades.append({
             '信号日': dates[k], '开仓日': dates[k + 1], '开仓价': round(e, 4),
             '方向': '多' if sig == 1 else '空', '平仓日': dates[k + 2],

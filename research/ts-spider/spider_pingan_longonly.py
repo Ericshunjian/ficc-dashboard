@@ -16,7 +16,7 @@
   执行   = T 日盘后信号 → T+1 开盘建仓 → 持有 3 个交易日 → T+4 收盘平仓
            单仓位、期间不叠加；固定名义 1000 万、单倍杠杆
   净值   = 1 + Σ(Δ价 − 成本)/100，固定名义单利累加、不复利
-  成本   = 主结果零成本，另给 0.002 / 0.005 / 0.01 / 0.02 点（1 tick = 0.005 点）
+  成本   = 主结果零成本，另给 0.002 / 0.005 / 0.01 / 0.02 点（均为每笔来回固定点数）
 
 ★ 随机择时零假设（本轮最关键）：同构状态机对照。
   从「全部交易日池」/「收跌日池」各随机抽与真实信号同等密度的日子作为信号日，
@@ -110,8 +110,8 @@ def exposure(ret, trades, H, a=0, b=None):
     n = len(ret)
     if b is None:
         b = n - 1
-    tr = [t for t in trades if a <= t['signal_idx'] <= b]
-    days_on = len(tr) * (H + 1)
+    days_on = sum(max(0, min(b, t['exit_idx']) - max(a, t['entry_idx']) + 1)
+                  for t in trades)
     span = b - a + 1
     frac = days_on / span if span else 0.0
     total = float(np.sum(ret[a:b + 1]))
@@ -162,8 +162,8 @@ def main():
     r_full, tr_full = sb.run(full_sig, O, C, H0, 0.0, 0, n - 1)
     drop = []
     for lab, a, b in [('探索段', 0, split_i - 1), ('验证段', split_i, n - 1), ('全样本', 0, n - 1)]:
-        lg = [t['pnl_pts'] for t in tr_full if t['dir'] == 1 and a <= t['signal_idx'] <= b]
-        sh = [t['pnl_pts'] for t in tr_full if t['dir'] == -1 and a <= t['signal_idx'] <= b]
+        lg = [t['pnl_pts'] for t in tr_full if t['dir'] == 1 and a <= t['exit_idx'] <= b]
+        sh = [t['pnl_pts'] for t in tr_full if t['dir'] == -1 and a <= t['exit_idx'] <= b]
         drop.append({'区间': lab, '做多笔数': len(lg), '做多点数': round(float(sum(lg)), 4),
                      '做空笔数': len(sh), '做空点数': round(float(sum(sh)), 4)})
     out['drop_leg_evidence'] = {
@@ -318,13 +318,11 @@ def main():
     # N5 时点抖动：每个真实信号日 ±W 日挪动。
     # 「仍收跌」变体保持价格条件与信号成簇结构，只打乱平安到底挑了哪一天 —— 这是平安增量的主判据。
     def jitter_null(W, keep_down):
-        cand = {i: pool_down[(pool_down >= i - W) & (pool_down <= i + W)] for i in real_idx} if keep_down else {}
+        pool = pool_down if keep_down else np.arange(n)
+        cand = sb.jitter_candidates(real_idx, pool, W)
         acc, per, ntr = [], [], []
         for _ in range(N_JITTER):
-            if keep_down:
-                pick = np.unique(np.array([int(rng.choice(cand[i])) for i in real_idx if len(cand[i])], dtype=int))
-            else:
-                pick = np.unique(np.clip(real_idx + rng.integers(-W, W + 1, len(real_idx)), 1, n - 1))
+            pick = sb.sample_jitter(cand, rng)
             sg = np.zeros(n, dtype=int); sg[pick] = 1
             r, tr = sb.run(sg, O, C, H0, 0.0, 0, n - 1)
             m = sb.metrics(r, tr, 0, n - 1)
@@ -371,7 +369,7 @@ def main():
     bh = np.nan_to_num(bh)
     out['benchmark'] = {
         'buy_hold': {'nav': sb.nav_from(bh),
-                     'all': sb.metrics(bh, [{'signal_idx': i, 'pnl_pts': float(bh[i]) * PRICE_REF}
+                     'all': sb.metrics(bh, [{'exit_idx': i, 'pnl_pts': float(bh[i]) * PRICE_REF}
                                             for i in range(n) if bh[i] != 0], 0, n - 1),
                      '累计点数': round(float(C[-1] - C[0]), 4)},
         'random_median_nav_full': rand['full']['全交易日池']['median_nav'],
@@ -479,6 +477,7 @@ def main():
 
     wf_ret = np.zeros(n)
     wf_rows = []
+    wf_trades = []
     for y in range(2023, 2027):
         a = int(np.searchsorted(np.array(dates), f'{y}-01-01'))
         b = int(np.searchsorted(np.array(dates), f'{y + 1}-01-01')) - 1
@@ -500,13 +499,13 @@ def main():
         sg = make_long_signal(qt[s2], dP, m2, t2)
         r, tr = sb.run(sg, O, C, H2, 0.0, a, b)
         wf_ret[a:b + 1] = r[a:b + 1]
+        wf_trades.extend(tr)
         wf_rows.append({'年份': y, '参数': f'{s2}/{m2}/th={t2}/H={H2}',
                         **sb.metrics(wf_ret, tr, a, b)})
     wf_a = int(np.searchsorted(np.array(dates), '2023-01-01'))
     out['walk_forward'] = {'rows': wf_rows, 'nav': sb.nav_from(wf_ret, wf_a, n - 1),
                            'start_idx': wf_a,
-                           'all': sb.metrics(wf_ret, [{'signal_idx': i, 'pnl_pts': float(wf_ret[i]) * PRICE_REF}
-                                                      for i in range(wf_a, n) if wf_ret[i] != 0], wf_a, n - 1)}
+                           'all': sb.metrics(wf_ret, wf_trades, wf_a, n - 1)}
 
     # ---------- ⑧ 结论（网页直接渲染） ----------
     c = out['decomposition']['contribution']
@@ -530,8 +529,8 @@ def main():
             f"{out['preset']['all']['每笔平均点数']:.5f} 点。其余零假设（全池 / 收跌池 / 分层 / 循环移位）p 更小，"
             "但它们同时打乱了信号的成簇结构或簇的时间位置，把执行纪律的功劳也算进了「平安」，故不作主判据。",
             f"成本：每笔平均 {out['preset']['all']['每笔平均点数']:.4f} 点（约 "
-            f"{out['preset']['all']['每笔平均点数']/0.005:.1f} 个 tick），扣 1 tick 来回后 "
-            f"{costs[2]['累计点数']:.3f} 点、扣 2 tick {costs[3]['累计点数']:.3f} 点，比上一轮含做空版抗成本得多。",
+            "每笔来回扣 0.005 点后 "
+            f"{costs[2]['累计点数']:.3f} 点、扣 0.010 点 {costs[3]['累计点数']:.3f} 点，比上一轮含做空版抗成本得多。",
             f"资金效率：只在场 {out['preset']['exposure']['在场时间占比']*100:.1f}% 的时间，"
             f"按占用资金年化 {out['preset']['exposure']['按占用资金年化']*100:.2f}%；"
             f"但绝对收益仍低于买入持有 {out['benchmark']['buy_hold']['累计点数']:.3f} 点。",
@@ -544,8 +543,8 @@ def main():
             f"但两段相关仅 {out['grid']['robust']['两段相关']:.2f}；探索段最优持有期漂到 H=10，"
             "walk-forward 也稳定在 H=10 ⇒ 「持有几天」不稳定，不能拿某一格当结论。",
             "定位：刻度 + 证伪。可作为「逢跌做多、单仓位不追单」的执行刻度；不能据此推断平安席位有独占信息，也不能直接上仓。"
-            "与上一轮并不矛盾：上一轮是「多空双侧」规则，做空腿亏 0.612 点把整体拖到 1.112 点，"
-            "席位排名也被做空腿主导（当时中信 2.525 > 平安）；关掉做空腿后平安变成 9 个席位里第一。"
+            "多空双侧和纯多的取舍取决于做空盈亏和仓位重叠。"
+            "各腿收益与修订版席位排名见分解与横向对照。"
             "两轮共同指向同一件事：赚的是价格条件与执行结构，不是平安席位的独占信息。",
         ],
     }

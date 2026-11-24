@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-9 个持仓席位 × 2 套规则 的净值对比，以及「中信期货全样本 2.525 点」是怎么来的。
+9 个持仓席位 × 2 套规则 的净值对比，以及「中信期货全样本收益」是怎么来的。
 
 背景：第七节（多空双侧规则）把同一套口述参数套到 8 个其他席位做安慰剂，
-中信期货跑出 2.525 点，比平安的 1.112 点还高。本脚本回答两件事：
+用同一套规则比较席位表现并分析多空腿。
   ① 把 9 个席位的净值曲线画在一起，两套规则（多空双侧 / 只做多）横向比较；
   ② 把中信那 1.413 点的领先拆成可核对的几块，并给出「9 个里挑最大」的零假设。
 
@@ -52,26 +52,7 @@ def run_block(sig, O, C, H, n, block_short=False, cost=0.0):
 
     用来把「空单自己赚的钱」和「空单挡掉的多单」分离干净。
     """
-    ret = np.zeros(n)
-    tr = []
-    free = 0
-    for t in range(n):
-        if sig[t] == 0 or t < free:
-            continue
-        e, x = t + 1, t + 1 + H
-        if x > n - 1 or np.isnan(O[e]) or np.isnan(C[x]):
-            continue
-        is_block = (sig[t] == -1 and block_short)
-        pts = 0.0 if is_block else float(sig[t] * (C[x] - O[e]) - cost)
-        ret[x] += pts / sb.PRICE_REF
-        if not is_block:
-            tr.append({
-                'signal_idx': t, 'dir': int(sig[t]), 'pnl_pts': round(pts, 5),
-                'entry_idx': e, 'exit_idx': x,
-                'entry_px': round(float(O[e]), 4), 'exit_px': round(float(C[x]), 4),
-            })
-        free = x + 1
-    return ret, tr
+    return sb.run(sig, O, C, H, cost, b=n - 1, block_short=block_short)
 
 
 def sum_pts(tr, filt=None):
@@ -115,7 +96,7 @@ def main():
 
     out = {
         'meta': {
-            'title': '9 席位净值横向对比与中信 2.525 点归因',
+            'title': '9 席位净值横向对比与中信归因',
             'generated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'start': dates[0], 'end': dates[-1], 'n_days': n,
             'split': sb.SPLIT,
@@ -171,7 +152,7 @@ def main():
                 if b >= n:
                     b = n - 1
                 m = sb.metrics(r, tr, a, b)
-                tt = [t for t in tr if a <= t['signal_idx'] <= b]
+                tt = [t for t in tr if a <= t['exit_idx'] <= b]
                 yr.append({
                     '年份': y, '累计点数': m['累计点数'], '交易笔数': m['交易笔数'],
                     '多腿': sum_pts(tt, lambda t: t['dir'] == 1),
@@ -329,7 +310,7 @@ def main():
                 '探索段': seats[seat][rule]['explore']['累计点数'],
                 '验证段': seats[seat][rule]['verify']['累计点数'], '备注': extra}
     out['overview'] = [
-        row('中信期货 多空双侧 ← 用户问的 2.525', FOCUS, 'full', '第七节席位安慰剂，9 席位里最大'),
+        row('中信期货 多空双侧', FOCUS, 'full', '第七节席位安慰剂'),
         row('平安期货 多空双侧（第七节主口径）', TARGET, 'full', '口述规则原始版本'),
         row('中信期货 只做多', FOCUS, 'long', '关掉做空腿后反而不如平安'),
         row('平安期货 只做多（第八节主口径）', TARGET, 'long', '两项研究里最抗成本'),
@@ -344,10 +325,10 @@ def main():
                        for r in seats[FOCUS]['full']['yearly'][:5])
     y26 = seats[FOCUS]['full']['yearly'][5]['累计点数']
     out['conclusion'] = {
-        'headline': '中信 2.525 不是「更会挑方向」，是做空腿 + 单仓位不叠加恰好帮了忙；而它是 9 个席位里挑出来的最大值。',
+        'headline': '中信多空拆解：分别查看空单自身和单仓位占用的影响，并用九席位对照处理筛选偏差。',
         'points': [
-            f"先对齐口径：2.525 是第七节**多空双侧**规则（收跌+大幅加多→多、收涨+大幅减多→空、H=3）套到中信的结果；"
-            f"同一规则平安 1.112 点，差 {real[FOCUS]-real[TARGET]:.3f} 点。"
+            f"中信当前结果使用第七节**多空双侧**规则（收跌+大幅加多→多、收涨+大幅减多→空、H=3）套到中信的结果；"
+            f"同一规则平安 {real[TARGET]:.3f} 点，差 {real[FOCUS]-real[TARGET]:.3f} 点。"
             f"换成**只做多**，中信只剩 {seats[FOCUS]['long']['all']['累计点数']:.3f} 点（验证段还是负的），"
             f"平安却是 {seats[TARGET]['long']['all']['累计点数']:.3f} 点 ⇒ 中信的领先只存在于这个特定口径。",
             f"差额几乎全在做空腿：中信多腿 {a['多腿']:+.3f} / 空腿 {a['空腿']:+.3f}，"
@@ -373,10 +354,10 @@ def main():
             f"反倒说明规则本身普遍有效：随机移位后 9 席位平均只有 {nm['rand_mean_of_means']:+.3f} 点，"
             f"真实 9 席位均值 {nm['real_cross_mean']:.3f} 点（p={nm['p_cross_mean']:.4f}）⇒ "
             "赚的是「这段 TS 慢牛 + 收跌做多/收涨做空 + 不叠加」的共同结构，不是某个席位独占的信息。",
-            f"成本：中信双侧每笔来回扣 1 个 tick 2.525 → {seats[FOCUS]['full']['costs'][1]['累计点数']:.3f} 点，"
-            f"扣 2 tick → {seats[FOCUS]['full']['costs'][2]['累计点数']:.3f} 点，"
-            f"扣 4 tick → {seats[FOCUS]['full']['costs'][3]['累计点数']:.3f} 点（归零）；"
-            f"平安纯多扣 1 tick 仍有 {seats[TARGET]['long']['costs'][1]['累计点数']:.3f} 点，最抗成本。",
+            f"成本：中信双侧每笔来回扣 0.005 点 {real[FOCUS]:.3f} → {seats[FOCUS]['full']['costs'][1]['累计点数']:.3f} 点，"
+            f"扣 0.010 点 → {seats[FOCUS]['full']['costs'][2]['累计点数']:.3f} 点，"
+            f"扣 0.020 点 → {seats[FOCUS]['full']['costs'][3]['累计点数']:.3f} 点。"
+            f"平安纯多扣 0.005 点后有 {seats[TARGET]['long']['costs'][1]['累计点数']:.3f} 点，最抗成本。",
             f"分年：中信双侧 2021–2025 全正（{yr_txt}）、2026 {y26:+.3f}；但空腿分年忽正忽负，"
             "「连续 5 年正」主要来自做多腿 + 执行结构，不代表空头判断稳定。",
             "定位：**刻度 + 证伪，不能上仓**。中信是看过全样本净值之后才被注意到的席位，"

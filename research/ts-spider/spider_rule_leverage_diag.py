@@ -45,6 +45,11 @@ def simulate(dates, O, C, smap, lo, hi, *, entry_lag=1, exit_lag=2,
             return 0
         return -s if flip else s
 
+    if (entry_lag, exit_lag, entry_px, exit_px, mode, reverse, same, flip) == (
+        1, 2, 'open', 'close', 'state', 'close_only', 'ignore', False
+    ):
+        return sb.run_state(dates, O, C, smap, lo, hi)
+
     if mode == 'independent':
         for k in range(lo, hi + 1):
             s = sig_at(k)
@@ -54,7 +59,13 @@ def simulate(dates, O, C, smap, lo, hi, *, entry_lag=1, exit_lag=2,
             if a > hi or b > hi or b < a:
                 continue
             r = s * (X[b] - E[a]) / sb.PRICE_REF
-            ret[b - lo] += r
+            if a == b:
+                ret[b - lo] += r
+            else:
+                ret[a - lo] += s * (C[a] - E[a]) / sb.PRICE_REF
+                for j in range(a + 1, b):
+                    ret[j - lo] += s * (C[j] - C[j - 1]) / sb.PRICE_REF
+                ret[b - lo] += s * (X[b] - C[b - 1]) / sb.PRICE_REF
             trades.append({'ret': r, 'sig_day': dates[k],
                            'entry': dates[a], 'exit': dates[b]})
         return ret, trades
@@ -231,7 +242,7 @@ def main():
                               '每笔平均|收益|%': round(float(oracle / len(t) * 100), 5)}
         print(f"  {lab:<26} 信号 {len(t):>4} 笔 | 完美方向上限 {oracle*100:>7.3f}% "
               f"| 每笔|收益| {oracle/len(t)*100:>7.4f}% "
-              f"| 报告 9.52% 是上限的 {9.52/(oracle*100):>5.2f} 倍")
+              + ("| 研报同段约 6.82%（曲线估读）" if a == rp_a and b == rp_b else ''))
 
     # ---------------------------------------------------------- 6) 2020 缺口外推
     print('\n=== ⑥ 2020 年（本地无持仓）最多能补多少 ===')

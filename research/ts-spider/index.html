@@ -1,68 +1,7 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" href="data:,">
-<title>TS 蜘蛛网策略 · 研究快照</title>
-<style>
-:root{--bg:#f6f8fb;--card:#fff;--tx:#1f2937;--tx2:#5b6675;--line:#e3e8ef;--accent:#2c5aa0}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);
-font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
-.wrap{max-width:860px;margin:0 auto;padding:42px 24px 64px}
-h1{font-size:26px;margin:0 0 6px} .sub{color:var(--tx2);margin:0 0 24px;font-size:13px}
-.card{display:block;background:var(--card);border:1px solid var(--line);border-radius:10px;
-padding:16px 20px;margin-bottom:12px;text-decoration:none;color:inherit;transition:.15s}
-.card:hover{border-color:var(--accent);box-shadow:0 4px 16px rgba(44,90,160,.09)}
-.card b{font-size:16px;color:var(--accent)} .card p{margin:6px 0 0;color:var(--tx2);font-size:13px}
-.hero{background:#f2f6fc;border-left:4px solid var(--accent);padding:20px 22px;margin-bottom:24px}
-.hero b{font-size:18px} .hero p{font-size:13.5px;line-height:1.8}
-.grp{font-size:12px;color:var(--tx2);letter-spacing:.5px;margin:0 0 10px}
-.note{background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);
-border-radius:8px;padding:14px 20px;margin-top:24px;color:var(--tx2);font-size:12.5px;line-height:1.85}
-code{background:#f0f3f8;padding:1px 5px;border-radius:4px;font-size:12px}
-a.back{color:var(--accent);text-decoration:none;font-size:13px}
-</style></head>
-<body><div class="wrap">
-<h1>TS 国债期货「蜘蛛网」策略 · 研究快照</h1>
-<p class="sub">2021-01-04 ~ 2026-11-23 · 1426 交易日 · 9 个持仓序列 · <a class="back" href="../../">← 返回 FICC 看板</a></p>
-
-<a class="card hero" href="TS_每日信号.html"><b>★ 每日信号（持续跟踪）</b>
-<p>5 个收益与夏普最优策略的当日信号、累计净值与席位观察值；前瞻记录从 2026-11-24 锁定起算、只追加不回补，用来干净检验「平安席位是否更准」。每天上传新持仓后自动重算。</p></a>
-
-<a class="card hero" href="TS_研究汇总.html"><b>★ 一页汇总（推荐先看）</b>
-<p>平安「只做多」 vs 中信「多空双侧」净值对比，另叠加两条事后挑参的网格线（只作刻度、不能上仓），
-指标 / 分年 / 成本 / A·B·C 归因 / 零假设证伪、9 个策略今年以来的开平仓记录（可筛选 / 排序 / 导出 CSV），
-持续加仓 vs 单仓位对照、持有期 1/3/5/10 专项，并把前期研究精简成 6 张卡片
-—— 全部结论、图表与详细页入口都在这一页。</p></a>
-
-<p class="grp">详细页（原始图表、参数面与逐笔明细）</p>
-
-<a class="card" href="TS_蜘蛛网_持仓整理.html"><b>① 持仓整理</b>
-<p>前5/10/20 与单会员席位的多头、空头、净持仓 / dB·dS 信号 / 各信号净值对比 / 数据质检</p></a>
-
-<a class="card" href="TS_蜘蛛网_策略回测.html"><b>② 策略回测</b>
-<p>净值·回撤 / 9 序列净值对比 / 与报告 9.52% 的差异归因 / 零假设 / 成本 / 逐笔明细</p></a>
-
-<a class="card" href="TS_平安净多_策略.html"><b>③ 平安「逆势加多」检验</b>
-<p>主观感受拆成可证伪的两段：四象限 / 归因拆解 / 其他席位安慰剂 / 零假设 / 参数热力图</p></a>
-
-<a class="card" href="TS_平安纯多头_策略.html"><b>④ 平安「只做多」检验</b>
-<p>择机三层分解 / 同构随机择时 / 时点抖动主判据 / 资金效率 / 参数热力图 / 成本</p></a>
-
-<a class="card" href="TS_席位对比_净值.html"><b>⑤ 9 席位净值横向对比</b>
-<p>中信 2.525 的由来：两规则切换 / A·B·C 拆解 / 「9 个里挑最大」零假设 / 成本 / 逐笔</p></a>
-
-<a class="card" href="README.md"><b>⑥ 说明与复现步骤</b>
-<p>数据口径、文件清单、已知缺口、另一台电脑怎么跑（<code>build_spider_web.py → spider_backtest.py → build_spider_web.py</code>）</p></a>
-
-<div class="note">
-<b>净值口径</b>：固定 5 手 TS（名义 1000 万、单倍杠杆、不复利），1 点 = 10 万元 = 初始资金 1%，
-<b>净值 = 1 + 累计点数/100，直接累加</b>。<br>
-<b>总结论</b>：本地静态版 1.307 点（报告 9.52% 无法复现）；平安纯多 3.096 点、中信多空 2.525 点，
-都没跑赢买入持有 3.595 点。抖动 ±3 日 p=0.104、「9 席位取最大」p=0.073 ⇒
-赚的是「TS 慢牛 + 逢跌做多 + 成簇时只进第一笔」的执行结构，不是席位信息。
-三项研究定位均为<b>刻度 + 证伪，不能上仓</b>。<br>
-单文件网页、数据已内嵌、离线可开。研报 PDF 有版权未发布；Wind 导出数据仅供个人研究，请勿二次分发。
-</div>
-</div></body></html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TS 蜘蛛网 · 每日信号</title><meta http-equiv="refresh" content="0; url=TS_研究汇总.html">
+<link rel="canonical" href="TS_研究汇总.html"></head>
+<body><p><a href="TS_研究汇总.html">查看 TS 蜘蛛网每日信号</a></p></body>
+</html>

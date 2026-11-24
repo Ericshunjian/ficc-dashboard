@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="data:,">
-<title>9 席位净值横向对比 · 中信 2.525 点归因</title>
+<title>9 席位净值横向对比 · 中信收益归因</title>
 <style>
 :root{--bg:#f6f8fb;--card:#fff;--tx:#1f2937;--tx2:#5b6675;--tx3:#8a95a5;
 --line:#e3e8ef;--accent:#2c5aa0;--up:#d64545;--down:#2f9e6f;--warn:#b7791f}
@@ -65,7 +65,7 @@ code{background:#f0f3f8;padding:1px 5px;border-radius:4px;font-size:11.5px}
 </head>
 <body><div class="wrap">
 
-<h1>9 席位净值横向对比 · 中信 2.525 点是怎么来的</h1>
+<h1>9 席位净值横向对比 · 中信收益归因</h1>
 <p class="sub"><span id="spanMeta"></span> · <a class="back" href="index.html">← 返回研究目录</a></p>
 
 <div class="kpis" id="kpis"></div>
@@ -88,12 +88,12 @@ code{background:#f0f3f8;padding:1px 5px;border-radius:4px;font-size:11.5px}
 <div class="two">
   <div class="card">
     <h2>② 中信 vs 平安（多空双侧）</h2>
-    <div class="desc">用户问的 2.525 与原始主口径 1.112 同图对比，竖线为探索 / 验证分界（2024-01-01）。</div>
+    <div class="desc">中信与平安的两套规则同图对比，竖线为探索 / 验证分界（2024-01-01）。</div>
     <div class="chart" id="chartDuo"></div>
     <div class="legend" id="duoLegend"></div>
   </div>
   <div class="card">
-    <h2>③ 2.525 的 A/B/C 拆解</h2>
+    <h2>③ 中信的 A/B/C 拆解</h2>
     <div class="desc">只做多 B → 空信号占仓位但不开仓 C → 完整双侧 A。中信往上走、平安往下走，差在做空腿。</div>
     <div class="chart" id="chartSteps"></div>
     <div class="legend" id="stepsLegend"></div>
@@ -125,7 +125,7 @@ code{background:#f0f3f8;padding:1px 5px;border-radius:4px;font-size:11.5px}
   </div>
   <div class="card">
     <h2>⑦ 「9 个里挑最大」的零假设</h2>
-    <div class="desc">把 9 条信号各自循环移位 300 组，每组取 9 个累计点数的<b>最大值</b>。看 2.525 在随机最大值分布里的位置。</div>
+    <div class="desc">把 9 条信号各自循环移位 300 组，每组取 9 个累计点数的<b>最大值</b>。对比中信实际表现与随机最大值分布。</div>
     <div class="chart" id="chartMax"></div>
     <div class="legend" id="maxLegend"></div>
     <div class="note" id="maxNote"></div>
@@ -142,7 +142,7 @@ code{background:#f0f3f8;padding:1px 5px;border-radius:4px;font-size:11.5px}
   </div>
   <div class="card">
     <h2>⑨ 成本敏感性</h2>
-    <div class="desc">每笔来回扣 c 点（TS 最小变动 0.005 点 = 1 tick）。四条口径一起看谁抗成本。</div>
+    <div class="desc">每笔来回扣 c 点（固定点数，不随交易日变动）。四条口径一起看谁抗成本。</div>
     <div class="chart" id="chartCost"></div>
     <div class="legend" id="costLegend"></div>
   </div>
@@ -458,7 +458,7 @@ function renderStatic(){
     colors:['#2c5aa0','#d64545']})),{h:300,groups:2,groupNames:['多空双侧','只做多'],showVal:false});
   $('rankLegend').innerHTML='<span><i style="background:#2c5aa0"></i>多空双侧</span>'+
     '<span><i style="background:#d64545"></i>只做多</span>'+
-    '<span class="small">中信双侧 2.525 排第 1，但纯多只有 1.016 排第 5</span>';
+    '<span class="small">实际排名随规则和样本变化</span>';
 
   // ⑤ 多空腿
   drawBars('chartSide',SEATS.map(n=>({label:SN(n),
@@ -487,7 +487,7 @@ function renderStatic(){
   const nm=D.null_max;
   drawHist('chartMax',nm.hist,{h:250,real:nm.real_max,realLabel:'真实最大 '+fmt(nm.real_max,3)+' 点'});
   $('maxLegend').innerHTML='<span><i style="background:#93a9c9"></i>随机「9 席位最大值」分布（'+M.n_max+' 组）</span>'+
-    '<span><i style="background:#c0392b"></i>中信 2.525</span>';
+    '<span><i style="background:#c0392b"></i>中信</span>';
   $('maxNote').innerHTML='随机最大值均值 <b>'+fmt(nm.mean,3)+'</b> 点、p95 '+fmt(nm.p95,3)+
     ' 点；真实 '+fmt(nm.real_max,3)+' 点只排 <b>'+(nm.pct_max*100).toFixed(1)+' 分位</b>，p='+fmt(nm.p_max,4)+
     ' ⇒ 多重比较后不显著。<br>相反，随机 9 席位均值只有 '+fmt(nm.rand_mean_of_means,3)+
@@ -534,7 +534,7 @@ function renderCost(){
       t.textContent=l.name+' 成本 '+xs[i]+' → '+fmt(vv[i],3)+' 点';svg.lastChild.appendChild(t);});
   });
   $('costLegend').innerHTML=COST_LINES.map(l=>'<span><i style="background:'+l.color+'"></i>'+l.name+'</span>').join('')+
-    '<span class="small">1 tick = 0.005 点；扣 4 tick 中信双侧归零，平安纯多仍 +0.836 点</span>';
+    '<span class="small">按每笔来回固定点数比较</span>';
 }
 function renderYear(){
   const yc=D.seats[M.focus].full.yearly,yp=D.seats[M.target].full.yearly;
@@ -549,7 +549,7 @@ function renderYear(){
 // ---------------------------------------------------------------- 表格
 function renderTables(){
   $('overviewTable').innerHTML=tableHtml(
-    ['口径','累计点数','夏普','笔数','胜率','扣1tick','扣2tick','探索段','验证段','备注'],
+    ['口径','累计点数','夏普','笔数','胜率','扣0.005点','扣0.010点','探索段','验证段','备注'],
     D.overview.map(r=>[esc(r['口径']),C(r['累计点数']),fmt(r['夏普比率'],2),r['交易笔数'],
       r['胜率']===null?'—':pct(r['胜率'],1),C(r['扣1tick点数']),C(r['扣2tick点数']),
       C(r['探索段']),C(r['验证段']),'<span class="small">'+esc(r['备注'])+'</span>']));
@@ -560,7 +560,7 @@ function renderTables(){
 
   mkBtns('tableRuleBtns',[['full','多空双侧'],['long','只做多']],'tableRule',renderTables);
   $('perfTable').innerHTML=tableHtml(['席位','累计点数','夏普','最大回撤','笔数','胜率','逐笔t',
-    '多腿','空腿','探索段','验证段','扣1tick','扣2tick'],
+    '多腿','空腿','探索段','验证段','扣0.005点','扣0.010点'],
     SEATS.map(n=>{const r=D.seats[n][S.tableRule],m=r.all;
       return [esc(n),C(m['累计点数']),fmt(m['夏普比率'],2),pct(m['最大回撤'],2),m['交易笔数'],
         m['胜率']===null?'—':pct(m['胜率'],1),fmt(m['逐笔t值'],2),
@@ -568,7 +568,7 @@ function renderTables(){
         C(r.explore['累计点数']),C(r.verify['累计点数']),
         C(r.costs[1]['累计点数']),C(r.costs[2]['累计点数'])];}));
 
-  $('attrTable').innerHTML='<h2 style="font-size:14px;margin:0 0 8px">中信 2.525 的 A / B / C 隔离</h2>'+
+  $('attrTable').innerHTML='<h2 style="font-size:14px;margin:0 0 8px">中信 的 A / B / C 隔离</h2>'+
     tableHtml(['席位','B 只做多','C 空信号占仓位','A 完整双侧','空单自身盈亏','挤掉多单效应',
       '被挤掉多单笔数','被挤掉多单在B里合计','做空信号/成交/跳过'],
     Object.keys(D.attribution).map(n=>{const a=D.attribution[n];
@@ -615,7 +615,7 @@ function renderHead(){
   $('spanMeta').textContent=M.start+' ~ '+M.end+' · '+M.n_days+' 交易日 · 9 个持仓序列 · 2 套规则';
   const f=D.seats[M.focus],t=D.seats[M.target];
   const K=[
-    ['中信·多空双侧',((f.full.all['累计点数'])).toFixed(3)+' 点','用户问的 2.525','var(--up)'],
+    ['中信·多空双侧',((f.full.all['累计点数'])).toFixed(3)+' 点','逆势双向规则','var(--up)'],
     ['平安·多空双侧',((t.full.all['累计点数'])).toFixed(3)+' 点','第七节主口径','var(--tx)'],
     ['中信·只做多',((f.long.all['累计点数'])).toFixed(3)+' 点','验证段转负','var(--down)'],
     ['平安·只做多',((t.long.all['累计点数'])).toFixed(3)+' 点','第八节主口径','var(--accent)'],

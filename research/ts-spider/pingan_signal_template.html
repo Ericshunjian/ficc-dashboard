@@ -355,7 +355,7 @@ drawBars('chartQuad',Object.keys(q).map(k=>({label:k.replace(/（.*?）/g,''),va
   tip:fmt(q[k]['未来3日均值点数'],4)+' 点 / n='+q[k].n+' / t='+fmt(q[k].t,2)})),
   {h:230,yfmt:v=>fmt(v,3),valfmt:v=>fmt(v,4),rotate:true,showVal:true});
 $('quadLegend').innerHTML='<span><i style="background:#d64545"></i>未来 3 日平均上涨（单位：价格点）</span><span><i style="background:#2f9e6f"></i>平均下跌</span>'+
- '<span class="small">TS 一个最小变动价位 = 0.005 点，整张图的量级只有 2~3 个 tick</span>';
+ '<span class="small">按固定点数比较，0.005 点为成本情景</span>';
 
 /* ---------- ② 归因 ---------- */
 const shortName=s=>s.replace(/^[A-G] /,'').replace(/（.*?）/g,'').slice(0,14);
