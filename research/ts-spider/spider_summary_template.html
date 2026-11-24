@@ -89,7 +89,7 @@ footer{color:var(--tx3);font-size:11.5px;text-align:center;margin-top:22px;line-
   <a href="#s1">① 双策略净值</a><a href="#s2">② 指标 / 分年 / 成本</a>
   <a href="#s3">③ 差在哪：A·B·C</a><a href="#s4">④ 证伪零假设</a>
   <a href="#s5">⑤ 前期 6 项精简</a><a href="#s6">⑥ 今年开平仓</a>
-  <a href="#s7">⑦ 持续加仓 vs 单仓位</a><a href="#s8">⑧ 口径与文件</a>
+  <a href="#s7">⑦ 持续加仓 vs 单仓位</a><a href="#s8">⑧ 持有期 1/3/5/10</a><a href="#s9">⑨ 口径与文件</a>
 </div>
 
 <div class="kpis" id="kpis"></div>
@@ -185,7 +185,25 @@ footer{color:var(--tx3);font-size:11.5px;text-align:center;margin-top:22px;line-
 </div>
 
 <div class="card" id="s8">
-  <h2>⑧ 数据口径、警告与文件</h2>
+  <h2>⑧ 持有期 1 / 3 / 5 / 10：只改持有天数会怎样？</h2>
+  <div class="desc">信号完全锁死（当日收跌且平安 dNet 60 日分位≥80%，T+1 开盘做多 5 手、单仓位不叠加），
+  只把持有 3 个交易日换成 1 / 5 / 10 个交易日重跑。<b>H=3 仍是事前口述锁定的主口径</b>，本节的 1/5/10 是专项检验，不替换主口径。
+  四条净值都按各自平仓日记账、点数单利累加。</div>
+  <div class="chart" id="chartHold"></div>
+  <div class="legend" id="legendHold"></div>
+  <div class="scroll" id="holdTable" style="margin-top:14px"></div>
+  <div class="two" style="margin-top:16px">
+    <div><h3>配对零假设：H=5 减 H=3（同一批抖动信号日，800 次）</h3>
+      <div class="chart" id="histHoldDiff"></div><div class="small" id="histHoldNote"></div></div>
+    <div><h3>成本敏感性：四档持有期（每笔来回扣 N 个 tick）</h3>
+      <div class="chart" id="chartHoldCost"></div><div class="small" id="holdCostNote"></div></div>
+  </div>
+  <div class="scroll" id="holdWFTable" style="margin-top:14px"></div>
+  <div class="note" id="holdNote"></div>
+</div>
+
+<div class="card" id="s9">
+  <h2>⑨ 数据口径、警告与文件</h2>
   <div id="foot"></div>
 </div>
 
@@ -581,7 +599,69 @@ function renderStack(){
 }
 renderStack();
 
-/* ---------------- ⑧ 页脚 ---------------- */
+/* ---------------- ⑧ 持有期 1/3/5/10 ---------------- */
+const HP=D.hold_period, HV=HP.variants, HKS=['1','3','5','10'];
+const HNAME={'1':'H=1 日','3':'H=3 日（主口径）','5':'H=5 日','10':'H=10 日'};
+const HCOL={'1':'#8a95a5','3':'#d64545','5':'#2c5aa0','10':'#b7791f'};
+function renderHold(){
+  const jn=HP.null['抖动±3日·仍收跌'];
+  const ss=HKS.map(k=>({name:HNAME[k],color:HCOL[k],width:k==='3'?2.8:1.5,
+    values:HV[k].nav.map(v=>(v-1)*100)}));
+  drawLine('chartHold',ss,{h:330,zeroLine:0,yfmt:v=>(v>=0?'+':'')+fmt(v,2)+'点',
+    vline:SPLIT,vlabel:'2024 起 = 样本外'});
+  $('legendHold').innerHTML=ss.map(s=>'<span><i style="background:'+s.color+'"></i>'+esc(s.name)+
+    ' <b>'+fmt(s.values[s.values.length-1],3)+' 点</b></span>').join('');
+  const HEAD=['持有期','全样本点数','夏普','探索段','验证段','成交笔数','在场比例','扣2tick','抖动±3 p','超出随机均值'];
+  const ROWS=HKS.map(k=>{const v=HV[k],n=jn[k];return [
+    esc(HNAME[k]),C(v.all['累计点数']),fmt(v.all['夏普比率'],3),C(v.explore['累计点数']),
+    C(v.verify['累计点数']),v.all['交易笔数'],pct(v.exposure['在场时间占比'],1),
+    C(v.costs[3]['累计点数']),fmt(n['p'],4)+(n['p']<0.05?' <b class="pos">*</b>':''),
+    C(n['excess_vs_null'])];});
+  $('holdTable').innerHTML=tableHtml(HEAD,ROWS);
+  const df=jn['5_minus_3'];
+  drawHist('histHoldDiff',df.hist,{real:df['obs'],h:250});
+  $('histHoldNote').innerHTML='同一批抖动信号日下，H=5 减 H=3 的差值均值 '+fmt(df['mean'],3)+
+    ' 点；真实差 '+fmt(df['obs'],3)+' 点，落在分布的 '+(df['p_better_abs']*100).toFixed(1)+
+    '% 分位（双尾 p='+fmt(df['p_better_abs'],4)+'）⇒ <b>不显著</b>。'+
+    '配对设计已抹掉「持有更久天然多吃市场漂移」的机械差。';
+  const cseries=HKS.map(k=>({name:HNAME[k],color:HCOL[k],
+    values:HV[k].costs.map(c=>c['累计点数'])}));
+  drawLine('chartHoldCost',cseries.map(s=>({name:s.name,color:s.color,width:1.6,values:s.values})),
+    {h:270,zeroLine:0,yfmt:v=>fmt(v,2)+'点',
+     xticks:[0,1,2,3,4].map(i=>({x:PAD.l+(W-PAD.l-PAD.r)*i/4,
+       label:['0','1 tick','2 tick','4 tick','8 tick'][i],anchor:i===0?'start':(i===4?'end':'middle')}))});
+  $('holdCostNote').innerHTML='横轴为每笔来回扣 0 / 1 / 2 / 4 / 8 tick。持得越久笔数越少（113→68），'+
+    '但单笔波动更大；扣 2 tick 后 H=5 '+fmt(HV['5'].costs[3]['累计点数'],3)+
+    ' 点略高于 H=3 '+fmt(HV['3'].costs[3]['累计点数'],3)+' 点，差 '+fmt(HV['5'].costs[3]['累计点数']-HV['3'].costs[3]['累计点数'],3)+' 点。';
+  const wrows=HP.wf.rows.map(r=>[r['年份'],'H='+r['选中H'],C(r['累计点数']),
+    fmt(r['夏普比率'],3),r['交易笔数']]);
+  HKS.forEach(k=>{const m=HP.wf.all['固定H='+k];wrows.push(['固定 H='+k+'（2023 起）','—',
+    C(m['累计点数']),fmt(m['夏普比率'],3),m['交易笔数']]);});
+  const wm=HP.wf.all['逐年重选'];
+  wrows.push(['逐年重选 H（2023 起）','H=3 每年',C(wm['累计点数']),
+    fmt(wm['夏普比率'],3),wm['交易笔数']]);
+  $('holdWFTable').innerHTML=tableHtml(['年份 / 口径','当年选中','累计点数','夏普','笔数'],wrows);
+  const h5=HV['5'],h3=HV['3'],h10=HV['10'],jn5=jn['5'],jn3=jn['3'],jn10=jn['10'];
+  $('holdNote').innerHTML='<b>答案：1/5/10 都没有实质超过 3 日</b>。全样本与夏普最佳都是 H=3（'+
+    fmt(h3.all['累计点数'],3)+' 点 / '+fmt(h3.all['夏普比率'],2)+'）；H=5 只在验证段高 '+
+    fmt(h5.verify['累计点数']-h3.verify['累计点数'],3)+' 点、2023 年以来窗口高 '+
+    fmt(HP.wf.all['固定H=5']['累计点数']-HP.wf.all['固定H=3']['累计点数'],3)+' 点，但配对检验 p='+
+    fmt(df['p_better_abs'],4)+'，随机抖动下 H=5 平均还比 H=3 多 '+fmt(df['mean'],3)+' 点 ⇒ '+
+    '这点差是噪声与市场漂移，不是选对持有期。<br>'+
+    '<b>信号证据也只在 H=3 最强</b>：抖动 ±3 日仍收跌 p='+fmt(jn3['p'],4)+'（±5 日 p='+
+    fmt(HP.null['抖动±5日·仍收跌']['3']['p'],4)+'），H=1 / 5 / 10 分別为 '+fmt(jn['1']['p'],4)+' / '+
+    fmt(jn5['p'],4)+' / '+fmt(jn10['p'],4)+'；H=10 超出同构随机均值 '+fmt(jn10['excess_vs_null'],3)+
+    ' 点（为负），说明持有 10 日赚的基本是市场本身的漂移。<br>'+
+    '<b>参数稳定性</b>：探索段按点数/夏普都选 H=3，验证段选 H=5；限制在四档做逐年重选，四年全部选 H=3，'+
+    '合计 '+fmt(wm['累计点数'],3)+' 点，低于同期一直持 H=5 的 '+fmt(HP.wf.all['固定H=5']['累计点数'],3)+
+    ' 点 ⇒ 「每年重选」也没带来增益。留一年交叉验证在 2022 年选中 H=5 后当年亏 '+
+    fmt(HP.selection['留一年交叉验证'][1]['累计点数'],3)+' 点。<br>'+
+    '<b>结论</b>：H=3 作为事前锁定的参数站得住，不必改；1 日太短（1.493 点）、10 日太长（2.331 点、52.4% 在场），'+
+    '5 日只是同等水平的不同刻度。定位仍是刻度 + 证伪，不是能上仓的参数优势。';
+}
+renderHold();
+
+/* ---------------- ⑨ 页脚 ---------------- */
 $('foot').innerHTML=
  '<ul class="pts">'+
  '<li><b>净值口径</b>：固定 5 手 TS（面值 200 万/手，报价按 100 元面值 ⇒ 1 点 = 2 万元/手 = 10 万元/组 = 初始 1000 万的 1%），'+

@@ -5,6 +5,7 @@
   TS_席位对比.json / TS_平安纯多头.json / TS_平安净多策略.json
   TS_策略回测.json / TS_持仓整理.json / TS_规则杠杆归因.json
   TS_网格优选_明细.json（由 spider_grid_detail.py 补算两个最优格子的净值）
+  TS_叠加仓位.json（spider_stack_long.py）/ TS_持有期专项.json（spider_hold_period.py）
 输出：TS_研究汇总.html（数据内嵌、离线可开）
 """
 import json
@@ -42,6 +43,7 @@ def main():
     diag = J('TS_规则杠杆归因.json')
     gd = J('TS_网格优选_明细.json')
     st = J('TS_叠加仓位.json')
+    hp = J('TS_持有期专项.json')
 
     dates = seat['dates']
     N = len(dates)
@@ -380,6 +382,23 @@ def main():
             'occupancy': v['occupancy'],
         }
 
+    # ---------- ⑨ 持有期 1/3/5/10 专项 ----------
+    hold_period = {
+        'meta': hp['meta'],
+        'variants': {k: {'H': v['H'], 'all': v['all'], 'explore': v['explore'],
+                         'verify': v['verify'], 'nav': nav_of(v['nav']),
+                         'exposure': v['exposure'], 'costs': v['costs'],
+                         'yearly': v['yearly'], 'filled': v['filled']}
+                     for k, v in hp['variants'].items()},
+        'null': {w: {k: ({kk: vv for kk, vv in v.items() if kk != 'hist'} |
+                        ({'hist': [rnd(x, 4) for x in v['hist']]} if 'hist' in v else {}))
+                     for k, v in b.items()}
+                 for w, b in hp['null'].items()},
+        'wf': hp['walk_forward'],
+        'selection': hp['selection'],
+        'summary': hp['summary'],
+    }
+
     payload = {
         'meta': {
             'title': 'TS 蜘蛛网研究 · 一页汇总',
@@ -404,6 +423,7 @@ def main():
         'extra': extra,
         'trades_year': trades_year,
         'stack': stack,
+        'hold_period': hold_period,
     }
 
     with open(os.path.join(BASE, 'spider_summary_template.html'), encoding='utf-8') as f:

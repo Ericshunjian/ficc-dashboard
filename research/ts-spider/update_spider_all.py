@@ -33,7 +33,8 @@ STEPS = [
     ('spider_seat_compare.py', '⑦ 9 席位对比 + 中信归因'),
     ('spider_grid_detail.py', '⑧ 网格夏普王 / 点数王补算'),
     ('spider_stack_long.py', '⑨ 叠加仓位 vs 单仓位'),
-    ('spider_summary.py', '⑩ 生成一页汇总'),
+    ('spider_hold_period.py', '⑩ 持有期 1/3/5/10 专项'),
+    ('spider_summary.py', '⑪ 生成一页汇总'),
 ]
 
 OUTPUTS = [
@@ -43,7 +44,7 @@ OUTPUTS = [
     'TS_平安净多策略.json', 'TS_平安净多策略_明细.xlsx', 'TS_平安净多_策略.html',
     'TS_平安纯多头.json', 'TS_平安纯多头_明细.xlsx', 'TS_平安纯多头_策略.html',
     'TS_席位对比.json', 'TS_席位对比_明细.xlsx', 'TS_席位对比_净值.html',
-    'TS_网格优选_明细.json', 'TS_叠加仓位.json', 'TS_研究汇总.html',
+    'TS_网格优选_明细.json', 'TS_叠加仓位.json', 'TS_持有期专项.json', 'TS_研究汇总.html',
 ]
 
 
@@ -89,6 +90,8 @@ def verify():
         seat = json.load(f)
     with open(os.path.join(BASE, 'TS_平安纯多头.json'), encoding='utf-8') as f:
         pure = json.load(f)
+    with open(os.path.join(BASE, 'TS_持有期专项.json'), encoding='utf-8') as f:
+        hp = json.load(f)
     with open(os.path.join(BASE, 'TS_研究汇总.html'), encoding='utf-8') as f:
         html = f.read()
     m = re.search(r'const D=(\{.*?\});</script>', html, re.S)
@@ -101,8 +104,11 @@ def verify():
         '平安纯多': pure['meta']['end'] if 'meta' in pure else pure['preset'].get('end', ''),
         '汇总页': payload['meta']['end'],
         '逐笔截至': ty.get('asof', ''),
+        '持有期专项': hp['meta']['end'],
     }
-    ok = len(set(v for v in ends.values() if v)) == 1 and '今年以来的开平仓记录' in html
+    hp_ok = (len(payload.get('hold_period', {}).get('variants', {})) == 4
+             and '持有期 1 / 3 / 5 / 10' in html)
+    ok = len(set(v for v in ends.values() if v)) == 1 and '今年以来的开平仓记录' in html and hp_ok
     msgs.append('数据末日: ' + ', '.join('%s=%s' % kv for kv in ends.items()))
     msgs.append('逐笔: %s 年 / %d 个策略 / %d 笔' %
                 (ty.get('year', '?'), len(ty.get('strategies', [])),
