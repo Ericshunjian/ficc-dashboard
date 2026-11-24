@@ -35,6 +35,8 @@ STEPS = [
     ('spider_stack_long.py', '⑨ 叠加仓位 vs 单仓位'),
     ('spider_hold_period.py', '⑩ 持有期 1/3/5/10 专项'),
     ('spider_summary.py', '⑪ 生成一页汇总'),
+    ('spider_daily_signal.py', '⑫ 每日信号 + 前瞻记录'),
+    ('spider_daily_page.py', '⑬ 每日信号页面'),
 ]
 
 OUTPUTS = [
@@ -45,6 +47,7 @@ OUTPUTS = [
     'TS_平安纯多头.json', 'TS_平安纯多头_明细.xlsx', 'TS_平安纯多头_策略.html',
     'TS_席位对比.json', 'TS_席位对比_明细.xlsx', 'TS_席位对比_净值.html',
     'TS_网格优选_明细.json', 'TS_叠加仓位.json', 'TS_持有期专项.json', 'TS_研究汇总.html',
+    'TS_每日信号.json', 'TS_每日信号.html', 'TS_前瞻记录.json',
 ]
 
 
@@ -94,6 +97,11 @@ def verify():
         hp = json.load(f)
     with open(os.path.join(BASE, 'TS_研究汇总.html'), encoding='utf-8') as f:
         html = f.read()
+    with open(os.path.join(BASE, 'TS_每日信号.json'), encoding='utf-8') as f:
+        daily = json.load(f)
+    with open(os.path.join(BASE, 'TS_前瞻记录.json'), encoding='utf-8') as f:
+        fwd = json.load(f)
+    daily_html = open(os.path.join(BASE, 'TS_每日信号.html'), encoding='utf-8').read()
     m = re.search(r'const D=(\{.*?\});</script>', html, re.S)
     if not m:
         return ['汇总页 payload 解析失败'], False
@@ -105,16 +113,24 @@ def verify():
         '汇总页': payload['meta']['end'],
         '逐笔截至': ty.get('asof', ''),
         '持有期专项': hp['meta']['end'],
+        '每日信号': daily['meta']['asof'],
+        '前瞻锁定': fwd['start'],
     }
     hp_ok = (len(payload.get('hold_period', {}).get('variants', {})) == 4
              and '持有期 1 / 3 / 5 / 10' in html)
-    ok = len(set(v for v in ends.values() if v)) == 1 and '今年以来的开平仓记录' in html and hp_ok
+    daily_ok = (len(daily.get('strategies', {})) == 5
+                and 'const D={' in daily_html
+                and daily['meta']['forward_start'] == fwd['start'])
+    ends_set = set(v for v in ends.values() if v and v != fwd['start'])
+    ok = len(ends_set) == 1 and '今年以来的开平仓记录' in html and hp_ok and daily_ok
     msgs.append('数据末日: ' + ', '.join('%s=%s' % kv for kv in ends.items()))
     msgs.append('逐笔: %s 年 / %d 个策略 / %d 笔' %
                 (ty.get('year', '?'), len(ty.get('strategies', [])),
                  sum(s['n'] for s in ty.get('strategies', []))))
     msgs.append('汇总页: %d 字符 / %d 条净值 / %d 行指标' %
                 (len(html), len(payload.get('series', {})), len(payload.get('rows', []))))
+    msgs.append('每日信号: %d 策略 / 前瞻 %d 笔 / 锁定 %s' %
+                (len(daily.get('strategies', {})), len(fwd.get('records', [])), fwd['start']))
     return msgs, ok
 
 
