@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>9 席位净值横向对比 · 中信 2.525 点归因</title>
+<style>
+:root{--bg:#f6f8fb;--card:#fff;--tx:#1f2937;--tx2:#5b6675;--tx3:#8a95a5;
+--line:#e3e8ef;--accent:#2c5aa0;--up:#d64545;--down:#2f9e6f;--warn:#b7791f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);
+ font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:34px 22px 70px}
+h1{font-size:25px;margin:0 0 4px;letter-spacing:.3px}
+.sub{color:var(--tx2);font-size:13px;margin:0 0 22px}
+h2{font-size:17px;margin:0 0 4px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+ padding:18px 20px;margin-bottom:16px}
+.desc{color:var(--tx2);font-size:12.5px;margin:2px 0 14px;line-height:1.65}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.kpi .lab{font-size:12px;color:var(--tx2)}
+.kpi .val{font-size:23px;font-weight:650;letter-spacing:-.5px;margin-top:2px}
+.kpi .hint{font-size:11.5px;color:var(--tx3);margin-top:2px}
+.verdict{background:#fffaf0;border:1px solid #f0d9a8;border-left:4px solid var(--warn);
+ border-radius:8px;padding:16px 20px;margin-bottom:18px;font-size:13.5px;line-height:1.85}
+.verdict b{color:#8a5a08}
+.ctrl{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;margin-bottom:14px}
+.ctrl .grp{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ctrl .lab{font-size:12px;color:var(--tx2);margin-right:2px}
+.btn{border:1px solid var(--line);background:#fff;color:var(--tx2);border-radius:6px;
+ padding:4px 11px;font-size:12px;cursor:pointer;transition:.12s}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.chk{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--tx2);
+ border:1px solid var(--line);border-radius:6px;padding:3px 8px;cursor:pointer;background:#fff}
+.chk input{margin:0;cursor:pointer}
+.chk.on{border-color:var(--accent);color:var(--accent);background:#f2f6fc}
+.chart{width:100%;overflow-x:auto;position:relative}
+.chart svg{display:block;max-width:100%;height:auto}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:10px;font-size:11.5px;color:var(--tx2)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{width:11px;height:11px;border-radius:2px;display:inline-block}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th,.tbl td{border-bottom:1px solid var(--line);padding:7px 9px;text-align:right;white-space:nowrap}
+.tbl th{background:#f7f9fc;color:var(--tx2);font-weight:600;position:sticky;top:0}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl tr:hover td{background:#fafcff}
+.scroll{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+.pos{color:var(--up);font-weight:600}.neg{color:var(--down);font-weight:600}
+.small{font-size:11.5px;color:var(--tx3)}
+.note{font-size:12.5px;color:var(--tx2);background:#f7f9fc;border-radius:8px;
+ padding:12px 15px;margin-top:12px;line-height:1.8}
+.tip{position:absolute;pointer-events:none;background:rgba(255,255,255,.97);
+ border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:11.5px;
+ box-shadow:0 4px 14px rgba(30,50,80,.12);display:none;z-index:9;line-height:1.6}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.two{grid-template-columns:1fr}}
+ul.pts{margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.9}
+ul.pts li{margin-bottom:6px}
+a.back{color:var(--accent);text-decoration:none;font-size:12.5px}
+code{background:#f0f3f8;padding:1px 5px;border-radius:4px;font-size:11.5px}
+</style>
+</head>
+<body><div class="wrap">
+
+<h1>9 席位净值横向对比 · 中信 2.525 点是怎么来的</h1>
+<p class="sub"><span id="spanMeta"></span> · <a class="back" href="index.html">← 返回研究目录</a></p>
+
+<div class="kpis" id="kpis"></div>
+<div class="verdict" id="verdict"></div>
+
+<div class="card">
+  <h2>① 净值总览：9 个席位 × 2 套规则</h2>
+  <div class="desc">同一套口述参数（dNet 60 日分位 ≥80% / ≤20%、持有 3 日、单仓位不叠加、固定 5 手 TS、点数累加不复利），只换持仓席位。默认高亮中信与平安；勾选可叠加其余席位，区间首日统一重归一到 1。</div>
+  <div class="ctrl">
+    <div class="grp"><span class="lab">规则</span><span id="ruleBtns"></span></div>
+    <div class="grp"><span class="lab">区间</span><span id="rangeBtns"></span></div>
+    <div class="grp"><span class="lab">基准线</span><span id="benchBtns"></span></div>
+  </div>
+  <div class="ctrl" id="seatChks"></div>
+  <div class="chart" id="chartNav"></div>
+  <div class="legend" id="navLegend"></div>
+  <div class="tip" id="navTip"></div>
+</div>
+
+<div class="two">
+  <div class="card">
+    <h2>② 中信 vs 平安（多空双侧）</h2>
+    <div class="desc">用户问的 2.525 与原始主口径 1.112 同图对比，竖线为探索 / 验证分界（2024-01-01）。</div>
+    <div class="chart" id="chartDuo"></div>
+    <div class="legend" id="duoLegend"></div>
+  </div>
+  <div class="card">
+    <h2>③ 2.525 的 A/B/C 拆解</h2>
+    <div class="desc">只做多 B → 空信号占仓位但不开仓 C → 完整双侧 A。中信往上走、平安往下走，差在做空腿。</div>
+    <div class="chart" id="chartSteps"></div>
+    <div class="legend" id="stepsLegend"></div>
+  </div>
+</div>
+
+<div class="two">
+  <div class="card">
+    <h2>④ 9 席位累计点数排序</h2>
+    <div class="desc">两套规则并排。注意中信只在多空双侧口径领先，换到只做多就掉到中下游。</div>
+    <div class="chart" id="chartRank"></div>
+    <div class="legend" id="rankLegend"></div>
+  </div>
+  <div class="card">
+    <h2>⑤ 多空腿拆解（双侧规则）</h2>
+    <div class="desc">每根柱 = 做多腿 + 做空腿。中信是唯一「空腿大额为正」的席位之一，平安则被空腿拖累。</div>
+    <div class="chart" id="chartSide"></div>
+    <div class="legend" id="sideLegend"></div>
+  </div>
+</div>
+
+<div class="two">
+  <div class="card">
+    <h2>⑥ 空单成交 vs 被挡掉</h2>
+    <div class="desc">中信 113 个做空信号只成交 68 笔。柱 = 这些信号日未来 3 日平均点数（纵轴单位：点；负数＝价格跌、做空赚）。</div>
+    <div class="chart" id="chartShort"></div>
+    <div class="legend" id="shortLegend"></div>
+    <div class="note" id="shortNote"></div>
+  </div>
+  <div class="card">
+    <h2>⑦ 「9 个里挑最大」的零假设</h2>
+    <div class="desc">把 9 条信号各自循环移位 300 组，每组取 9 个累计点数的<b>最大值</b>。看 2.525 在随机最大值分布里的位置。</div>
+    <div class="chart" id="chartMax"></div>
+    <div class="legend" id="maxLegend"></div>
+    <div class="note" id="maxNote"></div>
+  </div>
+</div>
+
+<div class="two">
+  <div class="card">
+    <h2>⑧ 单席位循环移位零假设</h2>
+    <div class="desc">中信单看自己 p 值确实小，但这是没做多重比较校正之前的数字。</div>
+    <div class="ctrl"><div class="grp"><span class="lab">席位</span><span id="shiftBtns"></span></div></div>
+    <div class="chart" id="chartShift"></div>
+    <div class="legend" id="shiftLegend"></div>
+  </div>
+  <div class="card">
+    <h2>⑨ 成本敏感性</h2>
+    <div class="desc">每笔来回扣 c 点（TS 最小变动 0.005 点 = 1 tick）。四条口径一起看谁抗成本。</div>
+    <div class="chart" id="chartCost"></div>
+    <div class="legend" id="costLegend"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>⑩ 分年：中信双侧 vs 平安双侧</h2>
+  <div class="desc">中信 2021–2025 连续为正，但空腿分年忽正忽负；「连续 5 年正」不等于空头判断稳定。</div>
+  <div class="chart" id="chartYear"></div>
+  <div class="legend" id="yearLegend"></div>
+</div>
+
+<div class="card">
+  <h2>全家福：前面所有口径放一起</h2>
+  <div class="desc">净值口径一致（点数累加、不复利）；「蜘蛛网原策略」信号规则不同，仅作刻度，不与本页规则直接比高低。</div>
+  <div id="overviewTable" style="overflow-x:auto"></div>
+  <div class="note" id="overviewNote"></div>
+</div>
+
+<div class="card">
+  <h2>席位绩效明细</h2>
+  <div class="ctrl"><div class="grp"><span class="lab">规则</span><span id="tableRuleBtns"></span></div></div>
+  <div id="perfTable" style="overflow-x:auto"></div>
+</div>
+
+<div class="card">
+  <h2>归因与零假设数字</h2>
+  <div id="attrTable" style="overflow-x:auto"></div>
+  <div id="nullTable" style="overflow-x:auto;margin-top:14px"></div>
+</div>
+
+<div class="card">
+  <h2>逐笔明细</h2>
+  <div class="ctrl"><div class="grp"><span class="lab">席位</span><span id="trBtns"></span></div>
+    <div class="grp"><span class="lab">规则</span><span id="trRuleBtns"></span></div></div>
+  <div class="scroll"><div id="trTable"></div></div>
+</div>
+
+<div class="card">
+  <h2>结论与分寸</h2>
+  <ul class="pts" id="pts"></ul>
+  <div class="note" id="methodNote"></div>
+</div>
+
+<script>const D=/*__DATA__*/;</script>
+<script>
+const $=id=>document.getElementById(id);
+const E=x=>(typeof x==='string'?$(x):x);
+const M=D.meta, SEATS=Object.keys(D.seats), DATES=D.dates, N=DATES.length;
+const SPLIT_I=DATES.findIndex(d=>d>=M.split);
+const PAL=['#2c5aa0','#d64545','#2f9e6f','#b7791f','#7b61b8','#d97757','#3f8fa8','#8a95a5','#5b7f3a'];
+const colorOf=n=>n===M.focus?'#c0392b':(n===M.target?'#2c5aa0':PAL[(SEATS.indexOf(n)+2)%PAL.length]);
+const SHORT={'前5大合计':'前5','前10大合计':'前10','前20大合计':'前20','中信期货':'中信',
+ '平安期货':'平安','华泰期货':'华泰','国泰君安':'国君','海通期货':'海通','国泰海通（合成）':'国君+海通'};
+const SN=n=>SHORT[n]||n;
+const fmt=(v,k=2)=>(v===null||v===undefined||Number.isNaN(v))?'—':Number(v).toFixed(k);
+const pct=(v,k=2)=>(v===null||v===undefined)?'—':(v*100).toFixed(k)+'%';
+const C=v=>'<span class="'+(v>=0?'pos':'neg')+'">'+(v>=0?'+':'')+fmt(v,3)+'</span>';
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const tableHtml=(head,rows)=>'<table class="tbl"><thead><tr>'+head.map(h=>'<th>'+esc(h)+'</th>').join('')+
+ '</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+const W=900,PAD={l:56,r:14,t:14,b:28};
+
+function svgHead(el,h){
+  el=E(el);
+  el.innerHTML='<svg viewBox="0 0 '+W+' '+h+'" width="'+W+'" height="'+h+'" '+
+    'style="font-family:inherit;background:#fff"></svg>';
+  return el.querySelector('svg');
+}
+function axes(svg,x0,y0,x1,y1,ymin,ymax,yfmt,xticks){
+  const ns='http://www.w3.org/2000/svg';
+  const add=(tag,attr,txt)=>{const e=document.createElementNS(ns,tag);
+    for(const k in attr)e.setAttribute(k,attr[k]);if(txt!==undefined)e.textContent=txt;svg.appendChild(e);return e;};
+  for(let i=0;i<=4;i++){
+    const y=y0+(y1-y0)*i/4, v=ymax-(ymax-ymin)*i/4;
+    add('line',{x1:x0,y1:y,x2:x1,y2:y,stroke:'#eef1f6','stroke-width':1});
+    add('text',{x:x0-6,y:y+3.5,'text-anchor':'end','font-size':10.5,fill:'#8a95a5'},yfmt(v));
+  }
+  add('line',{x1:x0,y1:y0,x2:x0,y2:y1,stroke:'#d8dfe8','stroke-width':1});
+  add('line',{x1:x0,y1:y1,x2:x1,y2:y1,stroke:'#d8dfe8','stroke-width':1});
+  (xticks||[]).forEach(t=>{
+    add('line',{x1:t.x,y1:y1,x2:t.x,y2:y1+4,stroke:'#c9d2de','stroke-width':1});
+    add('text',{x:t.x,y:y1+16,'text-anchor':'middle','font-size':10,fill:'#8a95a5'},t.label);
+  });
+  return add;
+}
+function pathFrom(vals,x0,x1,y0,y1,ymin,ymax){
+  const sx=(x1-x0)/Math.max(1,vals.length-1), sy=v=>y1-(v-ymin)/(ymax-ymin||1)*(y1-y0);
+  return vals.map((v,i)=>(i?'L':'M')+(x0+i*sx).toFixed(1)+' '+sy(v).toFixed(1)).join(' ');
+}
+function dateTicks(a,b,x0,x1){
+  const out=[];
+  for(let i=0;i<=6;i++){
+    const j=Math.round(a+(b-a)*i/6);
+    out.push({x:x0+(x1-x0)*i/6,label:DATES[j]?DATES[j].slice(0,7):''});
+  }
+  return out;
+}
+function drawLine(el,series,opt){
+  el=E(el);opt=opt||{};
+  const h=opt.h||300,svg=svgHead(el,h);
+  const x0=PAD.l,x1=W-PAD.r,y0=PAD.t,y1=h-PAD.b;
+  let vals=[];series.forEach(s=>{s.values.forEach(v=>{if(typeof v==='number'&&isFinite(v))vals.push(v);});});
+  if(!vals.length)return;
+  let ymin=Math.min.apply(null,vals),ymax=Math.max.apply(null,vals);
+  if(opt.zeroLine){ymin=Math.min(ymin,opt.zeroLine);ymax=Math.max(ymax,opt.zeroLine);}
+  const pad=(ymax-ymin)*0.12||0.002;ymin-=pad;ymax+=pad;
+  const add=axes(svg,x0,y0,x1,y1,ymin,ymax,opt.yfmt||(v=>v.toFixed(3)),
+    opt.xticks||dateTicks(0,series[0].values.length-1,x0,x1));
+  if(opt.zeroLine!==undefined){
+    const y=y1-(opt.zeroLine-ymin)/(ymax-ymin)*(y1-y0);
+    add('line',{x1:x0,y1:y,x2:x1,y2:y,stroke:'#c9d2de','stroke-width':1,'stroke-dasharray':'4 4'});
+  }
+  if(opt.vline!==undefined&&series[0].values.length>1){
+    const x=x0+opt.vline/(series[0].values.length-1)*(x1-x0);
+    add('line',{x1:x,y1:y0,x2:x,y2:y1,stroke:'#b7791f','stroke-width':1.2,'stroke-dasharray':'5 4'});
+    add('text',{x:x+4,y:y0+11,'font-size':10,fill:'#b7791f'},opt.vlabel||'样本外');
+  }
+  series.forEach(s=>{
+    const p=add('path',{d:pathFrom(s.values,x0,x1,y0,y1,ymin,ymax),fill:'none',
+      stroke:s.color||'#2c5aa0','stroke-width':s.width||1.7,'stroke-linejoin':'round',
+      opacity:s.opacity===undefined?.9:s.opacity});
+    const t=document.createElementNS('http://www.w3.org/2000/svg','title');
+    t.textContent=s.name+' 末值 '+fmt(s.values[s.values.length-1],4);p.appendChild(t);
+  });
+  return svg;
+}
+function drawBars(el,items,opt){
+  el=E(el);opt=opt||{};
+  const h=opt.h||280,svg=svgHead(el,h);
+  const x0=PAD.l,x1=W-PAD.r,y0=PAD.t,y1=h-PAD.b-(opt.rotate?54:0);
+  const groups=opt.groups||1;
+  let vals=[];items.forEach(it=>(it.values||[it.value]).forEach(v=>{if(typeof v==='number')vals.push(v);}));
+  if(!vals.length)return;
+  let ymin=Math.min(0,Math.min.apply(null,vals)),ymax=Math.max(0,Math.max.apply(null,vals));
+  const pad=(ymax-ymin)*0.14||0.01;ymin-=pad;ymax+=pad;
+  const add=axes(svg,x0,y0,x1,y1,ymin,ymax,opt.yfmt||(v=>fmt(v,2)));
+  const gw=(x1-x0)/items.length, bw=Math.min(30,gw*0.72/groups);
+  const yOf=v=>y1-(v-ymin)/(ymax-ymin)*(y1-y0);
+  items.forEach((it,i)=>{
+    const arr=it.values||[it.value];
+    arr.forEach((v,k)=>{
+      const cx=x0+gw*(i+0.5)+(k-(groups-1)/2)*(bw+3);
+      const yA=yOf(0),yB=yOf(v);
+      const col=it.colors?it.colors[k]:(it.color||(v>=0?'#d64545':'#2f9e6f'));
+      const r=add('rect',{x:cx-bw/2,y:Math.min(yA,yB),width:bw,height:Math.max(1,Math.abs(yB-yA)),
+        fill:col,opacity:.9,rx:2});
+      const t=document.createElementNS('http://www.w3.org/2000/svg','title');
+      t.textContent=it.label+(opt.groupNames?' · '+opt.groupNames[k]:'')+' '+fmt(v,3);r.appendChild(t);
+      if(opt.showVal!==false&&arr.length<=2)
+        add('text',{x:cx,y:v>=0?Math.min(yA,yB)-4:Math.max(yA,yB)+12,'text-anchor':'middle',
+          'font-size':9.5,fill:'#5c6878'},fmt(v,2));
+    });
+    const lx=x0+gw*(i+0.5),ly=y1+14;
+    if(opt.rotate){
+      add('text',{x:lx,y:ly,'text-anchor':'end','font-size':11,fill:'#5c6878',
+        transform:'rotate(-42 '+lx+' '+ly+')'},it.label);
+    }else add('text',{x:lx,y:ly,'text-anchor':'middle','font-size':10.5,fill:'#5c6878'},it.label);
+  });
+  return svg;
+}
+function drawHist(el,hist,opt){
+  el=E(el);opt=opt||{};
+  const h=opt.h||250,svg=svgHead(el,h);
+  const x0=PAD.l,x1=W-PAD.r,y0=PAD.t,y1=h-PAD.b;
+  const lo=Math.min.apply(null,hist),hi=Math.max.apply(null,hist);
+  const nb=30,bins=new Array(nb).fill(0);
+  hist.forEach(v=>{const k=Math.min(nb-1,Math.floor((v-lo)/(hi-lo||1)*nb));bins[k]++;});
+  const ymax=Math.max.apply(null,bins)*1.15;
+  const add=axes(svg,x0,y0,x1,y1,0,ymax,v=>Math.round(v).toString(),[]);
+  const bw=(x1-x0)/nb;
+  bins.forEach((c,i)=>{
+    const bh=c/ymax*(y1-y0);
+    const r=add('rect',{x:x0+i*bw,y:y1-bh,width:Math.max(1,bw-1),height:bh,fill:'#93a9c9',opacity:.85});
+    const t=document.createElementNS('http://www.w3.org/2000/svg','title');
+    t.textContent='['+fmt(lo+(hi-lo)*i/nb,2)+', '+fmt(lo+(hi-lo)*(i+1)/nb,2)+') : '+c+' 次';r.appendChild(t);
+  });
+  // x 轴刻度
+  [0,.25,.5,.75,1].forEach(p=>{
+    add('text',{x:x0+(x1-x0)*p,y:y1+16,'text-anchor':'middle','font-size':10,fill:'#8a95a5'},fmt(lo+(hi-lo)*p,2));
+  });
+  if(opt.real!==undefined){
+    const x=x0+(opt.real-lo)/(hi-lo||1)*(x1-x0);
+    add('line',{x1:x,y1:y0,x2:x,y2:y1,stroke:'#c0392b','stroke-width':2});
+    add('text',{x:Math.min(x+5,x1-80),y:y0+12,'font-size':11,fill:'#c0392b','font-weight':600},
+      opt.realLabel||('真实 '+fmt(opt.real,3)));
+  }
+  return svg;
+}
+
+// ---------------------------------------------------------------- 状态
+const S={rule:'full',range:'all',seats:new Set([M.focus,M.target]),bench:false,
+  shift:M.focus,tableRule:'full',trSeat:M.focus,trRule:'full'};
+const RANGES=[['all','全样本'],['explore','探索段'],['verify','验证段'],
+  ['2021','2021'],['2022','2022'],['2023','2023'],['2024','2024'],['2025','2025'],['2026','2026']];
+function rangeIdx(){
+  if(S.range==='all')return [0,N-1];
+  if(S.range==='explore')return [0,SPLIT_I-1];
+  if(S.range==='verify')return [SPLIT_I,N-1];
+  const y=+S.range;
+  const a=DATES.findIndex(d=>d.startsWith(S.range+'-'));
+  const b=DATES.findIndex(d=>d.startsWith(String(y+1)+'-'));
+  return [a<0?0:a,b<0?N-1:b-1];
+}
+function rebase(nav,a,b){const off=a>0?nav[a-1]-1:0;return nav.slice(a,b+1).map(v=>v-off);}
+function mkBtns(id,arr,key,cb){
+  $(id).innerHTML=arr.map(x=>'<button class="btn'+(S[key]===x[0]?' on':'')+'" data-v="'+x[0]+'">'+x[1]+'</button>').join(' ');
+  $(id).querySelectorAll('.btn').forEach(b=>b.onclick=()=>{S[key]=b.dataset.v;cb();});
+}
+function renderChks(){
+  $('seatChks').innerHTML='<span class="lab">席位</span>'+
+    '<button class="btn" id="chkAll">全选</button><button class="btn" id="chkFocus">仅中信/平安</button>'+
+    SEATS.map(n=>'<label class="chk'+(S.seats.has(n)?' on':'')+'"><input type="checkbox" data-n="'+esc(n)+'"'+
+      (S.seats.has(n)?' checked':'')+'>'+esc(n)+'</label>').join('');
+  $('seatChks').querySelectorAll('input').forEach(c=>c.onchange=()=>{
+    c.checked?S.seats.add(c.dataset.n):S.seats.delete(c.dataset.n);renderChks();render();});
+  $('chkAll').onclick=()=>{S.seats=new Set(SEATS);renderChks();render();};
+  $('chkFocus').onclick=()=>{S.seats=new Set([M.focus,M.target]);renderChks();render();};
+}
+function seatSeries(rule,a,b){
+  const out=[];
+  SEATS.forEach(n=>{if(S.seats.has(n))out.push({name:n+(rule==='full'?'':' · 多'),color:colorOf(n),
+    width:(n===M.focus||n===M.target)?2.3:1.3,opacity:(n===M.focus||n===M.target)?1:.62,
+    values:rebase(D.seats[n][rule].nav,a,b)});});
+  return out;
+}
+function render(){
+  const [a,b]=rangeIdx();
+  mkBtns('ruleBtns',[['full','多空双侧'],['long','只做多'],['both','两规则对照']],'rule',render);
+  mkBtns('rangeBtns',RANGES,'range',render);
+  $('benchBtns').innerHTML='<button class="btn'+(S.bench?'':' on')+'" data-v="0">隐藏</button>'+
+    '<button class="btn'+(S.bench?' on':'')+'" data-v="1">买入持有 / 蜘蛛网原策略</button>';
+  $('benchBtns').querySelectorAll('.btn').forEach(x=>{
+    x.onclick=()=>{S.bench=(x.dataset.v==='1');render();};
+  });
+  let ss=seatSeries(S.rule==='long'?'long':'full',a,b);
+  if(S.rule==='both'){
+    ss=seatSeries('full',a,b).map(s=>({...s,name:s.name+' · 双侧'}));
+    [M.focus,M.target].forEach(n=>ss.push({name:n+' · 纯多',color:colorOf(n),width:1.7,
+      opacity:.55,values:rebase(D.seats[n].long.nav,a,b)}));
+  }
+  if(S.bench){
+    ss.push({name:'买入持有 TS',color:'#8a95a5',width:1.4,opacity:.75,
+      values:rebase(D.benchmark['买入持有'],a,b)});
+    ss.push({name:'蜘蛛网原策略·前20',color:'#b7791f',width:1.4,opacity:.75,
+      values:rebase(D.benchmark['蜘蛛网原策略_前20'],a,b)});
+  }
+  const svg=drawLine('chartNav',ss,{h:340,zeroLine:1,yfmt:v=>(v-1>=0?'+':'')+((v-1)*100).toFixed(2)+'点',
+    xticks:dateTicks(a,b,PAD.l,W-PAD.r)});
+  setupTip(svg,ss,a,b);
+  $('navLegend').innerHTML=ss.map(s=>'<span><i style="background:'+s.color+'"></i>'+esc(s.name)+'</span>').join('')+
+    '<span><i style="background:#b7791f"></i>竖线 = 2024-01-01 样本外分界</span>';
+}
+function setupTip(svg,ss,a,b){
+  const tip=$('navTip');
+  svg.addEventListener('mousemove',e=>{
+    const r=svg.getBoundingClientRect(),sc=W/r.width;
+    const px=(e.clientX-r.left)*sc;
+    const frac=Math.max(0,Math.min(1,(px-PAD.l)/(W-PAD.r-PAD.l)));
+    const j=a+Math.round(frac*(b-a));
+    const lines='<b>'+DATES[j]+'</b><br>'+ss.map(s=>{
+      const v=s.values[j-a];return '<span style="color:'+s.color+'">●</span> '+esc(s.name)+' '+
+        (v===undefined?'—':((v-1)>=0?'+':'')+((v-1)*100).toFixed(2)+' 点');}).join('<br>');
+    tip.innerHTML=lines;tip.style.display='block';
+    tip.style.left=Math.min(e.clientX-$('chartNav').getBoundingClientRect().left+12,700)+'px';
+    tip.style.top='30px';
+  });
+  svg.addEventListener('mouseleave',()=>tip.style.display='none');
+}
+
+// ---------------------------------------------------------------- 静态图
+function renderStatic(){
+  // ② 中信 vs 平安 双侧
+  const duo=[{name:M.focus,color:colorOf(M.focus),width:2.4,values:D.seats[M.focus].full.nav},
+             {name:M.target,color:colorOf(M.target),width:2.4,values:D.seats[M.target].full.nav}];
+  drawLine('chartDuo',duo,{h:250,zeroLine:1,vline:SPLIT_I,vlabel:'样本外',
+    yfmt:v=>((v-1)*100).toFixed(2)+'点'});
+  $('duoLegend').innerHTML=duo.map(s=>'<span><i style="background:'+s.color+'"></i>'+s.name+
+    ' 末值 '+((s.values[N-1]-1)*100).toFixed(3)+' 点</span>').join('');
+
+  // ③ A/B/C 阶梯
+  const A=D.attribution,stepsLabel=['B 只做多','C 空信号占仓位','A 完整双侧'];
+  const st=[M.focus,M.target].map(n=>({name:n,color:colorOf(n),width:2.4,
+    values:[A[n]['B_只做多'],A[n]['C_空信号占仓位不开仓'],A[n]['A_完整双侧']]}));
+  const svg=svgHead('chartSteps',250);
+  (function(){
+    const x0=PAD.l,x1=W-PAD.r,y0=PAD.t,y1=250-PAD.b;
+    let vals=[];st.forEach(s=>s.values.forEach(v=>vals.push(v)));
+    let ymin=Math.min(0,Math.min.apply(null,vals))-0.3,ymax=Math.max.apply(null,vals)+0.3;
+    const add=axes(svg,x0,y0,x1,y1,ymin,ymax,v=>fmt(v,2)+' 点',
+      [0,1,2].map(i=>({x:x0+(x1-x0)*(i+0.5)/3,label:stepsLabel[i]})));
+    const yOf=v=>y1-(v-ymin)/(ymax-ymin)*(y1-y0);
+    add('line',{x1:x0,y1:yOf(0),x2:x1,y2:yOf(0),stroke:'#c9d2de','stroke-dasharray':'4 4'});
+    st.forEach(s=>{
+      const xs=s.values.map((v,i)=>x0+(x1-x0)*(i+0.5)/3);
+      add('path',{d:s.values.map((v,i)=>(i?'L':'M')+xs[i]+' '+yOf(v)).join(' '),
+        fill:'none',stroke:s.color,'stroke-width':2.4});
+      s.values.forEach((v,i)=>{
+        add('circle',{cx:xs[i],cy:yOf(v),r:4.5,fill:s.color});
+        add('text',{x:xs[i],y:yOf(v)-11,'text-anchor':'middle','font-size':11,
+          fill:s.color,'font-weight':600},(v>=0?'+':'')+fmt(v,3));
+      });
+    });
+  })();
+  $('stepsLegend').innerHTML=st.map(s=>'<span><i style="background:'+s.color+'"></i>'+s.name+
+    '：'+fmt(s.values[0],3)+' → '+fmt(s.values[2],3)+' 点</span>').join('')+
+    '<span class="small">中信往上、平安往下，方向由空单自身盈亏 + 空单挤掉的多单决定</span>';
+
+  // ④ 排序
+  const rank=SEATS.slice().sort((x,y)=>D.seats[y].full.all['累计点数']-D.seats[x].full.all['累计点数']);
+  drawBars('chartRank',rank.map(n=>({label:SN(n),
+    values:[D.seats[n].full.all['累计点数'],D.seats[n].long.all['累计点数']],
+    colors:['#2c5aa0','#d64545']})),{h:300,groups:2,groupNames:['多空双侧','只做多'],showVal:false});
+  $('rankLegend').innerHTML='<span><i style="background:#2c5aa0"></i>多空双侧</span>'+
+    '<span><i style="background:#d64545"></i>只做多</span>'+
+    '<span class="small">中信双侧 2.525 排第 1，但纯多只有 1.016 排第 5</span>';
+
+  // ⑤ 多空腿
+  drawBars('chartSide',SEATS.map(n=>({label:SN(n),
+    values:[D.seats[n].full['多腿'],D.seats[n].full['空腿']],
+    colors:['#d64545','#2f9e6f']})),{h:290,groups:2,groupNames:['做多腿','做空腿'],showVal:false});
+  $('sideLegend').innerHTML='<span><i style="background:#d64545"></i>做多腿</span>'+
+    '<span><i style="background:#2f9e6f"></i>做空腿</span>'+
+    '<span class="small">中信空腿 +0.911，平安空腿 −0.612，这一项就差 1.523 点</span>';
+
+  // ⑥ 空单成交 vs 跳过
+  const sh=[];
+  [M.focus,M.target].forEach(n=>{
+    const a=A[n];sh.push({label:n.slice(0,2)+'·成交',value:a['成交空信号未来均值点数'],color:'#2c5aa0'});
+    sh.push({label:n.slice(0,2)+'·被挡',value:a['跳过空信号未来均值点数'],color:'#b7791f'});
+  });
+  drawBars('chartShort',sh,{h:230,yfmt:v=>fmt(v,3),showVal:true});
+  $('shortLegend').innerHTML='<span><i style="background:#2c5aa0"></i>实际成交的空信号</span>'+
+    '<span><i style="background:#b7791f"></i>被单仓位规则挡掉的信号</span>'+
+    '<span class="small">负值＝未来价格下跌＝做空赚钱</span>';
+  $('shortNote').innerHTML='<b>说人话</b>：中信 '+A[M.focus]['做空信号日数']+' 个做空信号，状态机只让 '+
+    A[M.focus]['做空成交笔数']+' 笔进场；成交那批未来 3 日平均跌 '+fmt(Math.abs(A[M.focus]['成交空信号未来均值点数']),5)+
+    ' 点，被挡掉的 '+A[M.focus]['做空信号被跳过笔数']+' 个反而涨 '+fmt(A[M.focus]['跳过空信号未来均值点数'],5)+
+    ' 点。平安恰好反过来。这是「成簇时只进第一笔」的过滤效果，不是空头判断准。';
+
+  // ⑦ 最大值零假设
+  const nm=D.null_max;
+  drawHist('chartMax',nm.hist,{h:250,real:nm.real_max,realLabel:'真实最大 '+fmt(nm.real_max,3)+' 点'});
+  $('maxLegend').innerHTML='<span><i style="background:#93a9c9"></i>随机「9 席位最大值」分布（'+M.n_max+' 组）</span>'+
+    '<span><i style="background:#c0392b"></i>中信 2.525</span>';
+  $('maxNote').innerHTML='随机最大值均值 <b>'+fmt(nm.mean,3)+'</b> 点、p95 '+fmt(nm.p95,3)+
+    ' 点；真实 '+fmt(nm.real_max,3)+' 点只排 <b>'+(nm.pct_max*100).toFixed(1)+' 分位</b>，p='+fmt(nm.p_max,4)+
+    ' ⇒ 多重比较后不显著。<br>相反，随机 9 席位均值只有 '+fmt(nm.rand_mean_of_means,3)+
+    ' 点，真实横截面均值 '+fmt(nm.real_cross_mean,3)+' 点（p='+fmt(nm.p_cross_mean,4)+
+    '）⇒ 赚钱的是规则与这段行情的共同结构，不是某个席位。';
+
+  // ⑧ 单席位移位
+  renderShift();
+  // ⑨ 成本
+  renderCost();
+  // ⑩ 分年
+  renderYear();
+}
+function renderShift(){
+  mkBtns('shiftBtns',[[M.focus,'中信'],[M.target,'平安']],'shift',renderShift);
+  const v=D.null_shift[S.shift];
+  drawHist('chartShift',v.hist,{h:250,real:v.real,realLabel:'真实 '+fmt(v.real,3)+' 点'});
+  $('shiftLegend').innerHTML='<span><i style="background:#93a9c9"></i>循环移位分布（'+M.n_shift+' 次）</span>'+
+    '<span><i style="background:#c0392b"></i>真实 '+fmt(v.real,3)+'</span>'+
+    '<span class="small">随机均值 '+fmt(v.mean,3)+' / p95 '+fmt(v.p95,3)+' / p='+fmt(v.p,4)+'</span>';
+}
+const COST_LINES=[
+  {name:'中信·双侧',seat:M.focus,rule:'full',color:'#c0392b'},
+  {name:'平安·双侧',seat:M.target,rule:'full',color:'#2c5aa0'},
+  {name:'中信·纯多',seat:M.focus,rule:'long',color:'#d97757'},
+  {name:'平安·纯多',seat:M.target,rule:'long',color:'#2f9e6f'}];
+function renderCost(){
+  const xs=M.costs.map(c=>c.toFixed(3)+'点');
+  const svg=svgHead('chartCost',250);
+  const x0=PAD.l,x1=W-PAD.r,y0=PAD.t,y1=250-PAD.b;
+  let vals=[];COST_LINES.forEach(l=>D.seats[l.seat][l.rule].costs.forEach(c=>vals.push(c['累计点数'])));
+  let ymin=Math.min(0,Math.min.apply(null,vals))-0.2,ymax=Math.max.apply(null,vals)+0.2;
+  const add=axes(svg,x0,y0,x1,y1,ymin,ymax,v=>fmt(v,2)+'点',
+    xs.map((t,i)=>({x:x0+(x1-x0)*i/(xs.length-1),label:t})));
+  add('line',{x1:x0,y1:y1-(0-ymin)/(ymax-ymin)*(y1-y0),x2:x1,
+    y2:y1-(0-ymin)/(ymax-ymin)*(y1-y0),stroke:'#c9d2de','stroke-dasharray':'4 4'});
+  COST_LINES.forEach(l=>{
+    const vv=D.seats[l.seat][l.rule].costs.map(c=>c['累计点数']);
+    const pts=vv.map((v,i)=>({x:x0+(x1-x0)*i/(vv.length-1),y:y1-(v-ymin)/(ymax-ymin)*(y1-y0)}));
+    add('path',{d:pts.map((p,i)=>(i?'L':'M')+p.x.toFixed(1)+' '+p.y.toFixed(1)).join(' '),
+      fill:'none',stroke:l.color,'stroke-width':2.2});
+    pts.forEach((p,i)=>{add('circle',{cx:p.x,cy:p.y,r:3.6,fill:l.color});
+      const t=document.createElementNS('http://www.w3.org/2000/svg','title');
+      t.textContent=l.name+' 成本 '+xs[i]+' → '+fmt(vv[i],3)+' 点';svg.lastChild.appendChild(t);});
+  });
+  $('costLegend').innerHTML=COST_LINES.map(l=>'<span><i style="background:'+l.color+'"></i>'+l.name+'</span>').join('')+
+    '<span class="small">1 tick = 0.005 点；扣 4 tick 中信双侧归零，平安纯多仍 +0.836 点</span>';
+}
+function renderYear(){
+  const yc=D.seats[M.focus].full.yearly,yp=D.seats[M.target].full.yearly;
+  drawBars('chartYear',yc.map((r,i)=>({label:String(r['年份']),
+    values:[r['累计点数'],yp[i]['累计点数']],colors:['#c0392b','#2c5aa0']})),
+    {h:250,groups:2,groupNames:['中信','平安'],showVal:false,yfmt:v=>fmt(v,2)+'点'});
+  $('yearLegend').innerHTML='<span><i style="background:#c0392b"></i>中信期货·双侧</span>'+
+    '<span><i style="background:#2c5aa0"></i>平安期货·双侧</span>'+
+    '<span class="small">中信 2021–2025 全正、2026 转负；但空腿分年 +0.79 ~ −0.19 摆动</span>';
+}
+
+// ---------------------------------------------------------------- 表格
+function renderTables(){
+  $('overviewTable').innerHTML=tableHtml(
+    ['口径','累计点数','夏普','笔数','胜率','扣1tick','扣2tick','探索段','验证段','备注'],
+    D.overview.map(r=>[esc(r['口径']),C(r['累计点数']),fmt(r['夏普比率'],2),r['交易笔数'],
+      r['胜率']===null?'—':pct(r['胜率'],1),C(r['扣1tick点数']),C(r['扣2tick点数']),
+      C(r['探索段']),C(r['验证段']),'<span class="small">'+esc(r['备注'])+'</span>']));
+  $('overviewNote').innerHTML='<b>两个外部基准</b>：买入持有 TS 全样本 '+
+    C(D.benchmark['买入持有累计点数'])+' 点；蜘蛛网原策略（前20大合计、dB/dS 规则、H=1）'+
+    C(D.benchmark['蜘蛛网原策略累计点数'])+' 点。'+esc(D.benchmark['蜘蛛网原策略规则'])+'。'+
+    ' 净值口径统一为「1 + 累计点数/100」，不复利。';
+
+  mkBtns('tableRuleBtns',[['full','多空双侧'],['long','只做多']],'tableRule',renderTables);
+  $('perfTable').innerHTML=tableHtml(['席位','累计点数','夏普','最大回撤','笔数','胜率','逐笔t',
+    '多腿','空腿','探索段','验证段','扣1tick','扣2tick'],
+    SEATS.map(n=>{const r=D.seats[n][S.tableRule],m=r.all;
+      return [esc(n),C(m['累计点数']),fmt(m['夏普比率'],2),pct(m['最大回撤'],2),m['交易笔数'],
+        m['胜率']===null?'—':pct(m['胜率'],1),fmt(m['逐笔t值'],2),
+        C(r['多腿']),S.tableRule==='full'?C(r['空腿']):'—',
+        C(r.explore['累计点数']),C(r.verify['累计点数']),
+        C(r.costs[1]['累计点数']),C(r.costs[2]['累计点数'])];}));
+
+  $('attrTable').innerHTML='<h2 style="font-size:14px;margin:0 0 8px">中信 2.525 的 A / B / C 隔离</h2>'+
+    tableHtml(['席位','B 只做多','C 空信号占仓位','A 完整双侧','空单自身盈亏','挤掉多单效应',
+      '被挤掉多单笔数','被挤掉多单在B里合计','做空信号/成交/跳过'],
+    Object.keys(D.attribution).map(n=>{const a=D.attribution[n];
+      return [esc(n),C(a['B_只做多']),C(a['C_空信号占仓位不开仓']),C(a['A_完整双侧']),
+        C(a['空单自身盈亏']),C(a['挤掉多单的效应']),a['被挤掉多单笔数'],
+        C(a['被挤掉多单在只做多里合计']),
+        a['做空信号日数']+' / '+a['做空成交笔数']+' / '+a['做空信号被跳过笔数']];}))+
+    '<h2 style="font-size:14px;margin:18px 0 8px">做空信号有没有信息</h2>'+
+    tableHtml(['席位','信号日数','未来3日均值(点)','逐笔t','做空方向胜率',
+      '全体收涨日均值','Welch t vs 收涨日'],
+    [M.focus,M.target].map(n=>{const s=D.short_info[n];
+      return [esc(n),s['信号日数'],C(s['未来3日均值点数']),fmt(s['逐笔t值'],2),
+        pct(s['做空方向胜率'],1),C(s['收涨日未来均值点数']),fmt(s['Welch_t_vs_收涨日'],2)];}));
+
+  const cs=D.cross_section,nm=D.null_max,sh=D.null_shift;
+  $('nullTable').innerHTML='<h2 style="font-size:14px;margin:0 0 8px">零假设与选择偏差</h2>'+
+    tableHtml(['检验','随机均值','随机p95','真实值','p 值','判读'],
+    [['中信·单席位循环移位',sh[M.focus].mean,sh[M.focus].p95,sh[M.focus].real,sh[M.focus].p,
+      '单看显著'],
+     ['平安·单席位循环移位',sh[M.target].mean,sh[M.target].p95,sh[M.target].real,sh[M.target].p,
+      '不显著'],
+     ['9 席位取最大（主判据）',nm.mean,nm.p95,nm.real_max,nm.p_max,
+      '多重比较后不显著'],
+     ['9 席位横截面均值',nm.rand_mean_of_means,'—',nm.real_cross_mean,nm.p_cross_mean,
+      '规则本身有效']].map(r=>[r[0],fmt(r[1],3),typeof r[2]==='number'?fmt(r[2],3):r[2],
+        fmt(r[3],3),fmt(r[4],4),'<span class="small">'+r[5]+'</span>']))+
+    '<div class="note">横截面：均值 '+fmt(cs['mean'],3)+' 点、中位 '+fmt(cs['median'],3)+
+    ' 点、标准差 '+fmt(cs['std'],3)+' 点；中信 '+fmt(cs['max'],3)+' 点排第 '+cs['rank_focus']+
+    '/' + nm.n_seats + '、z='+fmt(cs['z_focus'],2)+'。席位间 dNet 分位平均相关 '+
+    fmt(D.correlation.offdiag_mean,3)+'（合计类之间 0.37~0.66，单席位之间基本不相关，'+
+    '但共享同一条价格路径、同一套规则与同一段样本，不是 9 次独立实验）。</div>';
+
+  mkBtns('trBtns',[[M.focus,'中信'],[M.target,'平安']],'trSeat',renderTables);
+  mkBtns('trRuleBtns',[['full','多空双侧'],['long','只做多']],'trRule',renderTables);
+  const tr=D.seats[S.trSeat][S.trRule].trades;
+  $('trTable').innerHTML=tableHtml(['信号日','方向','开仓日','开仓价','平仓日','平仓价','盈亏点数'],
+    tr.map(t=>[esc(t['信号日']),esc(t['方向']),esc(t['开仓日']),fmt(t['开仓价'],3),
+      esc(t['平仓日']),fmt(t['平仓价'],3),C(t['盈亏点数'])]))+
+    '<div class="small" style="padding:8px 10px">共 '+tr.length+' 笔</div>';
+}
+
+// ---------------------------------------------------------------- 头部
+function renderHead(){
+  $('spanMeta').textContent=M.start+' ~ '+M.end+' · '+M.n_days+' 交易日 · 9 个持仓序列 · 2 套规则';
+  const f=D.seats[M.focus],t=D.seats[M.target];
+  const K=[
+    ['中信·多空双侧',((f.full.all['累计点数'])).toFixed(3)+' 点','用户问的 2.525','var(--up)'],
+    ['平安·多空双侧',((t.full.all['累计点数'])).toFixed(3)+' 点','第七节主口径','var(--tx)'],
+    ['中信·只做多',((f.long.all['累计点数'])).toFixed(3)+' 点','验证段转负','var(--down)'],
+    ['平安·只做多',((t.long.all['累计点数'])).toFixed(3)+' 点','第八节主口径','var(--accent)'],
+    ['中信空腿 / 平安空腿','+'+fmt(f.full['空腿'],3)+' / '+fmt(t.full['空腿'],3),'差额几乎全在这里','var(--warn)'],
+    ['9 席位取最大 p',fmt(D.null_max.p_max,4),'多重比较后不显著','var(--warn)']];
+  $('kpis').innerHTML=K.map(k=>'<div class="kpi"><div class="lab">'+k[0]+'</div>'+
+    '<div class="val" style="color:'+k[3]+'">'+k[1]+'</div><div class="hint">'+k[2]+'</div></div>').join('');
+  $('verdict').innerHTML='<b>'+esc(D.conclusion.headline)+'</b><ul class="pts">'+
+    D.conclusion.points.slice(0,4).map(p=>'<li>'+esc(p)+'</li>').join('')+'</ul>';
+  $('pts').innerHTML=D.conclusion.points.map(p=>'<li>'+esc(p)+'</li>').join('');
+  $('methodNote').innerHTML='<b>口径</b>：'+esc(M.rule_full)+'；'+esc(M.rule_long)+
+    '。'+esc(M.nav)+'。'+esc(M.note)+'<br><b>分界</b>：探索段 '+M.explore[0]+'~'+M.explore[1]+
+    '，验证段 '+M.verify[0]+'~'+M.verify[1]+'。零假设 '+M.n_shift+' 次单席位循环移位 + '+
+    M.n_max+' 组 9 席位最大值，seed='+M.seed+'。<br><b>定位</b>：刻度 + 证伪，不能上仓。'+
+    '本页 9 条净值是横向刻度，不是 9 条可交易策略；中信是看过全样本之后才被注意到的席位。';
+}
+
+renderHead();renderChks();render();renderStatic();renderTables();
+</script>
+</body></html>
