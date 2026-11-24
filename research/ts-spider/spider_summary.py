@@ -311,6 +311,53 @@ def main():
         'start': M['start'], 'end': M['end'], 'n_days': N,
     }
 
+    # ---------- ⑦ 今年以来的开平仓记录（按平仓日归属） ----------
+    year = str(M['end'])[:4]
+    d2i = {d: i for i, d in enumerate(dates)}
+
+    def norm_trade(t, key):
+        sig = t.get('信号日') or t.get('signal_date') or ''
+        ent = t.get('开仓日') or t.get('entry_date') or ''
+        ext = t.get('平仓日') or t.get('exit_date') or ''
+        px_e = t.get('开仓价') if t.get('开仓价') is not None else t.get('entry_px')
+        px_x = t.get('平仓价') if t.get('平仓价') is not None else t.get('exit_px')
+        pts = t.get('盈亏点数')
+        if pts is None:
+            if t.get('pnl_pts') is not None:
+                pts = t['pnl_pts']
+            elif t.get('盈亏元') is not None:
+                pts = num(t['盈亏元']) / 100000.0
+            else:
+                pts = 0.0
+        direction = t.get('方向') or ('多' if t.get('dir') == 1 else '空')
+        ei, xi = d2i.get(ent), d2i.get(ext)
+        return {'k': key, 'sig': sig, 'dir': direction, 'entry': ent,
+                'ep': rnd(num(px_e), 3), 'exit': ext, 'xp': rnd(num(px_x), 3),
+                'hold': int(xi - ei) if ei is not None and xi is not None else None,
+                'pts': rnd(num(pts), 3)}
+
+    trade_specs = [
+        ('PA_LONG', '平安·只做多', '#d64545', '主口径', pure['preset']['trades']),
+        ('ZX_FULL', '中信·多空双侧', '#2c5aa0', '主口径', S['中信期货']['full']['trades']),
+        ('PA_FULL', '平安·多空双侧', '#8a95a5', '', S['平安期货']['full']['trades']),
+        ('ZX_LONG', '中信·只做多', '#9aa7b8', '', S['中信期货']['long']['trades']),
+        ('P20_LONG', '前20·只做多', '#7b61b8', '', S['前20大合计']['long']['trades']),
+        ('P20_FULL', '前20·多空', '#a78bc4', '', S['前20大合计']['full']['trades']),
+        ('GRID_SHARP', '网格·夏普王', '#c07a3e', '事后挑参', gd['variants']['GRID_SHARP']['trades']),
+        ('GRID_PTS', '网格·点数王', '#d19a5b', '事后挑参', gd['variants']['GRID_PTS']['trades']),
+        ('SPIDER', '蜘蛛网原策略', '#4b7f8c', '', bt['series']['前20大合计']['state']['trades']),
+    ]
+    tp = []
+    for key, name, color, tag, raw in trade_specs:
+        tr = [norm_trade(t, key) for t in raw
+              if str(t.get('平仓日') or t.get('exit_date') or '').startswith(year)]
+        tr.sort(key=lambda t: (t['exit'], t['entry']), reverse=True)
+        tp.append({'key': key, 'name': name, 'color': color, 'tag': tag, 'n': len(tr),
+                   'pts': rnd(sum(t['pts'] for t in tr), 3),
+                   'win': rnd(sum(t['pts'] > 0 for t in tr) / len(tr), 4) if tr else 0.0,
+                   'trades': tr})
+    trades_year = {'year': year, 'asof': M['end'], 'strategies': tp}
+
     payload = {
         'meta': {
             'title': 'TS 蜘蛛网研究 · 一页汇总',
@@ -333,6 +380,7 @@ def main():
                      'p95': maxnull['p95'], 'p': maxnull['p_max']},
         'cards': cards,
         'extra': extra,
+        'trades_year': trades_year,
     }
 
     with open(os.path.join(BASE, 'spider_summary_template.html'), encoding='utf-8') as f:

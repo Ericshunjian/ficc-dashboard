@@ -88,7 +88,7 @@ footer{color:var(--tx3);font-size:11.5px;text-align:center;margin-top:22px;line-
 <div class="anchors">
   <a href="#s1">① 双策略净值</a><a href="#s2">② 指标 / 分年 / 成本</a>
   <a href="#s3">③ 差在哪：A·B·C</a><a href="#s4">④ 证伪零假设</a>
-  <a href="#s5">⑤ 前期 6 项精简</a><a href="#s6">⑥ 口径与文件</a>
+  <a href="#s5">⑤ 前期 6 项精简</a><a href="#s6">⑥ 今年开平仓</a><a href="#s7">⑦ 口径与文件</a>
 </div>
 
 <div class="kpis" id="kpis"></div>
@@ -156,7 +156,19 @@ footer{color:var(--tx3);font-size:11.5px;text-align:center;margin-top:22px;line-
 </div>
 
 <div class="card" id="s6">
-  <h2>⑥ 数据口径、警告与文件</h2>
+  <h2>⑥ 今年以来的开平仓记录</h2>
+  <div class="desc">默认列出全部 9 个有逐笔记录的策略，按<b>平仓日</b>倒序（收益归属兑现日，与净值图一致）；点策略按钮可筛选，点表头可换排序。
+  「持有」是按交易日历算的自然交易日数；「网格·夏普王 / 点数王」是 120 格里事后挑的，<b>只作刻度</b>。买入持有全程在场，没有开平仓记录。</div>
+  <div class="ctrl" style="align-items:flex-start">
+    <div class="grp" style="max-width:100%"><span class="lab">策略</span><span id="tradeChips"></span></div>
+  </div>
+  <div class="ctrl"><span class="lab" id="tradeStat"></span></div>
+  <div class="scroll" id="tradeTable" style="max-height:520px"></div>
+  <div class="note" id="tradeNote"></div>
+</div>
+
+<div class="card" id="s7">
+  <h2>⑦ 数据口径、警告与文件</h2>
   <div id="foot"></div>
 </div>
 
@@ -504,7 +516,7 @@ $('cards').innerHTML=D.cards.map(c=>'<div class="mini"><span class="tag">'+esc(c
  '<h3>'+c.no+' '+esc(c.title)+'</h3><ul>'+c.points.map(p=>'<li>'+p+'</li>').join('')+
  '</ul><a class="go" href="'+c.href+'">打开详细页 →</a></div>').join('');
 
-/* ---------------- ⑥ 页脚 ---------------- */
+/* ---------------- ⑦ 页脚 ---------------- */
 $('foot').innerHTML=
  '<ul class="pts">'+
  '<li><b>净值口径</b>：固定 5 手 TS（面值 200 万/手，报价按 100 元面值 ⇒ 1 点 = 2 万元/手 = 10 万元/组 = 初始 1000 万的 1%），'+
@@ -530,5 +542,70 @@ $('foot').innerHTML=
  '<a class="back" href="README.md">README / 复现步骤</a><br>'+
  '<span class="small">本页由 <code>spider_summary.py</code> + <code>spider_summary_template.html</code> 从 7 份结果 JSON 生成；'+
  '数据已内嵌，可离线打开。Wind 导出数据仅供个人研究，请勿二次分发。</span></div>';
+/* ---------------- ⑦ 今年以来的开平仓记录 ---------------- */
+const TY=D.trades_year;
+const TS={sel:new Set(TY.strategies.map(s=>s.key)),sort:'exit',desc:true};
+
+function tradeRows(){
+  let a=[];
+  TY.strategies.forEach(s=>{ if(TS.sel.has(s.key)) s.trades.forEach(t=>a.push(Object.assign({sname:s.name},t))); });
+  const k=TS.sort, sg=TS.desc?-1:1;
+  a.sort((x,y)=>{
+    if(k==='pts'||k==='hold') return (x[k]-y[k])*sg;
+    return String(x[k]).localeCompare(String(y[k]))*sg;
+  });
+  return a;
+}
+function renderTradeChips(){
+  $('tradeChips').innerHTML=TY.strategies.map(s=>
+    '<button class="btn '+(TS.sel.has(s.key)?'on':'')+'" data-k="'+s.key+'">'+esc(s.name)+
+    (s.tag?' <span style="opacity:.7">·'+esc(s.tag)+'</span>':'')+
+    ' <small>'+s.n+'笔 '+fmt(s.pts,2)+'</small></button>').join('');
+  $('tradeChips').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+    const k=b.dataset.k;
+    if(TS.sel.has(k)){ if(TS.sel.size>1) TS.sel.delete(k); }
+    else TS.sel.add(k);
+    renderTradeChips(); renderTradeTable();
+  }));
+}
+function exportTradeCsv(){
+  const rows=tradeRows();
+  const head=['策略','信号日','方向','开仓日','开仓价','平仓日','平仓价','持有交易日','盈亏点数'];
+  const lines=[head.join(',')].concat(rows.map(t=>[t.sname,t.sig,t.dir,t.entry,t.ep,t.exit,t.xp,
+    t.hold===null?'':t.hold,t.pts].map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')));
+  const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='TS_'+TY.year+'_开平仓记录.csv'; a.click(); URL.revokeObjectURL(a.href);
+}
+function renderTradeTable(){
+  const rows=tradeRows();
+  const sum=rows.reduce((a,t)=>a+t.pts,0), wins=rows.filter(t=>t.pts>0).length;
+  const best=rows.length?Math.max.apply(null,rows.map(t=>t.pts)):0;
+  const worst=rows.length?Math.min.apply(null,rows.map(t=>t.pts)):0;
+  $('tradeStat').innerHTML='<b>'+TY.year+' 年以来 · 截至 '+TY.asof+'</b> ｜ 当前 '+TS.sel.size+' 个策略 / '+
+    rows.length+' 笔 ｜ 胜率 '+pct(rows.length?wins/rows.length:0,1)+' ｜ 最好 '+C(best)+' / 最差 '+C(worst)+
+    ' ｜ 逐笔求和 '+C(sum)+' 点（跨策略勿相加）｜ <button class="btn" id="csvBtn">导出 CSV</button>';
+  $('csvBtn').addEventListener('click',exportTradeCsv);
+  const head=[['sname','策略'],['sig','信号日'],['dir','方向'],['entry','开仓日'],['ep','开仓价'],
+              ['exit','平仓日'],['xp','平仓价'],['hold','持有'],['pts','点数']];
+  let html='<table class="tbl"><thead><tr>'+head.map(h=>
+    '<th data-sort="'+h[0]+'" style="cursor:pointer'+(TS.sort===h[0]?';color:var(--accent)':'')+'">'+h[1]+
+    (TS.sort===h[0]?(TS.desc?' ↓':' ↑'):'')+'</th>').join('')+'</tr></thead><tbody>';
+  rows.forEach(t=>{
+    html+='<tr><td>'+esc(t.sname)+'</td><td>'+esc(t.sig)+'</td><td>'+esc(t.dir)+'</td>'+
+      '<td>'+esc(t.entry)+'</td><td>'+fmt(t.ep,3)+'</td><td>'+esc(t.exit)+'</td><td>'+fmt(t.xp,3)+
+      '</td><td>'+(t.hold===null?'—':t.hold)+'</td><td>'+C(t.pts)+'</td></tr>';
+  });
+  $('tradeTable').innerHTML=html+'</tbody></table>';
+  $('tradeTable').querySelectorAll('th').forEach(th=>th.addEventListener('click',()=>{
+    const k=th.dataset.sort;
+    if(TS.sort===k) TS.desc=!TS.desc; else {TS.sort=k; TS.desc=(k==='exit'||k==='pts');}
+    renderTradeTable();
+  }));
+}
+$('tradeNote').innerHTML='<b>口径</b>：按<b>平仓日</b>归入 '+TY.year+' 年，含当年已平仓的全部回测模拟交易；'+
+  '盈亏 = 方向 × (平仓价 − 开仓价) 点数，<b>未扣手续费与滑点</b>。同一笔交易可能同时出现在多个策略口径里（例如平安只做多 vs 平安多空），'+
+  '因此跨策略合计<b>不能相加</b>作为组合收益。网格两条为事后挑参，仅用于刻度。';
+renderTradeChips(); renderTradeTable();
 </script>
 </body></html>

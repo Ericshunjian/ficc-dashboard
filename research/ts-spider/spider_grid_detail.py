@@ -47,6 +47,24 @@ def nav_from(r):
     return [round(float(v), 8) for v in (1.0 + np.cumsum(r))]
 
 
+def norm_trades(tr, dates):
+    """统一成汇总页的逐笔字段，与席位对比 / 平安纯多口径一致。"""
+    out = []
+    for t in tr:
+        si, ei, xi = t['signal_idx'], t['entry_idx'], t['exit_idx']
+        out.append({
+            '信号日': t.get('signal_date') or dates[si],
+            '方向': '多' if t.get('dir') == 1 else '空',
+            '开仓日': t.get('entry_date') or dates[ei],
+            '开仓价': round(float(t['entry_px']), 3),
+            '平仓日': t.get('exit_date') or dates[xi],
+            '平仓价': round(float(t['exit_px']), 3),
+            '持有交易日': int(xi - ei),
+            '盈亏点数': round(float(t['pnl_pts']), 3),
+        })
+    return out
+
+
 def main():
     dates, idx, O, C, dP, series = sb.load()
     n = len(dates)
@@ -98,6 +116,7 @@ def main():
             'segments': seg,
             'costs': costs,
             'yearly': years,
+            'trades': norm_trades(tr, dates),
         }
         v = out['variants'][key]
         print('%s %-12s 信号=%3d 成交=%3d 全样本 %.3f 点 / 夏普 %.3f | 探索 %.3f 验证 %.3f'
