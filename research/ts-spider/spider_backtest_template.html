@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TS 蜘蛛网策略 · 静态版回测</title>
+<style>
+:root{
+  --bg:#f4f6fa; --card:#fff; --line:#e3e8ef; --line2:#eef1f6;
+  --tx:#1d2733; --tx2:#5b6878; --tx3:#8a95a5; --accent:#2c5aa0;
+  --strat:#2c5aa0; --bench:#9aa8ba; --down:#d64545; --up:#2f9e6f;
+  --warn-bg:#fff8e8; --warn-bd:#f0cf8a; --warn-tx:#7a5a17;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+  font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1440px;margin:0 auto;padding:22px 24px 48px}
+header h1{margin:0 0 6px;font-size:22px;font-weight:650}
+header .sub{color:var(--tx2);font-size:13px}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.badge{background:#fff;border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--tx2)}
+.badge b{color:var(--tx);font-weight:600}
+.alerts{margin-top:16px;background:var(--warn-bg);border:1px solid var(--warn-bd);border-radius:8px;padding:12px 16px}
+.alerts h3{margin:0 0 6px;font-size:13px;color:var(--warn-tx)}
+.alerts ul{margin:0;padding-left:18px;color:var(--warn-tx);font-size:12.5px}
+.alerts li{margin:3px 0}
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:16px 0}
+.kpi .box{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.kpi .lab{font-size:11.5px;color:var(--tx3);letter-spacing:.3px}
+.kpi .val{font-size:20px;font-weight:650;margin-top:3px;font-variant-numeric:tabular-nums}
+.kpi .val small{font-size:12px;font-weight:400;color:var(--tx2)}
+.kpi .hint{font-size:11px;color:var(--tx3);margin-top:2px}
+.pos{color:var(--up)} .neg{color:var(--down)}
+.layout{display:grid;grid-template-columns:236px minmax(0,1fr);gap:16px;align-items:start}
+aside{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;position:sticky;top:16px}
+aside h4{margin:0 0 8px;font-size:11.5px;color:var(--tx3);letter-spacing:1px;font-weight:600}
+.grp{margin-bottom:16px}
+.rbtn,.sitem{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;
+  border-radius:6px;padding:6px 10px;cursor:pointer;font-size:13px;color:var(--tx2);margin-bottom:2px;
+  font-family:inherit;transition:background .12s,color .12s}
+.rbtn:hover,.sitem:hover{background:#f3f6fb;color:var(--tx)}
+.rbtn.on,.sitem.on{background:#eaf1fc;border-color:#c9dcf7;color:var(--accent);font-weight:600}
+.grp-title{font-size:11px;color:var(--tx3);padding:8px 10px 4px;letter-spacing:.5px}
+.sitem .tag{float:right;font-size:10.5px;color:var(--tx3);font-weight:400}
+.btn{background:#fff;border:1px solid var(--line);border-radius:6px;padding:5px 12px;font-size:12px;
+  color:var(--tx2);cursor:pointer;font-family:inherit}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+main{min-width:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin-bottom:16px;position:relative}
+.card h2{margin:0 0 2px;font-size:15px;font-weight:650}
+.card .desc{color:var(--tx3);font-size:12px;margin-bottom:10px}
+.card .desc b{color:var(--tx2)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 6px;font-size:12px;color:var(--tx2)}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
+svg.chart{width:100%;height:auto;display:block;overflow:visible}
+svg text{font-family:inherit;font-size:11px;fill:var(--tx3)}
+svg .axis{fill:var(--tx2)} svg .grid{stroke:var(--line2);stroke-width:1}
+svg .base{stroke:#c4ccd8;stroke-width:1;stroke-dasharray:4 4}
+svg .ln{fill:none;stroke-width:1.9;stroke-linejoin:round;stroke-linecap:round}
+.tip{position:absolute;pointer-events:none;background:rgba(255,255,255,.97);border:1px solid var(--line);
+  border-radius:6px;box-shadow:0 4px 16px rgba(20,40,80,.12);padding:8px 10px;font-size:12px;
+  min-width:170px;display:none;z-index:5;line-height:1.7}
+.tip .d{font-weight:650;margin-bottom:3px}
+.tip .r{display:flex;justify-content:space-between;gap:16px}
+.tip .r b{font-variant-numeric:tabular-nums;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--line2);white-space:nowrap}
+th{color:var(--tx3);font-weight:600;font-size:11.5px;background:#fafbfd;position:sticky;top:0}
+th:first-child,td:first-child{text-align:left}
+tbody tr:hover{background:#f7faff}
+tr.onrow{background:#eaf1fc}
+tr.clickable{cursor:pointer}
+.scroll{max-height:400px;overflow:auto;border:1px solid var(--line2);border-radius:6px}
+.note{font-size:12.5px;color:var(--tx2);line-height:1.8}
+.note b{color:var(--tx)}
+.cmp{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:10px}
+.cmp .c{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#fafbfd}
+.cmp .c .t{font-size:11.5px;color:var(--tx3)}
+.cmp .c .v{font-size:18px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums}
+footer{color:var(--tx3);font-size:11.5px;margin-top:22px;border-top:1px solid var(--line);padding-top:14px}
+/* ---- 全部序列净值对比 ---- */
+.navctl{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-bottom:10px}
+.navctl .lbl{font-size:11.5px;color:var(--tx3);letter-spacing:.3px}
+.navbtn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:4px 10px;font-size:12px;
+  color:var(--tx2);cursor:pointer;font-family:inherit}
+.navbtn:hover{border-color:var(--accent);color:var(--accent)}
+.navchk{display:flex;flex-wrap:wrap;gap:5px 14px;font-size:12px;color:var(--tx2)}
+.navchk label{display:inline-flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap}
+.navchk input{accent-color:var(--accent);cursor:pointer;margin:0}
+.navchk .sw{display:inline-block;width:11px;height:11px;border-radius:2px;flex:none}
+.nav-quick{display:flex;gap:6px;margin-left:auto}
+.navhint{font-size:11.5px;color:var(--tx3);margin:2px 0 10px;line-height:1.7}
+@media(max-width:900px){.layout{grid-template-columns:1fr}aside{position:static}.nav-quick{margin-left:0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>TS 蜘蛛网策略 · 静态版回测</h1>
+  <div class="sub">复现国泰海通《债市量化系列之五》第 85 行交易规则 · 前 5 / 10 / 20 大合计与单会员席位对照</div>
+  <div class="badges" id="badges"></div>
+</header>
+
+<div class="alerts">
+  <h3>口径提醒（结论前必读）</h3>
+  <ul id="alertList"></ul>
+</div>
+
+<div class="kpi" id="kpi"></div>
+
+<div class="layout">
+  <aside>
+    <div class="grp"><h4>回测区间</h4><div id="ranges"></div></div>
+    <div class="grp"><h4>交易规则</h4><div id="rules"></div></div>
+    <div class="grp"><h4>持仓序列</h4><div id="seriesList"></div></div>
+  </aside>
+
+  <main>
+    <section class="card">
+      <h2 id="navTitle">净值曲线</h2>
+      <div class="desc">固定 5 手 TS（名义 1000 万、单倍杠杆、不复利）：净值 = 1 + 累计盈亏点数/100，逐笔盈亏直接累加；基准 = 买入持有 TS.CFE，同口径。</div>
+      <div class="legend" id="legendNav"></div>
+      <svg class="chart" id="chartNav" viewBox="0 0 960 340" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="tip" id="tipNav"></div>
+    </section>
+
+    <section class="card">
+      <h2>全部序列净值对比 <span id="allNavScope" style="font-weight:400;color:var(--tx3);font-size:12.5px"></span></h2>
+      <div class="desc">把 9 个持仓序列的净值叠在图上，跟随左侧「回测区间 / 交易规则」切换，区间首日从 1 重新累加。用于横向比较哪个席位的信号更有效；灰色虚线为买入持有基准。<b>注意</b>：华泰期货 2021–2022、国泰海通（合成）2026 无源表，其净值在末次有效日后走平，不代表策略停止交易。</div>
+      <div class="navctl">
+        <span class="lbl">显示序列</span>
+        <div class="navchk" id="allNavChecks"></div>
+        <div class="nav-quick" id="allNavQuick"></div>
+      </div>
+      <div class="navhint">本图独立勾选，不受左侧「持仓序列」影响；左侧切换只影响上方单序列净值与下方各表。</div>
+      <div class="legend" id="legendAllNav"></div>
+      <svg class="chart" id="chartAllNav" viewBox="0 0 960 340" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="tip" id="tipAllNav"></div>
+    </section>
+
+    <section class="card">
+      <h2>回撤曲线</h2>
+      <div class="desc">相对区间内历史最高净值的回撤。</div>
+      <div class="legend" id="legendDD"></div>
+      <svg class="chart" id="chartDD" viewBox="0 0 960 230" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="tip" id="tipDD"></div>
+    </section>
+
+    <section class="card">
+      <h2>与报告公布结果对照</h2>
+      <div class="desc">报告回测区间 <b>2020-01-01 ~ 2025-04-10</b>；本地持仓数据从 <b>2021-01-04</b> 起（2021 已补，仍缺 2020 全年）。下表左侧为报告原文，右侧为本地「报告可比区间」结果（口径不同，不能视为复现失败或通过）。</div>
+      <div id="reportCmp"></div>
+    </section>
+
+    <section class="card">
+      <h2>差异归因 · 杠杆假说与开平仓规则隔离实验</h2>
+      <div class="desc">同一份信号、同一份行情，<b>只改杠杆倍数或开平仓规则</b>逐项重跑。用于回答「报告 9.52% 是不是加杠杆 / 是不是开平仓条件不一致」。主结果均为零成本、报告字面规则。</div>
+      <div id="diagBody"></div>
+    </section>
+
+    <section class="card">
+      <h2>各区间 × 各序列绩效</h2>
+      <div class="desc">固定为<b>报告口径（仓位状态机）</b>、零成本。点击行可切换主序列。</div>
+      <div class="scroll"><table id="perfTable"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>规则口径对比 · 全样本</h2>
+      <div class="desc">「报告口径」= 仓位状态机（反向信号只平仓、不反手，不允许叠加仓位）；「逐笔独立」= 每个信号独立开平、允许仓位叠加。后者杠杆会超过 1 倍，仅作稳健性对照。</div>
+      <div class="scroll"><table id="ruleTable"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>零假设对照 · 信号循环移位检验</h2>
+      <div class="desc">把信号序列<b>整体循环移位</b> 200 次（保留信号密度与连续聚集结构，只打乱与行情的对应关系），用<b>同一套回测流水线</b>重跑。若真实表现落在随机分布里，就不能把这点收益归功于信号。点击序列名切换。</div>
+      <div id="nullBtns" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>
+      <svg class="chart" id="chartNull" viewBox="0 0 960 210" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="scroll" style="margin-top:10px"><table id="nullTable"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>交易成本敏感性 · 当前序列</h2>
+      <div class="desc">每笔来回扣除固定价格点成本（TS 最小变动价位 0.005 元）。报告未披露成本假设，主结果为零成本。</div>
+      <div class="scroll"><table id="costTable"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>逐笔交易明细（最近 30 笔）</h2>
+      <div class="desc" id="tradeDesc"></div>
+      <div class="scroll"><table id="tradeTable"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>口径、局限与数据判断</h2>
+      <div class="note" id="qualityNote"></div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  数据来源：Wind（TS.CFE 行情、中金所 TS 会员持仓）· 规则引自国泰海通证券 2025-05-30《债市量化系列之五：国债期货多空持仓因子择时的再优化，引入"蜘蛛网"策略》。
+  本页面为研究复现，不构成投资建议。由 <code>spider_backtest.py</code> 生成，改源数据后重跑即可刷新。
+</footer>
+</div>
+
+<script id="payload" type="application/json">/*__DATA__*/</script>
+<script id="diag" type="application/json">/*__DIAG__*/</script>
+<script>
+(function(){
+'use strict';
+const P=JSON.parse(document.getElementById('payload').textContent);
+let G=null; try{G=JSON.parse(document.getElementById('diag').textContent);}catch(e){}
+const D=P.dates, N=D.length, S=P.series, NAMES=Object.keys(S);
+const B=P.benchmark, M=P.meta, RB=P.report_baseline;
+const COL={strat:'#2c5aa0',bench:'#9aa8ba',dd:'#d64545'};
+let cur='前20大合计', rule='state', period='all';
+const NC={'前5大合计':'#2c5aa0','前10大合计':'#5b8bd0','前20大合计':'#111f33',
+  '中信期货':'#d64545','平安期货':'#e08a2e','华泰期货':'#8e5bb0',
+  '国泰君安':'#2f9e6f','海通期货':'#c2578a','国泰海通（合成）':'#5d6b7d'};
+let allSel=new Set(NAMES);
+
+function fmtPct(v,d){return v===null||v===undefined?'—':(v*100).toFixed(d===undefined?2:d)+'%';}
+function fmt(v,d){return v===null||v===undefined?'—':Number(v).toLocaleString('zh-CN',{minimumFractionDigits:d||0,maximumFractionDigits:d===undefined?2:d});}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function cls(v){return v>0?'pos':v<0?'neg':'';}
+function svgEl(tag,a,t){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);
+  for(const k in a)e.setAttribute(k,a[k]); if(t!==undefined)e.textContent=t; return e;}
+function bounds(p){
+  if(p==='all')return [0,N-1];
+  let a=-1,b=-1;
+  for(let i=0;i<N;i++){
+    const ok=p==='report'?(D[i]>='2021-01-04'&&D[i]<='2025-04-10'):D[i].startsWith(p);
+    if(ok){if(a<0)a=i;b=i;}
+  }
+  return [a<0?0:a,b<0?N-1:b];
+}
+function cumFrom(ret,a,b){let v=1,o=[];for(let i=a;i<=b;i++){v+=ret[i];o.push(v);}return o;}
+function ddFrom(nav){let pk=nav[0],o=[];nav.forEach(v=>{pk=Math.max(pk,v);o.push(1-v/pk);});return o;}
+
+/* 通用折线 / 面积图 */
+function drawChart(svgId,tipId,lines,H,opt){
+  opt=opt||{};
+  const svg=document.getElementById(svgId),tip=document.getElementById(tipId);
+  svg.innerHTML='';
+  const a=opt.lo,b=opt.hi,n=b-a+1,W=960,PADL=68,PADR=16,PADT=16,PADB=32;
+  const pw=W-PADL-PADR,ph=H-PADT-PADB;
+  const xOf=k=>PADL+(n<=1?pw/2:k*pw/(n-1));
+  let mn=Infinity,mx=-Infinity;
+  lines.forEach(L=>L.data.forEach(v=>{if(v<mn)mn=v;if(v>mx)mx=v;}));
+  if(!isFinite(mn)){mn=0;mx=1;}
+  if(opt.floorZero)mn=0;
+  const pad=(mx-mn)*0.08||0.001;mx+=pad;if(!opt.floorZero)mn-=pad;
+  const yOf=v=>PADT+(mx-v)/(mx-mn)*ph;
+  for(let j=0;j<=4;j++){
+    const v=mn+(mx-mn)*j/4,y=yOf(v);
+    svg.appendChild(svgEl('line',{x1:PADL,x2:W-PADR,y1:y,y2:y,class:'grid'}));
+    svg.appendChild(svgEl('text',{x:PADL-9,y:y+4,'text-anchor':'end',class:'axis'},opt.fmtY(v)));
+  }
+  if(mn<1&&mx>1&&opt.baseOne)
+    svg.appendChild(svgEl('line',{x1:PADL,x2:W-PADR,y1:yOf(1),y2:yOf(1),class:'base'}));
+  if(opt.floorZero&&mn===0&&mx>0)
+    svg.appendChild(svgEl('line',{x1:PADL,x2:W-PADR,y1:yOf(0),y2:yOf(0),class:'base'}));
+  const ticks=Math.min(6,n),span=(n-1)/(ticks-1||1);
+  for(let j=0;j<ticks;j++){
+    const k=Math.round(j*span),i=a+k,x=xOf(k);
+    svg.appendChild(svgEl('text',{x:x,y:H-8,'text-anchor':'middle'},period==='all'?D[i].slice(0,7):D[i].slice(5)));
+    if(j>0&&j<ticks-1)svg.appendChild(svgEl('line',{x1:x,x2:x,y1:PADT,y2:H-PADB,class:'grid'}));
+  }
+  lines.forEach(L=>{
+    const pts=L.data.map((v,k)=>[xOf(k),yOf(v)]);
+    if(opt.area){
+      const d='M'+pts[0][0].toFixed(1)+' '+yOf(Math.max(mn,0)).toFixed(1)+
+        pts.map(p=>' L'+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('')+
+        ' L'+pts[pts.length-1][0].toFixed(1)+' '+yOf(Math.max(mn,0)).toFixed(1)+' Z';
+      svg.appendChild(svgEl('path',{d:d,fill:L.color,opacity:L.opacity||0.16}));
+    }
+    const pa={d:pts.map((p,j)=>(j?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' '),
+      class:'ln',stroke:L.color,'stroke-width':L.width||1.9,opacity:L.lineOpacity||1};
+    if(L.dash)pa['stroke-dasharray']='5 4';
+    svg.appendChild(svgEl('path',pa));
+  });
+  const hg=svgEl('g',{});svg.appendChild(hg);
+  const cross=svgEl('line',{y1:PADT,y2:H-PADB,stroke:'#9aa8ba','stroke-width':1,'stroke-dasharray':'3 3',opacity:0});
+  hg.appendChild(cross);
+  const dots=lines.map(L=>{const c=svgEl('circle',{r:3.6,fill:L.color,stroke:'#fff','stroke-width':1.5,opacity:0});hg.appendChild(c);return c;});
+  const hit=svgEl('rect',{x:PADL,y:PADT,width:pw,height:ph,fill:'transparent'});svg.appendChild(hit);
+  hit.addEventListener('mousemove',e=>{
+    const r=svg.getBoundingClientRect(),vx=(e.clientX-r.left)/r.width*W;
+    let k=Math.round((vx-PADL)/pw*(n-1));k=Math.max(0,Math.min(n-1,k));
+    const i=a+k,x=xOf(k);
+    cross.setAttribute('x1',x);cross.setAttribute('x2',x);cross.setAttribute('opacity',1);
+    lines.forEach((L,j)=>{dots[j].setAttribute('cx',x);dots[j].setAttribute('cy',yOf(L.data[k]));dots[j].setAttribute('opacity',1);});
+    let h='<div class="d">'+D[i]+'</div>';
+    lines.forEach(L=>{h+='<div class="r"><span style="color:'+L.color+'">'+L.label+'</span><b>'+L.fmt(L.data[k])+'</b></div>';});
+    if(opt.extra)h+=opt.extra(i,k);
+    tip.innerHTML=h;tip.style.display='block';
+    const card=svg.parentElement.getBoundingClientRect();
+    let left=e.clientX-card.left+14,top=e.clientY-card.top-10;
+    if(left+190>card.width)left=e.clientX-card.left-190;
+    if(top<0)top=0;tip.style.left=left+'px';tip.style.top=top+'px';
+  });
+  hit.addEventListener('mouseleave',()=>{tip.style.display='none';cross.setAttribute('opacity',0);dots.forEach(d=>d.setAttribute('opacity',0));});
+}
+
+function renderBadges(){
+  document.getElementById('badges').innerHTML=
+    '<span class="badge">区间 <b>'+M.start+' ~ '+M.end+'</b></span>'+
+    '<span class="badge">交易日 <b>'+M.n_days+'</b></span>'+
+    '<span class="badge">初始资金 <b>1000 万</b></span>'+
+    '<span class="badge">杠杆 <b>1 倍</b></span>'+
+    '<span class="badge">年化因子 <b>'+M.ann_days+'</b></span>'+
+    '<span class="badge">序列 <b>'+NAMES.length+'</b></span>'+
+    '<span class="badge">生成 <b>'+M.generated+'</b></span>';
+  document.getElementById('alertList').innerHTML=[
+    '报告回测区间为 2020-01-01 ~ 2025-04-10，本地持仓数据从 2021-01-04 起（2021 已补），<b>仍缺 2020 全年样本</b>，不能直接对比绝对收益。',
+    '<b>本次已做差异归因</b>：12 种开平仓规则变体、9 档杠杆倍数全部隔离检验，加上 2020 缺口外推 → 杠杆与规则均不能解释 9.52% 的量级差，详见「差异归因」卡片。',
+    '持仓表结算价与 TS.CFE 收盘价长期差约 2.9 点（不同合约/连续口径），<b>价格水平不可比</b>；但日变化相关 0.84、差值标准差仅 0.027 点，用于计算开平仓价差是可用的。',
+    '报告未披露交易成本、基准定义与换月处理方式；本页主结果<b>零成本</b>，基准取买入持有 TS.CFE，另给成本敏感性。',
+    '动态调参版需 n=1~20 逐档合计，现有仅 5/10/20 三档，<b>本次只能复现静态版</b>。',
+    '报告原文对「无信号日」「同向信号日」未明示，本页主口径按仓位状态机处理，另给「逐笔独立」口径作稳健性对照。'
+  ].map(x=>'<li>'+x+'</li>').join('');
+}
+function renderSide(){
+  const rgs=[['all','全样本'],['report','报告可比区间'],['2021','2021'],['2022','2022'],['2023','2023'],
+             ['2024','2024'],['2025','2025'],['2026','2026']];
+  document.getElementById('ranges').innerHTML=rgs.map(r=>
+    '<button class="rbtn'+(period===r[0]?' on':'')+'" data-p="'+r[0]+'">'+r[1]+'</button>').join('');
+  document.getElementById('rules').innerHTML=
+    [['state','报告口径 · 状态机'],['independent','逐笔独立 · 对照']].map(r=>
+    '<button class="rbtn'+(rule===r[0]?' on':'')+'" data-u="'+r[0]+'">'+r[1]+'</button>').join('');
+  let h='';
+  h+='<div class="grp-title">合计类（报告静态版用前20）</div>';
+  ['前5大合计','前10大合计','前20大合计'].forEach(n=>{
+    h+='<button class="sitem'+(cur===n?' on':'')+'" data-n="'+n+'">'+n+'</button>';});
+  h+='<div class="grp-title">单会员（聪明资金对照）</div>';
+  NAMES.filter(n=>!['前5大合计','前10大合计','前20大合计'].includes(n)).forEach(n=>{
+    h+='<button class="sitem'+(cur===n?' on':'')+'" data-n="'+esc(n)+'">'+esc(n)+'</button>';});
+  document.getElementById('seriesList').innerHTML=h;
+  document.querySelectorAll('.rbtn[data-p]').forEach(b=>b.onclick=()=>{period=b.dataset.p;renderAll();});
+  document.querySelectorAll('.rbtn[data-u]').forEach(b=>b.onclick=()=>{rule=b.dataset.u;renderAll();});
+  document.querySelectorAll('.sitem').forEach(b=>b.onclick=()=>{cur=b.dataset.n;renderAll();});
+}
+function curMetrics(){
+  const p=P.periods[period];
+  if(rule==='state'&&p&&p.series[cur])return p.series[cur];
+  const [a,b]=bounds(period),r=S[cur][rule].ret.slice(a,b+1);
+  // 区间内独立指标（近似：按区间日收益与全样本交易子集）
+  const tr=S[cur][rule].trades.filter(t=>t['平仓日']>=D[a]&&t['平仓日']<=D[b]);
+  const cum=cumFrom(r,0,r.length-1),nav=cum,dd=ddFrom(nav);
+  const n=r.length,total=nav[nav.length-1]-1;
+  const sd=(function(){const m=r.reduce((x,y)=>x+y,0)/n;return Math.sqrt(r.reduce((x,y)=>x+(y-m)*(y-m),0)/(n-1));})();
+  const mean=r.reduce((x,y)=>x+y,0)/n;
+  const w=tr.filter(t=>t.ret>0),l=tr.filter(t=>t.ret<0);
+  return {'累计收益率':total,'年化收益率':total*M.ann_days/n,
+    '最大回撤':Math.max.apply(null,dd),'夏普比率':sd>0?mean/sd*Math.sqrt(M.ann_days):0,
+    '胜率':tr.length?w.length/tr.length:null,
+    '盈亏比':(w.length&&l.length)?(w.reduce((x,t)=>x+t.ret,0)/w.length)/Math.abs(l.reduce((x,t)=>x+t.ret,0)/l.length):null,
+    '交易笔数':tr.length};
+}
+function renderKpi(){
+  const m=curMetrics(),p=M.periods[period];
+  const boxes=[
+    ['累计收益率',fmtPct(m['累计收益率']),'区间 '+p.start+' ~ '+p.end],
+    ['年化收益率',fmtPct(m['年化收益率']),'按 '+M.ann_days+' 交易日/年'],
+    ['夏普比率',fmt(m['夏普比率'],2),'日频收益年化、无风险 0'],
+    ['最大回撤',fmtPct(m['最大回撤']),'区间内峰值回撤'],
+    ['胜率',fmtPct(m['胜率'],1),'逐笔盈利占比'],
+    ['盈亏比',fmt(m['盈亏比'],2),'平均盈利 / 平均亏损'],
+    ['交易笔数',fmt(m['交易笔数'],0),'当前序列 · 当前口径'],
+    ['期末资金',fmt(M.init_capital*(1+m['累计收益率'])/10000,1)+'<small> 万元</small>','初始 1000 万'],
+  ];
+  document.getElementById('kpi').innerHTML=boxes.map(b=>
+    '<div class="box"><div class="lab">'+b[0]+'</div><div class="val '+cls(b[0]==='最大回撤'?0:m['累计收益率'])+'">'+b[1]+
+    '</div><div class="hint">'+b[2]+'</div></div>').join('');
+}
+function renderCharts(){
+  const [a,b]=bounds(period);
+  const sr=S[cur][rule].ret,br=B.ret;
+  const snav=cumFrom(sr,a,b),bnav=cumFrom(br,a,b);
+  const sdd=ddFrom(snav),bdd=ddFrom(bnav);
+  document.getElementById('navTitle').textContent=cur+' · '+M.periods[period].start+' ~ '+M.periods[period].end+' · 净值';
+  document.getElementById('legendNav').innerHTML=
+    '<span><i style="background:'+COL.strat+'"></i>蜘蛛网策略</span><span><i style="background:'+COL.bench+'"></i>基准（买入持有）</span>';
+  document.getElementById('legendDD').innerHTML=
+    '<span><i style="background:'+COL.dd+'"></i>策略回撤</span><span><i style="background:'+COL.bench+'"></i>基准回撤</span>';
+  drawChart('chartNav','tipNav',[
+    {data:snav,color:COL.strat,label:'策略净值',fmt:v=>v.toFixed(4)},
+    {data:bnav,color:COL.bench,label:'基准净值',fmt:v=>v.toFixed(4),width:1.5,lineOpacity:.9}],340,
+    {lo:a,hi:b,fmtY:v=>v.toFixed(3),baseOne:true,
+     extra:(i,k)=>'<div class="r"><span>当日策略收益</span><b>'+fmtPct(sr[i],3)+'</b></div>'+
+                 '<div class="r"><span>TS 收盘价</span><b>'+fmt(P.close[i],3)+'</b></div>'});
+  drawChart('chartDD','tipDD',[
+    {data:sdd,color:COL.dd,label:'策略回撤',fmt:v=>fmtPct(v),area:true,opacity:.18},
+    {data:bdd,color:COL.bench,label:'基准回撤',fmt:v=>fmtPct(v),width:1.4,lineOpacity:.85}],230,
+    {lo:a,hi:b,fmtY:v=>(v*100).toFixed(1)+'%',floorZero:true});
+}
+function renderAllNav(){
+  const [a,b]=bounds(period);
+  document.getElementById('allNavScope').textContent='· '+D[a]+' ~ '+D[b]+' · '+(rule==='state'?'报告状态机':'逐笔独立');
+  document.getElementById('allNavChecks').innerHTML=NAMES.map(n=>
+    '<label><input type="checkbox" data-n="'+esc(n)+'"'+(allSel.has(n)?' checked':'')+'>'+
+    '<span class="sw" style="background:'+(NC[n]||'#888')+'"></span>'+esc(n)+'</label>').join('');
+  document.querySelectorAll('#allNavChecks input').forEach(c=>c.onchange=()=>{
+    c.checked?allSel.add(c.dataset.n):allSel.delete(c.dataset.n);renderAllNav();});
+  const quick=[['all','全选'],['tot','仅合计类'],['none','清空']];
+  document.getElementById('allNavQuick').innerHTML=quick.map(q=>
+    '<button class="navbtn" data-q="'+q[0]+'">'+q[1]+'</button>').join('');
+  document.querySelectorAll('#allNavQuick .navbtn').forEach(x=>x.onclick=()=>{
+    if(x.dataset.q==='all')allSel=new Set(NAMES);
+    else if(x.dataset.q==='tot')allSel=new Set(NAMES.filter(n=>n.indexOf('合计')>=0));
+    else allSel=new Set();
+    renderAllNav();});
+  const lines=[];
+  NAMES.forEach(n=>{if(!allSel.has(n))return;
+    lines.push({data:cumFrom(S[n][rule].ret,a,b),color:NC[n]||'#888',label:n,
+      fmt:v=>v.toFixed(4),width:n.indexOf('合计')>=0?2.1:1.5,
+      lineOpacity:n.indexOf('合计')>=0?1:.85});});
+  lines.push({data:cumFrom(B.ret,a,b),color:'#9aa8ba',label:'基准·买入持有',
+    fmt:v=>v.toFixed(4),width:1.4,lineOpacity:.9,dash:true});
+  document.getElementById('legendAllNav').innerHTML=lines.map(L=>
+    '<span><i style="background:'+L.color+'"></i>'+esc(L.label)+'</span>').join('');
+  drawChart('chartAllNav','tipAllNav',lines,340,{lo:a,hi:b,fmtY:v=>v.toFixed(3),baseOne:true});
+}
+function renderReportCmp(){
+  const rp=P.periods.report,loc=rp?rp.series['前20大合计']:null,lb=rp?rp.benchmark:null;
+  const rows=[['累计收益率',RB.strategy['累计收益率'],loc?loc['累计收益率']:null,true],
+    ['年化收益率',RB.strategy['年化收益率'],loc?loc['年化收益率']:null,true],
+    ['最大回撤',RB.strategy['最大回撤'],loc?loc['最大回撤']:null,true],
+    ['夏普比率',RB.strategy['夏普比率'],loc?loc['夏普比率']:null,false],
+    ['胜率',RB.strategy['胜率'],loc?loc['胜率']:null,true],
+    ['盈亏比',RB.strategy['盈亏比'],loc?loc['盈亏比']:null,false]];
+  let h='<div class="cmp"><div class="c"><div class="t">报告 · TS静态 累计 / 年化</div><div class="v">'+
+    fmtPct(RB.strategy['累计收益率'])+' / '+fmtPct(RB.strategy['年化收益率'])+'</div></div>'+
+    '<div class="c"><div class="t">本地可比区间 · 前20大合计</div><div class="v">'+
+    (loc?fmtPct(loc['累计收益率'])+' / '+fmtPct(loc['年化收益率']):'—')+'</div></div>'+
+    '<div class="c"><div class="t">报告 · 夏普 / 最大回撤</div><div class="v">'+RB.strategy['夏普比率']+' / '+fmtPct(RB.strategy['最大回撤'])+'</div></div>'+
+    '<div class="c"><div class="t">本地 · 夏普 / 最大回撤</div><div class="v">'+
+    (loc?loc['夏普比率']+' / '+fmtPct(loc['最大回撤']):'—')+'</div></div></div>';
+  h+='<div class="scroll" style="margin-top:12px"><table><thead><tr><th>指标</th><th>报告公布</th><th>本地可比区间</th><th>报告基准</th><th>本地基准</th></tr></thead><tbody>';
+  const bkeys=['累计收益率','年化收益率','最大回撤','夏普比率'];
+  rows.forEach(r=>{
+    const isPct=r[3],f=isPct?fmtPct:v=>fmt(v,2);
+    const bv=r[0]==='夏普比率'?RB.benchmark['夏普比率']:(RB.benchmark[r[0]]!==undefined?RB.benchmark[r[0]]:null);
+    const lv=r[0]==='夏普比率'?(lb?lb['夏普比率']:null):(lb?lb[r[0]]:null);
+    h+='<tr><td>'+r[0]+'</td><td>'+f(r[1])+'</td><td>'+f(r[2])+'</td><td>'+(bv===null?'—':f(bv))+'</td><td>'+(lv===null?'—':f(lv))+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  document.getElementById('reportCmp').innerHTML=h;
+}
+function renderDiag(){
+  const box=document.getElementById('diagBody'); if(!box)return;
+  if(!G){box.innerHTML='<div class="note">未找到归因数据：先运行 <code>spider_rule_leverage_diag.py</code>，再重跑 <code>spider_backtest.py</code>。</div>';return;}
+  const pc=v=>(v==null||isNaN(v))?'—':(v*100).toFixed(3)+'%';
+  const f2=v=>(v==null||isNaN(v))?'—':Number(v).toFixed(2);
+  const imp=G.implied_leverage||{}, orc=G.oracle||{}, gap=G.gap_2020||{}, per=G.periods||{};
+  const pAll=per['全样本 2021-2026'], pRp=per['报告可比段 2021-2025.04'];
+  const oAll=orc['全样本 2021-2026']||{}, oRp=orc['报告可比段 2021-2025.04']||{};
+  let h='<div class="note" style="margin-bottom:6px">'+
+    '<b>① 杠杆不是原因。</b>报告第 3 页原文：「初始资金为 1000W，<b>杠杆倍数为单倍杠杆</b>」。'+
+    '若信号／价格／规则完全相同，要把本地 '+pc(pAll?pAll['累计收益率']:null)+' 放大到报告的 9.52%，'+
+    '需 L≈'+f2(imp['全样本口径'])+'（全样本）或 L≈'+f2(imp['报告可比段口径'])+'（可比段）；'+
+    '但杠杆会等比例放大回撤、且<b>不改变夏普</b>——本地夏普恒为 0.66，报告是 0.83。'+
+    '按「1000 万全做保证金、1 手约 2 万可开约 500 手」的满保证金口径 L=100，累计会到 155%、回撤 42%，'+
+    '与报告的 9.52% / 1.02% 完全不符。再看策略／基准回撤比：本地 0.49%/1.24%≈0.39，报告 1.02%/2.89%≈0.35，'+
+    '几乎一致，说明两者杠杆量级本来就相同。<br>'+
+    '<b>② 开平仓规则也不是原因。</b>报告第 3 页四条分支已逐字实现：T 日仓位为 0 → T+1 开盘全仓建仓、T+2 收盘平仓；'+
+    'T 日仓位与信号反向 → T+1 开盘平仓。报告未定义的三处（同向信号、反向平仓后是否反手、到期日遇新信号）以及'+
+    '开平仓时点的各种可能，共 '+G.variants.length+' 个变体全部重跑，累计落在 −1.24% ~ +1.25%，'+
+    '<b>没有一个接近 9.52%</b>；报告胜率 51.97% / 盈亏比 1.37 也与本地各变体（胜率 47.5%~57.9%、盈亏比 0.92~1.16）对不上。<br>'+
+    '<b>③ 补 2021 只缩小一点差距。</b>本地可比段（2021-01-04~2025-04-10，1033 天）累计 '+
+    pc(pRp?pRp['累计收益率']:null)+'，报告 9.52%。即便把 2020 也补上（按 2020 两日窗口平均波动 '+
+    (gap['2020两日窗口平均绝对收益%']||'—')+'%、2021 信号密度 '+(gap['2020假设信号笔数(按2021密度)']||'—')+
+    ' 笔、本地捕获率 '+((gap['本地实际捕获率']||0)*100).toFixed(1)+'% 外推），报告期估计也只有 '+
+    (gap['补2020后报告期估计累计%']||'—')+'%，仍差约 8 倍。<br>'+
+    '<b>真正的天花板。</b>本地信号 '+(oAll['信号笔数']||'—')+' 笔、每笔两日平均绝对波动仅 '+
+    (oAll['每笔平均|收益|%']||'—')+'%，<b>方向 100% 全对且零成本</b>的单利上限 '+
+    pc(oAll['完美方向单利累计'])+'（全样本 2021–2026，比报告期还多 1.6 年）；在报告自身区间内上限只有 '+
+    pc(oRp['完美方向单利累计'])+'，报告 9.52% 是它的 1.24 倍。'+
+    '<b>所以差异出在「每笔交易能赚多少钱」的底层量级，不是杠杆、不是规则、也不是信号太少。</b>'+
+    '</div>';
+
+  const sec=t=>'<div style="font-size:13px;font-weight:650;margin:16px 0 6px;color:var(--tx)">'+t+'</div>';
+  h+=sec('A · 开平仓规则变体（全样本 2021-01-04~2026-11-23，零成本，1x 名义敞口）');
+  h+='<div class="scroll" style="max-height:340px"><table><thead><tr><th>规则变体</th><th>累计</th><th>年化</th><th>夏普</th><th>回撤</th><th>胜率</th><th>盈亏比</th><th>笔数</th><th>可比段累计</th></tr></thead><tbody>';
+  G.variants.forEach(v=>{const m=v['全样本']||{};
+    h+='<tr'+(v['名称']==='报告字面·状态机'?' style="background:#eaf1fc;font-weight:600"':'')+'><td>'+v['名称']+'</td><td>'+pc(m['累计收益率'])+
+      '</td><td>'+pc(m['年化收益率'])+'</td><td>'+f2(m['夏普比率'])+'</td><td>'+pc(m['最大回撤'])+'</td><td>'+
+      (m['胜率']==null?'—':(m['胜率']*100).toFixed(1)+'%')+'</td><td>'+f2(m['盈亏比'])+'</td><td>'+m['交易笔数']+
+      '</td><td>'+pc(v['报告可比段累计'])+'</td></tr>';});
+  h+='</tbody></table></div>';
+
+  h+=sec('B · 杠杆敏感性（只缩放「报告字面·状态机」的名义敞口，规则与价格不变）');
+  h+='<div class="scroll" style="max-height:300px"><table><thead><tr><th>名义敞口 L</th><th>累计</th><th>年化</th><th>夏普</th><th>回撤</th><th>可比段累计</th><th>可比段回撤</th></tr></thead><tbody>';
+  G.leverage.forEach(v=>{const m=v['全样本']||{};
+    h+='<tr'+(v.L===1?' style="background:#eaf1fc;font-weight:600"':'')+'><td>'+v.L+'x'+(v.L===1?'（报告口径）':'')+
+      '</td><td>'+pc(m['累计收益率'])+'</td><td>'+pc(m['年化收益率'])+'</td><td>'+f2(m['夏普比率'])+
+      '</td><td>'+pc(m['最大回撤'])+'</td><td>'+pc(v['报告可比段累计'])+'</td><td>'+pc(v['报告可比段回撤'])+'</td></tr>';});
+  h+='</tbody></table></div>';
+  h+='<div class="desc" style="margin-top:6px">报告：累计 9.52%、回撤 1.02%、夏普 0.83。若 L≈7.6 才能凑到 9.52%，此时回撤 3.72% 已远超报告；L≈13.8（可比段口径）回撤 6.61%。杠杆不改变夏普这一条，单独就否掉了杠杆解释。</div>';
+
+  h+=sec('C · 样本区间与理论上限');
+  h+='<div class="scroll"><table><thead><tr><th>区间 / 口径</th><th>交易日</th><th>信号笔数</th><th>累计</th><th>完美方向上限</th><th>报告 / 上限</th></tr></thead><tbody>';
+  const rows=[
+    ['本地全样本 2021-2026',1426,oAll['信号笔数'],pAll?pAll['累计收益率']:null,oAll['完美方向单利累计'],9.52/((oAll['完美方向单利累计']||1)*100)],
+    ['报告可比段 2021-2025.04',1033,oRp['信号笔数'],pRp?pRp['累计收益率']:null,oRp['完美方向单利累计'],9.52/((oRp['完美方向单利累计']||1)*100)],
+    ['2020 外推（本地无持仓）',243,gap['2020假设信号笔数(按2021密度)'],(gap['2020最可能贡献%']||0)/100,(gap['2020完美方向上限%']||0)/100,null]
+  ];
+  rows.forEach(r=>{h+='<tr><td>'+r[0]+'</td><td>'+r[1]+'</td><td>'+(r[2]==null?'—':r[2])+'</td><td>'+pc(r[3])+
+    '</td><td>'+pc(r[4])+'</td><td>'+(r[5]==null?'—':f2(r[5])+' 倍')+'</td></tr>';});
+  h+='</tbody></table></div>';
+  h+='<div class="desc" style="margin-top:6px">报告原文（第 3 页）：「我们设定回测区间为 2020 年 1 月 1 日至 2025 年 4 月 10 日，'+
+    '初始资金为 1000W，杠杆倍数为单倍杠杆」；开平仓：「若 T 日仓位为 0，则在 T+1 日以开盘价全仓做多国债期货（单倍杠杆），'+
+    '并在 T+2 日以收盘价平仓」「若 T 日仓位为负（持有空单），则在 T+1 日以开盘价平仓空单」。'+
+    '<b>报告全文未披露交易成本、交易笔数、净值算法与所用价格序列。</b></div>';
+  box.innerHTML=h;
+}
+function renderPerf(){
+  const ps=['report','all','2021','2022','2023','2024','2025','2026'].filter(p=>P.periods[p]);
+  const cols=['区间','序列','累计收益率','年化收益率','夏普比率','最大回撤','胜率','盈亏比','交易笔数','基准累计'];
+  let h='<thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+  ps.forEach(p=>{
+    const row=P.periods[p];
+    NAMES.forEach(n=>{
+      const m=row.series[n];if(!m)return;
+      const b=row.benchmark;
+      h+='<tr class="clickable'+(n===cur&&p===period?' onrow':'')+'" data-n="'+esc(n)+'" data-p="'+p+'">'+
+        '<td>'+(p==='report'?'报告可比':p==='all'?'全样本':p)+'</td><td>'+esc(n)+'</td>'+
+        '<td class="'+cls(m['累计收益率'])+'">'+fmtPct(m['累计收益率'])+'</td>'+
+        '<td class="'+cls(m['年化收益率'])+'">'+fmtPct(m['年化收益率'])+'</td>'+
+        '<td>'+fmt(m['夏普比率'],2)+'</td><td>'+fmtPct(m['最大回撤'])+'</td>'+
+        '<td>'+fmtPct(m['胜率'],1)+'</td><td>'+fmt(m['盈亏比'],2)+'</td>'+
+        '<td>'+fmt(m['交易笔数'],0)+'</td><td>'+fmtPct(b['累计收益率'])+'</td></tr>';
+    });
+  });
+  h+='</tbody>';
+  const t=document.getElementById('perfTable');t.innerHTML=h;
+  t.querySelectorAll('tr[data-n]').forEach(r=>r.onclick=()=>{cur=r.dataset.n;period=r.dataset.p;renderAll();});
+}
+function renderRule(){
+  let h='<thead><tr><th>序列</th><th>口径</th><th>累计收益率</th><th>年化</th><th>夏普</th><th>最大回撤</th><th>胜率</th><th>盈亏比</th><th>笔数</th></tr></thead><tbody>';
+  NAMES.forEach(n=>{
+    ['state','independent'].forEach(r=>{
+      const m=S[n][r].metrics;
+      h+='<tr'+(r===rule?' class="onrow"':'')+'><td>'+esc(n)+'</td><td>'+(r==='state'?'报告口径·状态机':'逐笔独立·对照')+'</td>'+
+        '<td class="'+cls(m['累计收益率'])+'">'+fmtPct(m['累计收益率'])+'</td><td>'+fmtPct(m['年化收益率'])+'</td>'+
+        '<td>'+fmt(m['夏普比率'],2)+'</td><td>'+fmtPct(m['最大回撤'])+'</td>'+
+        '<td>'+fmtPct(m['胜率'],1)+'</td><td>'+fmt(m['盈亏比'],2)+'</td><td>'+fmt(m['交易笔数'],0)+'</td></tr>';
+    });
+  });
+  h+='</tbody>';
+  document.getElementById('ruleTable').innerHTML=h;
+}
+let nullCur='前20大合计';
+function drawHist(){
+  const t=P.null_test[nullCur],svg=document.getElementById('chartNull');
+  svg.innerHTML='';
+  const vals=t.hist_sharpe.slice().sort((a,b)=>a-b),real=t.real['夏普比率'];
+  const lo=Math.min(vals[0],real),hi=Math.max(vals[vals.length-1],real);
+  const pd=(hi-lo)*0.08||0.1,a=lo-pd,b=hi+pd;
+  const NB=26,W=960,PADL=56,PADR=20,PADT=14,H=210,PADB=36;
+  const pw=W-PADL-PADR,ph=H-PADT-PADB;
+  const bins=new Array(NB).fill(0);
+  vals.forEach(v=>{let k=Math.floor((v-a)/(b-a)*NB);k=Math.max(0,Math.min(NB-1,k));bins[k]++;});
+  const mx=Math.max.apply(null,bins)||1;
+  const xOf=v=>PADL+(v-a)/(b-a)*pw;
+  bins.forEach((c,k)=>{
+    const x=PADL+k*pw/NB,w=pw/NB-2,h=c/mx*ph;
+    if(h>0)svg.appendChild(svgEl('rect',{x:x,y:PADT+ph-h,width:w,height:h,fill:'#c9d7ea',rx:2}));
+  });
+  for(let j=0;j<=4;j++){
+    const v=a+(b-a)*j/4,x=xOf(v);
+    svg.appendChild(svgEl('text',{x:x,y:H-10,'text-anchor':'middle'},v.toFixed(2)));
+  }
+  for(let j=0;j<=3;j++){
+    const y=PADT+ph-j*ph/3;
+    svg.appendChild(svgEl('line',{x1:PADL,x2:W-PADR,y1:y,y2:y,class:'grid'}));
+    svg.appendChild(svgEl('text',{x:PADL-8,y:y+4,'text-anchor':'end'},String(Math.round(mx*j/3))));
+  }
+  const xr=xOf(real);
+  svg.appendChild(svgEl('line',{x1:xr,x2:xr,y1:PADT,y2:PADT+ph,stroke:'#d64545','stroke-width':2}));
+  svg.appendChild(svgEl('text',{x:Math.min(xr+6,W-140),y:PADT+14,fill:'#d64545','font-weight':'600'},'真实 '+real.toFixed(2)));
+  const xm=xOf(t.rand_median_sharpe);
+  svg.appendChild(svgEl('line',{x1:xm,x2:xm,y1:PADT,y2:PADT+ph,stroke:'#6b7f9e','stroke-width':1.4,'stroke-dasharray':'4 4'}));
+  svg.appendChild(svgEl('text',{x:xm-6,y:PADT+32,'text-anchor':'end',fill:'#6b7f9e'},'随机中位 '+t.rand_median_sharpe.toFixed(2)));
+  svg.appendChild(svgEl('text',{x:W-PADR,y:H-26,'text-anchor':'end',fill:'#8a95a5'},'横轴：循环移位后的夏普比率 · 纵轴：频次'));
+}
+function renderNull(){
+  const names=Object.keys(P.null_test);
+  if(names.indexOf(nullCur)<0)nullCur=names[0];
+  document.getElementById('nullBtns').innerHTML=names.map(n=>
+    '<button class="btn" style="'+(n===nullCur?'border-color:var(--accent);color:var(--accent);font-weight:600':'')+
+    '" data-n="'+esc(n)+'">'+esc(n)+'</button>').join('');
+  document.querySelectorAll('#nullBtns button').forEach(b=>b.onclick=()=>{nullCur=b.dataset.n;renderNull();});
+  drawHist();
+  const cols=['序列','真实夏普','随机中位','随机均值','随机95分位','真实分位','p(随机≥真实)','符号翻转夏普','符号翻转累计'];
+  let h='<thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+  names.forEach(n=>{
+    const t=P.null_test[n];
+    h+='<tr'+(n===nullCur?' class="onrow"':'')+'><td>'+esc(n)+'</td>'+
+      '<td>'+fmt(t.real['夏普比率'],2)+'</td><td>'+fmt(t.rand_median_sharpe,2)+'</td>'+
+      '<td>'+fmt(t.rand_mean_sharpe,2)+'</td><td>'+fmt(t.rand_p95_sharpe,2)+'</td>'+
+      '<td>'+(t.pct_sharpe*100).toFixed(1)+'%</td><td>'+fmt(t.p_sharpe,3)+'</td>'+
+      '<td>'+fmt(t.flip['夏普比率'],2)+'</td><td>'+fmtPct(t.flip['累计收益率'])+'</td></tr>';
+  });
+  h+='</tbody>';
+  document.getElementById('nullTable').innerHTML=h;
+}
+function renderCost(){
+  const rows=S[cur][rule].cost_sensitivity;
+  let h='<thead><tr><th>每笔来回成本(价格点)</th><th>累计收益率</th><th>年化</th><th>夏普</th><th>最大回撤</th><th>胜率</th><th>盈亏比</th></tr></thead><tbody>';
+  rows.forEach(r=>{h+='<tr><td>'+fmt(r['成本点'],3)+'</td><td class="'+cls(r['累计收益率'])+'">'+fmtPct(r['累计收益率'])+
+    '</td><td>'+fmtPct(r['年化收益率'])+'</td><td>'+fmt(r['夏普比率'],2)+'</td><td>'+fmtPct(r['最大回撤'])+
+    '</td><td>'+fmtPct(r['胜率'],1)+'</td><td>'+fmt(r['盈亏比'],2)+'</td></tr>';});
+  h+='</tbody>';
+  document.getElementById('costTable').innerHTML=h;
+}
+function renderTrades(){
+  const tr=S[cur][rule].trades.slice(-30).reverse();
+  document.getElementById('tradeDesc').textContent='当前序列「'+cur+'」· '+
+    (rule==='state'?'报告口径（仓位状态机）':'逐笔独立口径')+' · 全样本共 '+S[cur][rule].trades.length+' 笔，下表为最近 30 笔（倒序）。';
+  const cols=['信号日','开仓日','开仓价','方向','平仓日','平仓价','平仓方式','收益率','盈亏(元)'];
+  let h='<thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+  tr.forEach(t=>{h+='<tr><td>'+t['信号日']+'</td><td>'+t['开仓日']+'</td><td>'+fmt(t['开仓价'],3)+'</td>'+
+    '<td>'+(t['方向']==='多'?'<span class="pos">多</span>':'<span class="neg">空</span>')+'</td>'+
+    '<td>'+t['平仓日']+'</td><td>'+fmt(t['平仓价'],3)+'</td><td>'+t['平仓方式']+'</td>'+
+    '<td class="'+cls(t.ret)+'">'+fmtPct(t.ret,3)+'</td><td class="'+cls(t['盈亏元'])+'">'+fmt(t['盈亏元'],0)+'</td></tr>';});
+  h+='</tbody>';
+  document.getElementById('tradeTable').innerHTML=h;
+}
+function renderNote(){
+  const d=P.diagnostics;
+  document.getElementById('qualityNote').innerHTML=
+    '<b>交易规则（报告第 3 页）</b>：T 日 dB&gt;0 且 dS&lt;0 → 做多；dB&lt;0 且 dS&gt;0 → 做空。T 日仓位为 0 → T+1 开盘价全仓建仓、T+2 收盘价平仓；T 日仓位与信号反向 → T+1 开盘平仓（不反手）。单倍杠杆、初始 1000 万。<br>'+
+    '<b>信号来源</b>：Wind 中金所 TS 会员持仓；空单量已取绝对值，dS&gt;0 即空头增加。相邻交易日任一端缺失则不生成信号。<br>'+
+    '<b>执行价</b>：TS.CFE.xlsx 的开盘价 / 收盘价；T+1、T+2 按行情交易日历定位（非自然日）。行情区间内 '+d['行情交易日(区间内)']+
+    ' 个交易日，持仓日不在行情日历 '+d['持仓日不在行情日历'].length+' 天，行情日不在持仓日历 '+d['行情日不在持仓日历'].length+' 天。<br>'+
+    '<b>净值口径</b>：固定 5 手 TS（合约面值 200 万、报价按 100 元面值 ⇒ 1 点 = 2 万元/手 = 10 万元/组 = 初始资金 1000 万的 1%），名义敞口恒定、单倍杠杆。逐笔盈亏 = 方向 × (平仓价 − 开仓价) <b>点</b>，记入平仓日；<b>净值 = 1 + Σ(点数/100) 直接累加，不复利</b>——固定手数下赚的钱不会自动加仓，累乘会凭空引入复利与波动拖累。基准按同口径用收盘价日变动累加。年化 = 累计收益 × '+M.ann_days+'/交易日数（单利），夏普为日频收益年化、无风险利率取 0。<br>'+
+    '<b>与报告的三处不可比</b>：① 报告区间 2020-01-01~2025-04-10，本地持仓从 2021-01-04 起（2021 已补，仍缺 2020 全年）；② 持仓表结算价与 TS.CFE 收盘价差约 2.9 点，报告所用价格序列与换月处理未披露；③ 报告基准年化 0.39%、夏普 −0.63，与本地买入持有口径不同，疑似扣资金成本或用其他基准。<b>因此本页是「按报告规则在本地数据上重跑」，不是对报告数值的严格复现检验。</b><br>'+
+    '<b>样本差异量化</b>：'+Object.keys(P.regime).map(k=>{
+      const v=P.regime[k];return k+'（'+v['交易日']+'日）：日波动 std '+v['日波动std']+'%、区间涨跌 '+v['区间涨跌']+'%';
+    }).join('；')+'。报告含 2020 全年而本地不含，若策略有效性集中在该段，本地收益偏低是自然的；'+
+    '本次已用 2020 两日窗口波动外推其贡献上限，见「差异归因」卡片。<br>'+
+    '<b>零假设检验</b>：200 次循环移位下，若真实夏普的 p 值不显著（例如 >0.10），则本地这点正收益不能归功于信号，更可能是低波动 + 多头偏置 + 少数盈利交易的结果。<br>'+
+    '<b>尚未复现</b>：动态调参（需 n=1~20 逐档）、单会员「聪明资金」组合、真实手续费与滑点、换月展期。<br>'+
+    '<b>关于 2026 国泰海通席位</b>：2025-12-31 国君多单 6297 + 海通 1677 = 7974，而 2026-01-05 导出的「国泰君安」多单 5730、空单 −10572，与 2025 末国君单独值（6297 / −10833）连续，<b>看不到并表应有的量级跳增</b>；海通 2025 年从 7449 手逐步萎缩到 1677 手，更像合并过渡期的席位收缩。结论：<b>无法从数据确认 2026「国泰君安」已包含海通</b>，但本次静态策略用的是前20家整体合计，<b>不受单席位合并口径影响</b>；只有后续做单会员筛选时才需要拍板。';
+}
+function renderAll(){
+  renderSide();renderKpi();renderCharts();renderAllNav();renderReportCmp();renderDiag();renderPerf();
+  renderRule();renderNull();renderCost();renderTrades();
+}
+renderBadges();renderNote();renderAll();
+})();
+</script>
+</body>
+</html>

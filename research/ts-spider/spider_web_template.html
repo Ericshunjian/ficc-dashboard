@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TS 机构持仓整理 · 蜘蛛网策略复现</title>
+<style>
+:root{
+  --bg:#f4f6fa; --card:#ffffff; --line:#e3e8ef; --line2:#eef1f6;
+  --tx:#1d2733; --tx2:#5b6878; --tx3:#8a95a5; --accent:#2c5aa0;
+  --long:#d64545; --short:#2f9e6f; --net:#2c5aa0; --db:#e08a2e; --ds:#6b7f9e;
+  --warn-bg:#fff8e8; --warn-bd:#f0cf8a; --warn-tx:#7a5a17;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+  font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1440px;margin:0 auto;padding:22px 24px 48px}
+header h1{margin:0 0 6px;font-size:22px;font-weight:650;letter-spacing:.2px}
+header .sub{color:var(--tx2);font-size:13px}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.badge{background:#fff;border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--tx2)}
+.badge b{color:var(--tx);font-weight:600}
+.badge.ok{border-color:#bfe3cd;background:#f2fbf6;color:#24724d}
+.alerts{margin-top:16px;background:var(--warn-bg);border:1px solid var(--warn-bd);border-radius:8px;padding:12px 16px}
+.alerts h3{margin:0 0 6px;font-size:13px;color:var(--warn-tx)}
+.alerts ul{margin:0;padding-left:18px;color:var(--warn-tx);font-size:12.5px}
+.alerts li{margin:3px 0}
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}
+.kpi .box{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.kpi .lab{font-size:11.5px;color:var(--tx3);letter-spacing:.3px}
+.kpi .val{font-size:20px;font-weight:650;margin-top:3px;font-variant-numeric:tabular-nums}
+.kpi .val small{font-size:12px;font-weight:400;color:var(--tx2);margin-left:3px}
+.kpi .hint{font-size:11px;color:var(--tx3);margin-top:2px}
+.layout{display:grid;grid-template-columns:232px minmax(0,1fr);gap:16px;align-items:start}
+aside{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;position:sticky;top:16px}
+aside h4{margin:0 0 8px;font-size:11.5px;color:var(--tx3);letter-spacing:1px;font-weight:600}
+.grp{margin-bottom:16px}
+.rbtn, .sitem{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;
+  border-radius:6px;padding:7px 10px;cursor:pointer;font-size:13px;color:var(--tx2);margin-bottom:2px;
+  font-family:inherit;transition:background .12s,color .12s}
+.rbtn:hover,.sitem:hover{background:#f3f6fb;color:var(--tx)}
+.rbtn.on,.sitem.on{background:#eaf1fc;border-color:#c9dcf7;color:var(--accent);font-weight:600}
+.grp-title{font-size:11px;color:var(--tx3);padding:8px 10px 4px;letter-spacing:.5px}
+.sitem .tag{float:right;font-size:10.5px;color:var(--tx3);font-weight:400}
+main{min-width:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin-bottom:16px;position:relative}
+.card h2{margin:0 0 2px;font-size:15px;font-weight:650}
+.card .desc{color:var(--tx3);font-size:12px;margin-bottom:10px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 6px;font-size:12px;color:var(--tx2)}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
+svg.chart{width:100%;height:auto;display:block;overflow:visible}
+svg text{font-family:inherit;font-size:11px;fill:var(--tx3)}
+svg .axis{fill:var(--tx2)}
+svg .grid{stroke:var(--line2);stroke-width:1}
+svg .zero{stroke:#b9c3d1;stroke-width:1;stroke-dasharray:4 4}
+svg .ln{fill:none;stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round}
+.tip{position:absolute;pointer-events:none;background:rgba(255,255,255,.97);border:1px solid var(--line);
+  border-radius:6px;box-shadow:0 4px 16px rgba(20,40,80,.12);padding:8px 10px;font-size:12px;
+  min-width:150px;display:none;z-index:5;color:var(--tx);line-height:1.7}
+.tip .d{font-weight:650;margin-bottom:3px}
+.tip .r{display:flex;justify-content:space-between;gap:16px}
+.tip .r b{font-variant-numeric:tabular-nums;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--line2);white-space:nowrap}
+th{color:var(--tx3);font-weight:600;font-size:11.5px;background:#fafbfd;position:sticky;top:0}
+th:first-child,td:first-child{text-align:left}
+tbody tr:hover{background:#f7faff}
+tr.onrow{background:#eaf1fc}
+tr.clickable{cursor:pointer}
+.pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:650}
+.pill.l{background:#fdeaea;color:#b52f2f}
+.pill.s{background:#e6f6ee;color:#1f7a51}
+.pill.z{color:var(--tx3)}
+.scroll{max-height:420px;overflow:auto;border:1px solid var(--line2);border-radius:6px}
+.btn{background:#fff;border:1px solid var(--line);border-radius:6px;padding:5px 12px;font-size:12px;
+  color:var(--tx2);cursor:pointer;font-family:inherit}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.note{font-size:12px;color:var(--tx2);line-height:1.75}
+.note b{color:var(--tx)}
+details{margin-top:10px;border-top:1px solid var(--line2);padding-top:8px}
+summary{cursor:pointer;color:var(--accent);font-size:12.5px}
+footer{color:var(--tx3);font-size:11.5px;margin-top:22px;border-top:1px solid var(--line);padding-top:14px}
+/* ---- 各信号净值对比 ---- */
+.navctl{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-bottom:10px}
+.navctl .lbl{font-size:11.5px;color:var(--tx3);letter-spacing:.3px}
+.navbtns{display:flex;flex-wrap:wrap;gap:6px}
+.navbtn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:4px 10px;font-size:12px;
+  color:var(--tx2);cursor:pointer;font-family:inherit;transition:background .12s,color .12s}
+.navbtn:hover{border-color:var(--accent);color:var(--accent)}
+.navbtn.on{background:#eaf1fc;border-color:#c9dcf7;color:var(--accent);font-weight:600}
+.navchk{display:flex;flex-wrap:wrap;gap:5px 14px;font-size:12px;color:var(--tx2)}
+.navchk label{display:inline-flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap}
+.navchk input{accent-color:var(--accent);cursor:pointer;margin:0}
+.navchk .sw{display:inline-block;width:11px;height:11px;border-radius:2px;flex:none}
+.nav-quick{display:flex;gap:6px;margin-left:auto}
+.navhint{font-size:11.5px;color:var(--tx3);margin:2px 0 10px;line-height:1.7}
+@media(max-width:900px){.layout{grid-template-columns:1fr}aside{position:static}.nav-quick{margin-left:0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>TS 机构持仓整理 · 蜘蛛网策略复现</h1>
+  <div class="sub">中金所会员多空持仓 · 前 5 / 10 / 20 大合计与单会员席位 · 数据整理与信号派生</div>
+  <div class="badges" id="badges"></div>
+</header>
+
+<div class="alerts">
+  <h3>数据口径提醒（复现前必读）</h3>
+  <ul id="alertList"></ul>
+</div>
+
+<div class="kpi" id="kpi"></div>
+
+<div class="layout">
+  <aside>
+    <div class="grp">
+      <h4>时间范围</h4>
+      <div id="ranges"></div>
+    </div>
+    <div class="grp">
+      <h4>序列选择</h4>
+      <div id="seriesList"></div>
+    </div>
+    <div class="grp" style="margin-bottom:0">
+      <h4>导出</h4>
+      <button class="btn" id="csvBtn" style="width:100%">当前序列 · 导出 CSV</button>
+    </div>
+  </aside>
+
+  <main>
+    <section class="card">
+      <h2 id="mainTitle">持仓量</h2>
+      <div class="desc">上栏：多单量 / 空单量（已取绝对值，正值 = 空头持仓）；下栏：净持仓 = 多单量 − 空单量，<b>独立刻度</b>，灰色虚线为 0 轴。</div>
+      <div class="legend" id="legendMain"></div>
+      <svg class="chart" id="chartMain" viewBox="0 0 960 460" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="tip" id="tipMain"></div>
+    </section>
+
+    <section class="card">
+      <h2>各信号净值对比 <span id="navScope" style="font-weight:400;color:var(--tx3);font-size:12.5px"></span></h2>
+      <div class="desc">每条线 = 一个持仓序列按<b>同一套报告规则</b>（T 日信号 → T+1 开盘建仓 → T+2 收盘平仓；固定 5 手、名义 1000 万、单倍杠杆、零成本）跑出的净值：<b>净值 = 1 + 累计盈亏点数/100，逐笔直接累加、不复利</b>。数据由 <b>spider_backtest.py</b> 计算，与 <b>TS_蜘蛛网_策略回测.html</b> 完全同源，<b>不是结算价示意</b>。</div>
+      <div class="navctl">
+        <span class="lbl">交易规则</span>
+        <div class="navbtns" id="navRuleBtns"></div>
+        <span class="lbl">显示序列</span>
+        <div class="navchk" id="navChecks"></div>
+        <div class="nav-quick" id="navQuick"></div>
+      </div>
+      <div class="navhint" id="navHint"></div>
+      <div class="legend" id="legendNavAll"></div>
+      <svg class="chart" id="chartNavAll" viewBox="0 0 960 360" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="tip" id="tipNavAll"></div>
+      <div class="scroll" style="max-height:320px;margin-top:12px"><table id="navPerfTable"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>做多 / 做空信号净值分解 · <span id="decompName" style="color:var(--accent)"></span></h2>
+      <div class="desc">把当前选中序列的逐笔交易按方向拆开，各自按成交顺序累加成净值（<b>逐笔独立口径</b>、零成本、按平仓日计入），用来看多空哪一侧在贡献收益。与上方状态机净值口径略有差异，仅作结构诊断，不用于绩效归因。</div>
+      <div class="legend" id="legendDecomp"></div>
+      <svg class="chart" id="chartDecomp" viewBox="0 0 960 260" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="tip" id="tipDecomp"></div>
+    </section>
+
+    <section class="card">
+      <h2>日变动 dB / dS 与信号</h2>
+      <div class="desc">dB = 多单量日变动，dS = 空单量日变动（dS&gt;0 表示空头增加）。底部圆点为报告规则信号：<span style="color:var(--long)">● 做多</span>（dB&gt;0 且 dS&lt;0）、<span style="color:var(--short)">● 做空</span>（dB&lt;0 且 dS&gt;0）。</div>
+      <div class="legend" id="legendDiff"></div>
+      <svg class="chart" id="chartDiff" viewBox="0 0 960 300" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="tip" id="tipDiff"></div>
+    </section>
+
+    <section class="card">
+      <h2>各序列信号统计</h2>
+      <div class="desc">点击任意行可切换主序列。「示意」列为结算价口径的粗略近似（sig × (结算价<sub>t+2</sub> − 结算价<sub>t+1</sub>)），<b>不是报告口径</b>：报告用 T+1 开盘 / T+2 收盘。</div>
+      <div class="scroll"><table id="statsTable"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>最近交易日明细</h2>
+      <div class="desc" id="detailDesc"></div>
+      <div class="scroll"><table id="detailTable"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>口径与数据质检</h2>
+      <div class="note" id="qualityNote"></div>
+      <details>
+        <summary>展开源文件级质检（<span id="qCount"></span> 个文件）</summary>
+        <div class="scroll" style="margin-top:8px"><table id="qualityTable"></table></div>
+      </details>
+    </section>
+  </main>
+</div>
+
+<footer>
+  数据来源：Wind 导出的中金所 TS 会员持仓（本目录 2021–2026 各年份 Excel，共 <span id="fileCount"></span> 个）· 信号规则引自国泰海通《债市量化系列之五：国债期货多空持仓因子择时的再优化，引入"蜘蛛网"策略》(2025-05-30)。
+  本页面仅作数据整理与规则演示，不构成投资建议。由 <code>build_spider_web.py</code> 生成，改源 Excel 后重跑即可刷新。
+</footer>
+</div>
+
+<script id="payload" type="application/json">/*__DATA__*/</script>
+<script id="navdata" type="application/json">/*__NAVDATA__*/</script>
+<script>
+(function(){
+'use strict';
+const P = JSON.parse(document.getElementById('payload').textContent);
+const V = JSON.parse(document.getElementById('navdata').textContent);
+const D = P.dates, N = D.length;
+const S = P.series, NAMES = Object.keys(S);
+const NC = {'前5大合计':'#2c5aa0','前10大合计':'#5b8bd0','前20大合计':'#111f33',
+  '中信期货':'#d64545','平安期货':'#e08a2e','华泰期货':'#8e5bb0',
+  '国泰君安':'#2f9e6f','海通期货':'#c2578a','国泰海通（合成）':'#5d6b7d'};
+const NBENCH = '#9aa8ba';
+let navRule = 'state', navSel = new Set(V.available ? V.names : []);
+const C = {long:'#d64545',short:'#2f9e6f',net:'#2c5aa0',dB:'#e08a2e',dS:'#6b7f9e'};
+const LB = {long:'多单量',short:'空单量',net:'净持仓',dB:'dB',dS:'dS',dNet:'净持仓变动',signal:'信号'};
+
+let cur = '前20大合计', range = 'all', IDX = [];
+
+function fmt(v,dec){
+  if(v===null||v===undefined||v==='') return '—';
+  if(typeof v!=='number') return String(v);
+  return v.toLocaleString('zh-CN',{minimumFractionDigits:dec||0,maximumFractionDigits:dec||0});
+}
+function axisNum(v){
+  const a=Math.abs(v);
+  if(a>=10000) return (v/10000).toFixed(1)+'万';
+  if(a>=1000) return (v/1000).toFixed(1)+'k';
+  return String(Math.round(v));
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function sigPill(v){
+  if(v===1) return '<span class="pill l">做多 +1</span>';
+  if(v===-1) return '<span class="pill s">做空 −1</span>';
+  if(v===0) return '<span class="pill z">无 0</span>';
+  return '<span class="pill z">—</span>';
+}
+function computeIdx(){
+  let lo=0, hi=N-1;
+  if(/^\d{4}$/.test(range)){
+    const a=[], s=range+'-';
+    for(let i=0;i<N;i++) if(D[i].startsWith(s)) a.push(i);
+    IDX=a.length?a:[N-1]; return;
+  }
+  if(range==='1y') lo=Math.max(0,N-243);
+  if(range==='3m') lo=Math.max(0,N-61);
+  IDX=[]; for(let i=lo;i<=hi;i++) IDX.push(i);
+}
+
+/* ---------- 通用 SVG 折线图 ---------- */
+const W=960, PADL=68, PADR=16, PADT=16, PADB=32;
+function svgEl(tag,attrs,txt){
+  const e=document.createElementNS('http://www.w3.org/2000/svg',tag);
+  for(const k in attrs) e.setAttribute(k,attrs[k]);
+  if(txt!==undefined) e.textContent=txt;
+  return e;
+}
+function drawChart(svgId, tipId, keys, H, opt){
+  opt=opt||{};
+  const svg=document.getElementById(svgId), tip=document.getElementById(tipId);
+  svg.innerHTML='';
+  const n=IDX.length, s=S[cur];
+  const pw=W-PADL-PADR, ph=H-PADT-PADB;
+  const xOf=k=>PADL+(n<=1?pw/2:k*pw/(n-1));
+  let mn=Infinity,mx=-Infinity;
+  keys.forEach(k=>IDX.forEach(i=>{const v=s[k][i];if(v!==null&&v!==undefined){if(v<mn)mn=v;if(v>mx)mx=v;}}));
+  if(!isFinite(mn)){mn=-1;mx=1;}
+  const pad=(mx-mn)*0.08||1; mn-=pad; mx+=pad;
+  if(mn>0&&opt.forceZero) mn=0;
+  if(mx<0&&opt.forceZero) mx=0;
+  const yOf=v=>PADT+(mx-v)/(mx-mn)*ph;
+
+  // 网格 + Y 轴
+  for(let j=0;j<=4;j++){
+    const v=mn+(mx-mn)*j/4, y=yOf(v);
+    svg.appendChild(svgEl('line',{x1:PADL,x2:W-PADR,y1:y,y2:y,class:'grid'}));
+    svg.appendChild(svgEl('text',{x:PADL-9,y:y+4,'text-anchor':'end',class:'axis'},axisNum(v)));
+  }
+  if(mn<0&&mx>0){
+    svg.appendChild(svgEl('line',{x1:PADL,x2:W-PADR,y1:yOf(0),y2:yOf(0),class:'zero'}));
+    svg.appendChild(svgEl('text',{x:PADL-9,y:yOf(0)+4,'text-anchor':'end',class:'axis'},'0'));
+  }
+  // X 轴
+  const ticks=Math.min(6,n), span=(n-1)/(ticks-1||1);
+  for(let j=0;j<ticks;j++){
+    const k=Math.round(j*span), i=IDX[k], x=xOf(k);
+    const lab=(range==='all')?D[i].slice(0,7):(D[i].slice(5));
+    svg.appendChild(svgEl('text',{x:x,y:H-8,'text-anchor':'middle'},lab));
+    if(j>0&&j<ticks-1) svg.appendChild(svgEl('line',{x1:x,x2:x,y1:PADT,y2:H-PADB,class:'grid'}));
+  }
+  // 折线（遇空值断开）
+  keys.forEach(k=>{
+    let segs=[],c=[];
+    IDX.forEach((i,kk)=>{
+      const v=s[k][i];
+      if(v===null||v===undefined){if(c.length)segs.push(c);c=[];}
+      else c.push([xOf(kk),yOf(v)]);
+    });
+    if(c.length)segs.push(c);
+    segs.forEach(a=>{
+      if(a.length===1){
+        svg.appendChild(svgEl('circle',{cx:a[0][0],cy:a[0][1],r:2,fill:C[k]}));
+      }else{
+        const d=a.map((p,j)=>(j?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+        svg.appendChild(svgEl('path',{d:d,class:'ln',stroke:C[k]}));
+      }
+    });
+  });
+  // 信号圆点（副图）
+  if(opt.signals){
+    const yb=H-PADB+9;
+    IDX.forEach((i,kk)=>{
+      const v=s.signal[i];
+      if(v===1||v===-1){
+        svg.appendChild(svgEl('circle',{cx:xOf(kk),cy:yb,r:n>200?1.6:3.2,
+          fill:v===1?C.long:C.short,opacity:n>200?.65:1}));
+      }
+    });
+  }
+  // hover 层
+  const hg=svgEl('g',{id:'hover_'+svgId}); svg.appendChild(hg);
+  const cross=svgEl('line',{y1:PADT,y2:H-PADB,stroke:'#9aa8ba','stroke-width':1,'stroke-dasharray':'3 3',opacity:0});
+  hg.appendChild(cross);
+  const dots=keys.map(k=>{const c=svgEl('circle',{r:3.6,fill:C[k],stroke:'#fff','stroke-width':1.5,opacity:0});hg.appendChild(c);return c;});
+  const hit=svgEl('rect',{x:PADL,y:PADT,width:pw,height:ph,fill:'transparent'}); svg.appendChild(hit);
+  hit.addEventListener('mousemove',e=>{
+    const r=svg.getBoundingClientRect();
+    const vx=(e.clientX-r.left)/r.width*W;
+    let k=Math.round((vx-PADL)/pw*(n-1)); k=Math.max(0,Math.min(n-1,k));
+    const i=IDX[k], x=xOf(k);
+    cross.setAttribute('x1',x);cross.setAttribute('x2',x);cross.setAttribute('opacity',1);
+    keys.forEach((key,j)=>{
+      const v=s[key][i];
+      if(v===null||v===undefined){dots[j].setAttribute('opacity',0);return;}
+      dots[j].setAttribute('cx',x);dots[j].setAttribute('cy',yOf(v));dots[j].setAttribute('opacity',1);
+    });
+    let html='<div class="d">'+D[i]+'</div>';
+    keys.forEach(key=>{html+='<div class="r"><span style="color:'+C[key]+'">'+LB[key]+'</span><b>'+fmt(s[key][i])+'</b></div>';});
+    if(opt.signals) html+='<div class="r"><span>信号</span><b>'+({1:'做多 +1','-1':'做空 −1',0:'无 0'}[s.signal[i]]||'—')+'</b></div>';
+    if(P.settle[i]!==null) html+='<div class="r"><span>结算价</span><b>'+fmt(P.settle[i],3)+'</b></div>';
+    tip.innerHTML=html; tip.style.display='block';
+    const card=svg.parentElement.getBoundingClientRect();
+    let left=e.clientX-card.left+14, top=e.clientY-card.top-10;
+    if(left+175>card.width) left=e.clientX-card.left-175;
+    if(top<0) top=0;
+    tip.style.left=left+'px'; tip.style.top=top+'px';
+  });
+  hit.addEventListener('mouseleave',()=>{
+    tip.style.display='none'; cross.setAttribute('opacity',0);
+    dots.forEach(d=>d.setAttribute('opacity',0));
+  });
+}
+
+/* ---------- 主图：上下两栏独立刻度 ---------- */
+function drawMainChart(){
+  const svg=document.getElementById('chartMain'), tip=document.getElementById('tipMain');
+  svg.innerHTML='';
+  const s=S[cur], n=IDX.length, W=960, PADL=68, PADR=16;
+  const pw=W-PADL-PADR, P1={top:14,bot:212}, P2={top:238,bot:426};
+  const xOf=k=>PADL+(n<=1?pw/2:k*pw/(n-1));
+  function scale(p,keys){
+    let mn=Infinity,mx=-Infinity;
+    keys.forEach(k=>IDX.forEach(i=>{const v=s[k][i];if(v!==null&&v!==undefined){if(v<mn)mn=v;if(v>mx)mx=v;}}));
+    if(!isFinite(mn)){mn=0;mx=1;}
+    const pad=(mx-mn)*0.1||1; mn-=pad; mx+=pad;
+    if(keys.indexOf('net')>=0){if(mn>0)mn=0;if(mx<0)mx=0;}
+    const h=p.bot-p.top;
+    return {mn:mn,mx:mx,yOf:v=>p.top+(mx-v)/(mx-mn)*h};
+  }
+  const A=scale(P1,['long','short']), B=scale(P2,['net']);
+  [[P1,A,'多 / 空单量'],[P2,B,'净持仓']].forEach(function(o){
+    const p=o[0], sc=o[1];
+    for(let j=0;j<=4;j++){
+      const v=sc.mn+(sc.mx-sc.mn)*j/4, y=sc.yOf(v);
+      svg.appendChild(svgEl('line',{x1:PADL,x2:W-PADR,y1:y,y2:y,class:'grid'}));
+      svg.appendChild(svgEl('text',{x:PADL-9,y:y+4,'text-anchor':'end',class:'axis'},axisNum(v)));
+    }
+    svg.appendChild(svgEl('text',{x:PADL+5,y:p.top+12,'font-size':'11',fill:'#8a95a5'},o[2]+' · 独立刻度'));
+    if(sc.mn<0&&sc.mx>0)
+      svg.appendChild(svgEl('line',{x1:PADL,x2:W-PADR,y1:sc.yOf(0),y2:sc.yOf(0),class:'zero'}));
+  });
+  svg.appendChild(svgEl('line',{x1:PADL,x2:W-PADR,y1:225,y2:225,stroke:'#e3e8ef','stroke-width':1}));
+  const ticks=Math.min(6,n), span=(n-1)/(ticks-1||1);
+  for(let j=0;j<ticks;j++){
+    const k=Math.round(j*span), i=IDX[k], x=xOf(k);
+    svg.appendChild(svgEl('text',{x:x,y:450,'text-anchor':'middle'},(range==='all')?D[i].slice(0,7):D[i].slice(5)));
+    if(j>0&&j<ticks-1){
+      svg.appendChild(svgEl('line',{x1:x,x2:x,y1:P1.top,y2:P1.bot,class:'grid'}));
+      svg.appendChild(svgEl('line',{x1:x,x2:x,y1:P2.top,y2:P2.bot,class:'grid'}));
+    }
+  }
+  const defs=[['long',A,C.long],['short',A,C.short],['net',B,C.net]];
+  defs.forEach(function(o){
+    const key=o[0], sc=o[1], color=o[2];
+    let segs=[],c=[];
+    IDX.forEach(function(i,k){
+      const v=s[key][i];
+      if(v===null||v===undefined){if(c.length)segs.push(c);c=[];}
+      else c.push([xOf(k),sc.yOf(v)]);
+    });
+    if(c.length)segs.push(c);
+    segs.forEach(function(a){
+      if(a.length===1) svg.appendChild(svgEl('circle',{cx:a[0][0],cy:a[0][1],r:2,fill:color}));
+      else svg.appendChild(svgEl('path',{
+        d:a.map(function(p,j){return (j?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1);}).join(' '),
+        class:'ln',stroke:color}));
+    });
+  });
+  const hg=svgEl('g',{}); svg.appendChild(hg);
+  const c1=svgEl('line',{y1:P1.top,y2:P1.bot,stroke:'#9aa8ba','stroke-width':1,'stroke-dasharray':'3 3',opacity:0});
+  const c2=svgEl('line',{y1:P2.top,y2:P2.bot,stroke:'#9aa8ba','stroke-width':1,'stroke-dasharray':'3 3',opacity:0});
+  hg.appendChild(c1);hg.appendChild(c2);
+  const dots=defs.map(function(o){
+    const d=svgEl('circle',{r:3.6,fill:o[2],stroke:'#fff','stroke-width':1.5,opacity:0});
+    hg.appendChild(d);return [o[0],o[1],d];
+  });
+  const hit=svgEl('rect',{x:PADL,y:P1.top,width:pw,height:P2.bot-P1.top,fill:'transparent'});
+  svg.appendChild(hit);
+  hit.addEventListener('mousemove',function(e){
+    const r=svg.getBoundingClientRect();
+    const vx=(e.clientX-r.left)/r.width*W;
+    let k=Math.round((vx-PADL)/pw*(n-1)); k=Math.max(0,Math.min(n-1,k));
+    const i=IDX[k], x=xOf(k);
+    [c1,c2].forEach(function(c){c.setAttribute('x1',x);c.setAttribute('x2',x);c.setAttribute('opacity',1);});
+    dots.forEach(function(o){
+      const v=s[o[0]][i];
+      if(v===null||v===undefined){o[2].setAttribute('opacity',0);return;}
+      o[2].setAttribute('cx',x);o[2].setAttribute('cy',o[1].yOf(v));o[2].setAttribute('opacity',1);
+    });
+    let html='<div class="d">'+D[i]+'</div>';
+    ['long','short','net'].forEach(function(key){
+      html+='<div class="r"><span style="color:'+C[key]+'">'+LB[key]+'</span><b>'+fmt(s[key][i])+'</b></div>';});
+    html+='<div class="r"><span>信号</span><b>'+({1:'做多 +1','-1':'做空 −1',0:'无 0'}[s.signal[i]]||'—')+'</b></div>';
+    if(P.settle[i]!==null) html+='<div class="r"><span>结算价</span><b>'+fmt(P.settle[i],3)+'</b></div>';
+    tip.innerHTML=html;tip.style.display='block';
+    const card=svg.parentElement.getBoundingClientRect();
+    let left=e.clientX-card.left+14, top=e.clientY-card.top-10;
+    if(left+175>card.width) left=e.clientX-card.left-175;
+    if(top<0) top=0;
+    tip.style.left=left+'px'; tip.style.top=top+'px';
+  });
+  hit.addEventListener('mouseleave',function(){
+    tip.style.display='none';
+    [c1,c2].forEach(function(c){c.setAttribute('opacity',0);});
+    dots.forEach(function(o){o[2].setAttribute('opacity',0);});
+  });
+}
+
+/* ---------- 各信号净值图（数据来自 spider_backtest.py） ---------- */
+function drawMulti(svgId,tipId,lines,H,opt){
+  opt=opt||{};
+  const svg=document.getElementById(svgId),tip=document.getElementById(tipId);
+  svg.innerHTML='';
+  const n=IDX.length,pw=W-PADL-PADR,ph=H-PADT-PADB;
+  const xOf=k=>PADL+(n<=1?pw/2:k*pw/(n-1));
+  let mn=Infinity,mx=-Infinity;
+  lines.forEach(L=>L.data.forEach(v=>{if(v!==null&&v!==undefined&&isFinite(v)){if(v<mn)mn=v;if(v>mx)mx=v;}}));
+  if(!isFinite(mn)){mn=1;mx=1;}
+  const pad=(mx-mn)*0.08||0.002;mx+=pad;mn-=pad;
+  const yOf=v=>PADT+(mx-v)/(mx-mn)*ph;
+  const fmtY=opt.fmtY||(v=>v.toFixed(3));
+  for(let j=0;j<=4;j++){
+    const v=mn+(mx-mn)*j/4,y=yOf(v);
+    svg.appendChild(svgEl('line',{x1:PADL,x2:W-PADR,y1:y,y2:y,class:'grid'}));
+    svg.appendChild(svgEl('text',{x:PADL-9,y:y+4,'text-anchor':'end',class:'axis'},fmtY(v)));
+  }
+  if(mn<1&&mx>1)svg.appendChild(svgEl('line',{x1:PADL,x2:W-PADR,y1:yOf(1),y2:yOf(1),class:'zero'}));
+  const ticks=Math.min(6,n),span=(n-1)/(ticks-1||1);
+  for(let j=0;j<ticks;j++){
+    const k=Math.round(j*span),i=IDX[k],x=xOf(k);
+    svg.appendChild(svgEl('text',{x:x,y:H-8,'text-anchor':'middle'},(range==='all')?D[i].slice(0,7):D[i].slice(5)));
+    if(j>0&&j<ticks-1)svg.appendChild(svgEl('line',{x1:x,x2:x,y1:PADT,y2:H-PADB,class:'grid'}));
+  }
+  lines.forEach(L=>{
+    const pts=L.data.map((v,k)=>[xOf(k),yOf(v)]);
+    const a={d:pts.map((p,j)=>(j?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' '),
+      class:'ln',stroke:L.color,'stroke-width':L.width||1.8,opacity:L.opacity===undefined?1:L.opacity};
+    if(L.dash)a['stroke-dasharray']='5 4';
+    svg.appendChild(svgEl('path',a));
+  });
+  const hg=svgEl('g',{});svg.appendChild(hg);
+  const cross=svgEl('line',{y1:PADT,y2:H-PADB,stroke:'#9aa8ba','stroke-width':1,'stroke-dasharray':'3 3',opacity:0});
+  hg.appendChild(cross);
+  const dots=lines.map(L=>{const c=svgEl('circle',{r:3.4,fill:L.color,stroke:'#fff','stroke-width':1.4,opacity:0});hg.appendChild(c);return c;});
+  const hit=svgEl('rect',{x:PADL,y:PADT,width:pw,height:ph,fill:'transparent'});svg.appendChild(hit);
+  hit.addEventListener('mousemove',function(e){
+    const r=svg.getBoundingClientRect(),vx=(e.clientX-r.left)/r.width*W;
+    let k=Math.round((vx-PADL)/pw*(n-1));k=Math.max(0,Math.min(n-1,k));
+    const i=IDX[k],x=xOf(k);
+    cross.setAttribute('x1',x);cross.setAttribute('x2',x);cross.setAttribute('opacity',1);
+    lines.forEach((L,j)=>{dots[j].setAttribute('cx',x);dots[j].setAttribute('cy',yOf(L.data[k]));dots[j].setAttribute('opacity',1);});
+    let h='<div class="d">'+D[i]+'</div>';
+    lines.forEach(L=>{h+='<div class="r"><span style="color:'+L.color+'">'+esc(L.label)+'</span><b>'+L.fmt(L.data[k])+'</b></div>';});
+    tip.innerHTML=h;tip.style.display='block';
+    const card=svg.parentElement.getBoundingClientRect();
+    let left=e.clientX-card.left+14,top=e.clientY-card.top-10;
+    if(left+205>card.width)left=e.clientX-card.left-205;
+    if(top<0)top=0;tip.style.left=left+'px';tip.style.top=top+'px';
+  });
+  hit.addEventListener('mouseleave',function(){tip.style.display='none';cross.setAttribute('opacity',0);dots.forEach(d=>d.setAttribute('opacity',0));});
+}
+/* 区间内从 1 重新累计 / 区间首日归一 */
+function cumIn(ret){let v=1,o=[];IDX.forEach(i=>{v+=(ret[i]||0);o.push(v);});return o;}
+function rebaseIn(nav){const a=IDX[0],base=a>0?nav[a-1]-1:0;return IDX.map(i=>nav[i]-base);}
+function pct(v,d){return v===null||v===undefined?'—':(v*100).toFixed(d===undefined?2:d)+'%';}
+
+function renderNavCtl(){
+  const rules=[['state','报告状态机'],['independent','逐笔独立']];
+  document.getElementById('navRuleBtns').innerHTML=rules.map(r=>
+    '<button class="navbtn'+(navRule===r[0]?' on':'')+'" data-r="'+r[0]+'">'+r[1]+'</button>').join('');
+  document.querySelectorAll('#navRuleBtns .navbtn').forEach(b=>b.onclick=()=>{navRule=b.dataset.r;renderNav();});
+  document.getElementById('navChecks').innerHTML=(V.names||[]).map(n=>
+    '<label><input type="checkbox" data-n="'+esc(n)+'"'+(navSel.has(n)?' checked':'')+'>'+
+    '<span class="sw" style="background:'+(NC[n]||'#888')+'"></span>'+esc(n)+'</label>').join('');
+  document.querySelectorAll('#navChecks input').forEach(c=>c.onchange=()=>{
+    c.checked?navSel.add(c.dataset.n):navSel.delete(c.dataset.n);renderNav();});
+  const quick=[['all','全选'],['tot','仅合计类'],['none','清空']];
+  document.getElementById('navQuick').innerHTML=quick.map(q=>
+    '<button class="navbtn" data-q="'+q[0]+'">'+q[1]+'</button>').join('');
+  document.querySelectorAll('#navQuick .navbtn').forEach(b=>b.onclick=()=>{
+    if(b.dataset.q==='all')navSel=new Set(V.names);
+    else if(b.dataset.q==='tot')navSel=new Set(V.names.filter(n=>n.indexOf('合计')>=0));
+    else navSel=new Set();
+    renderNav();});
+}
+function navMetrics(ret){
+  const a=IDX[0],b=IDX[IDX.length-1];
+  let v=1,pk=1,mdd=0,sum=0,sq=0,n=0;
+  for(let i=a;i<=b;i++){const r=ret[i]||0;v+=r;pk=Math.max(pk,v);mdd=Math.max(mdd,1-v/pk);sum+=r;sq+=r*r;n++;}
+  const mu=sum/(n||1),sd=Math.sqrt(Math.max(0,sq/(n||1)-mu*mu));
+  return {cum:v-1,ann:(v-1)*243/(n||1),sharpe:sd?mu/sd*Math.sqrt(243):0,mdd:mdd};
+}
+function renderNav(){
+  renderNavCtl();
+  if(!V.available){
+    document.getElementById('navHint').textContent='未找到回测数据：请先运行 spider_backtest.py，再重跑 build_spider_web.py。';
+    return;
+  }
+  const a=IDX[0],b=IDX[IDX.length-1];
+  document.getElementById('navScope').textContent='· '+D[a]+' ~ '+D[b]+'（区间内重新归一到 1.000）';
+  document.getElementById('navHint').innerHTML=esc(V.note)+
+    ' <b>当前显示 '+navSel.size+' 条序列</b>；灰色虚线为买入持有基准。'+
+    '<b>注意</b>：华泰期货 2021–2022、国泰海通（合成）2026 无源表，其净值在末次有效日后走平，不代表策略停止交易。'+
+    '回测生成于 '+esc(V.generated)+'。';
+  const lines=[];
+  V.names.forEach(n=>{if(!navSel.has(n))return;
+    lines.push({data:cumIn(V.ret[n][navRule]),color:NC[n]||'#888',label:n,
+      fmt:v=>v.toFixed(4),width:n.indexOf('合计')>=0?2.1:1.5,opacity:n.indexOf('合计')>=0?1:.85});});
+  lines.push({data:cumIn(V.bench),color:NBENCH,label:'基准·买入持有',fmt:v=>v.toFixed(4),
+    width:1.4,opacity:.9,dash:true});
+  document.getElementById('legendNavAll').innerHTML=lines.map(L=>
+    '<span><i style="background:'+L.color+'"></i>'+esc(L.label)+'</span>').join('');
+  drawMulti('chartNavAll','tipNavAll',lines,360,{fmtY:v=>v.toFixed(3)});
+  renderNavPerf();renderDecomp();
+}
+function renderNavPerf(){
+  let h='<thead><tr><th>序列</th><th>累计</th><th>年化</th><th>夏普</th><th>最大回撤</th><th>笔数</th></tr></thead><tbody>';
+  V.names.forEach(n=>{
+    const m=navMetrics(V.ret[n][navRule]),mk=V.metrics[n]||{};
+    h+='<tr'+(navSel.has(n)?' class="onrow"':'')+'><td><span style="display:inline-block;width:10px;height:10px;'+
+       'border-radius:2px;margin-right:6px;background:'+(NC[n]||'#888')+'"></span>'+esc(n)+'</td>'+
+       '<td style="color:'+(m.cum>0?'#c0392b':m.cum<0?'#2f9e6f':'inherit')+'">'+pct(m.cum)+'</td>'+
+       '<td style="color:'+(m.ann>0?'#c0392b':m.ann<0?'#2f9e6f':'inherit')+'">'+pct(m.ann)+'</td>'+
+       '<td>'+m.sharpe.toFixed(2)+'</td>'+
+       '<td>'+pct(m.mdd)+'</td><td>'+fmt(mk['交易笔数']||0)+'</td></tr>';
+  });
+  const mb=navMetrics(V.bench);
+  h+='<tr style="color:var(--tx3)"><td>基准·买入持有</td><td>'+pct(mb.cum)+'</td><td>'+pct(mb.ann)+
+     '</td><td>'+mb.sharpe.toFixed(2)+'</td><td>'+pct(mb.mdd)+'</td><td>—</td></tr></tbody>';
+  document.getElementById('navPerfTable').innerHTML=h;
+}
+function renderDecomp(){
+  document.getElementById('decompName').textContent=cur;
+  const d=V.decomp[cur];
+  if(!d){document.getElementById('chartDecomp').innerHTML='';return;}
+  const lines=[
+    {data:rebaseIn(d.all),color:'#2c5aa0',label:'全部信号',fmt:v=>v.toFixed(4),width:2.1},
+    {data:rebaseIn(d.long),color:'#d64545',label:'仅做多信号',fmt:v=>v.toFixed(4),width:1.7},
+    {data:rebaseIn(d.short),color:'#2f9e6f',label:'仅做空信号',fmt:v=>v.toFixed(4),width:1.7}];
+  document.getElementById('legendDecomp').innerHTML=lines.map(L=>
+    '<span><i style="background:'+L.color+'"></i>'+L.label+'</span>').join('');
+  drawMulti('chartDecomp','tipDecomp',lines,260,{fmtY:v=>v.toFixed(3)});
+}
+
+/* ---------- 渲染各区块 ---------- */
+function renderBadges(){
+  const m=P.meta;
+  document.getElementById('badges').innerHTML=
+    '<span class="badge">品种 <b>TS 2年期国债期货</b></span>'+
+    '<span class="badge">区间 <b>'+m.start+' ~ '+m.end+'</b></span>'+
+    '<span class="badge">交易日 <b>'+m.n_days+'</b></span>'+
+    '<span class="badge">源文件 <b>'+m.n_files+'</b></span>'+
+    '<span class="badge">序列 <b>'+m.n_series+'</b></span>'+
+    '<span class="badge ok">恒等式校验 <b>'+(m.quality_ok?'全部通过':'见质检')+'</b></span>'+
+    '<span class="badge">生成 <b>'+m.generated+'</b></span>';
+  document.getElementById('alertList').innerHTML=P.meta.alerts.map(a=>'<li>'+esc(a)+'</li>').join('');
+  const fc=document.getElementById('fileCount'); if(fc) fc.textContent=m.n_files;
+}
+function renderRanges(){
+  const opts=[['all','全部'],['2021','2021'],['2022','2022'],['2023','2023'],['2024','2024'],['2025','2025'],
+              ['2026','2026'],['1y','近1年'],['3m','近3月']];
+  document.getElementById('ranges').innerHTML=opts.map(o=>
+    '<button class="rbtn'+(range===o[0]?' on':'')+'" data-r="'+o[0]+'">'+o[1]+'</button>').join('');
+  document.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>{range=b.dataset.r;computeIdx();renderAll();});
+}
+function renderSeries(){
+  let h='';
+  for(const g in P.groups){
+    h+='<div class="grp-title">'+esc(g)+'</div>';
+    h+=P.groups[g].map(n=>{
+      const st=S[n].stats;
+      return '<button class="sitem'+(cur===n?' on':'')+'" data-n="'+esc(n)+'">'+esc(n)+
+             '<span class="tag">'+(S[n].validDays||0)+'d</span></button>';
+    }).join('');
+  }
+  document.getElementById('seriesList').innerHTML=h;
+  document.querySelectorAll('.sitem').forEach(b=>b.onclick=()=>{cur=b.dataset.n;renderAll();});
+}
+function renderKpi(){
+  const s=S[cur], st=s.stats, m=P.meta;
+  const boxes=[
+    ['当前序列',esc(cur),'有效 '+s.validDays+' 个交易日'],
+    ['做多信号',fmt(st.n_long),'占有效信号 '+(st.n_valid?((st.n_long/st.n_valid)*100).toFixed(1):'0')+'%'],
+    ['做空信号',fmt(st.n_short),'无信号 '+fmt(st.n_none)+' 天'],
+    ['末次信号',st.last_signal===null?'—':(st.last_signal===1?'做多 +1':st.last_signal===-1?'做空 −1':'无 0'),
+      st.last_signal_date||'—'],
+    ['示意合计',fmt(st['示意合计_价格点'],3)+'<small>点</small>',
+      '结算价口径，'+fmt(st['示意笔数'])+' 笔 · 胜率 '+(st['示意胜率']===null?'—':(st['示意胜率']*100).toFixed(1)+'%')],
+    ['合成序列末日',m.aligned_end,'国泰海通 2026 缺海通源表'],
+  ];
+  document.getElementById('kpi').innerHTML=boxes.map(b=>
+    '<div class="box"><div class="lab">'+b[0]+'</div><div class="val">'+b[1]+'</div><div class="hint">'+b[2]+'</div></div>').join('');
+}
+function renderLegends(){
+  const mk=ks=>ks.map(k=>'<span><i style="background:'+C[k]+'"></i>'+LB[k]+'</span>').join('');
+  document.getElementById('legendMain').innerHTML=mk(['long','short','net']);
+  document.getElementById('legendDiff').innerHTML=mk(['dB','dS']);
+}
+function renderStats(){
+  const cols=['序列','有效日','做多','做空','无信号','信号占比','末次信号','日期','示意笔数','示意胜率','示意合计(点)'];
+  let h='<thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+  NAMES.forEach(n=>{
+    const s=S[n], st=s.stats;
+    const pct=st.n_valid?((st.n_long+st.n_short)/st.n_valid*100).toFixed(1)+'%':'—';
+    h+='<tr class="clickable'+(n===cur?' onrow':'')+'" data-n="'+esc(n)+'">'+
+       '<td>'+esc(n)+'</td><td>'+fmt(s.validDays)+'</td><td>'+fmt(st.n_long)+'</td>'+
+       '<td>'+fmt(st.n_short)+'</td><td>'+fmt(st.n_none)+'</td><td>'+pct+'</td>'+
+       '<td>'+(st.last_signal===null?'—':st.last_signal===1?'<span class="pill l">+1</span>':st.last_signal===-1?'<span class="pill s">−1</span>':'<span class="pill z">0</span>')+'</td>'+
+       '<td>'+(st.last_signal_date||'—')+'</td><td>'+fmt(st['示意笔数'])+'</td>'+
+       '<td>'+(st['示意胜率']===null?'—':(st['示意胜率']*100).toFixed(1)+'%')+'</td>'+
+       '<td>'+fmt(st['示意合计_价格点'],3)+'</td></tr>';
+  });
+  h+='</tbody>';
+  const t=document.getElementById('statsTable'); t.innerHTML=h;
+  t.querySelectorAll('tr[data-n]').forEach(r=>r.onclick=()=>{cur=r.dataset.n;renderAll();});
+}
+function renderDetail(){
+  const s=S[cur], take=IDX.slice(-22).reverse();
+  document.getElementById('detailDesc').textContent=
+    '当前序列「'+cur+'」· 当前范围末 22 个交易日（倒序）· 结算价为全局基准（优先前20大合计）。';
+  const cols=['日期','多单量','空单量','净持仓','dB','dS','净持仓变动','信号','结算价'];
+  let h='<thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+  take.forEach(i=>{
+    h+='<tr><td>'+D[i]+'</td>'+
+      ['long','short','net','dB','dS','dNet'].map(k=>'<td>'+fmt(s[k][i])+'</td>').join('')+
+      '<td>'+sigPill(s.signal[i])+'</td><td>'+fmt(P.settle[i],3)+'</td></tr>';
+  });
+  h+='</tbody>';
+  document.getElementById('detailTable').innerHTML=h;
+}
+function renderQuality(){
+  const m=P.meta, q=P.quality;
+  document.getElementById('qualityNote').innerHTML=
+    '<b>信号规则</b>：T 日 dB&gt;0 且 dS&lt;0 → 做多(+1)；dB&lt;0 且 dS&gt;0 → 做空(−1)；其余 0。报告执行为 T+1 开盘全仓建仓、T+2 收盘平仓。<br>'+
+    '<b>已做处理</b>：Wind 空单量带负号，统一取绝对值；空单量 NaN（会员当日未进空单前20榜）按 0 处理，此时 Wind 净持仓恰等于多单量；跨年按连续交易日 diff；相邻交易日任一端缺失则该日 dB/dS 留空，不跨越。<br>'+
+    '<b>国泰海通（合成）</b>：国泰君安 + 海通期货逐日相加；合成序列缺失交易日 '+fmt(q.synthetic_missing.length)+
+    ' 天，其中 2026 年 '+fmt(q.synthetic_missing_2026)+' 天（源表缺失）。另：华泰期货 2021、2022 全年无源表（该年留空），海通期货 2025-11-27、2025-12-05 与平安期货 2024-04-29 为源表本身缺行。<br>'+
+    '<b>净值回测已复现</b>：用 TS.CFE 开/收盘价按报告开平仓规则跑通，见 TS_蜘蛛网_策略回测.html；<b>动态调参尚未复现</b>（缺 n=1~20 逐档合计）。<br>'+
+    '<b>恒等式</b>：净持仓 = 多单量 − 空单量，所有源文件校验'+(m.quality_ok?'全部通过（偏差 0）':'存在偏差，见下表')+'；合计类前5 ≤ 前10 ≤ 前20 单调性成立（2026-11-23 占位行除外）。';
+  document.getElementById('qCount').textContent=q.files.length;
+  const keys=['年份','会员','有效行数','起始日','结束日','空单NaN填0行数','持仓全空占位行数','空单量为正异常行数','净持仓恒等式最大偏差'];
+  let h='<thead><tr>'+keys.map(k=>'<th>'+k+'</th>').join('')+'</tr></thead><tbody>';
+  q.files.forEach(f=>{h+='<tr>'+keys.map(k=>'<td>'+esc(f[k]===null?'—':f[k])+'</td>').join('')+'</tr>';});
+  h+='</tbody>';
+  document.getElementById('qualityTable').innerHTML=h;
+}
+function renderCsvBtn(){
+  document.getElementById('csvBtn').onclick=()=>{
+    const s=S[cur], cols=['long','short','net','dB','dS','dNet','signal'];
+    let out='日期,'+cols.map(c=>LB[c]).join(',')+',结算价\n';
+    IDX.forEach(i=>out+=D[i]+','+cols.map(c=>s[c][i]===null?'':s[c][i]).join(',')+','+(P.settle[i]===null?'':P.settle[i])+'\n');
+    const blob=new Blob(['\ufeff'+out],{type:'text/csv;charset=utf-8'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='TS_'+cur.replace(/[（）]/g,'')+'_'+range+'.csv'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  };
+}
+function renderAll(){
+  computeIdx();
+  renderRanges(); renderSeries(); renderKpi(); renderLegends();
+  document.getElementById('mainTitle').textContent=cur+' · 持仓量';
+  drawMainChart();
+  drawChart('chartDiff','tipDiff',['dB','dS'],300,{forceZero:true,signals:true});
+  renderStats(); renderDetail(); renderNav();
+}
+renderBadges(); renderQuality(); renderCsvBtn(); renderAll();
+})();
+</script>
+</body>
+</html>

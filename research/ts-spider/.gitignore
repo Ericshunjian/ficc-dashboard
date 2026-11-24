@@ -1,0 +1,22 @@
+# Excel / Office 临时锁文件
+~$*
+~*.xlsx
+*.tmp
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# 旧版产物（2022 起、已被 2021-2026 版取代；保留会误导）
+TS_持仓整理_2022-2026.xlsx
+
+# 空目录 / 系统文件
+TS行情/
+Thumbs.db
+.DS_Store
+
+# 说明：券商研报 PDF 有版权，若本仓库设为公开，请把下面一行取消注释
+# 20250530-*.pdf
