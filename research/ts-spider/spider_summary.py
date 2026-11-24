@@ -18,8 +18,8 @@ HTML = BASE / 'index.html'
 SUMMARY_ALIAS = BASE / 'TS_研究汇总.html'
 SIGNALS = BASE / 'TS_每日信号.json'
 FORWARD = BASE / 'TS_前瞻记录.json'
-COLORS = ('#2e65c2', '#0d836a')
-SEATS = tuple(dict.fromkeys(strategy.seat for strategy in archive.STRATEGIES))
+COLORS = ('#2e65c2', '#0d836a', '#7951b5', '#ac542f', '#8a6408')
+SEATS = tuple(dict.fromkeys(strategy.seat for strategy in archive.FEATURED))
 
 
 def append_sessions(dates, opens, closes, positions, snapshots):
@@ -77,7 +77,7 @@ def build_dashboard(dates, closes, positions, snapshots, *, publish):
     current = sessions.setdefault(asof, {}) if publish_today else sessions.get(asof, {})
 
     items, nav = [], {}
-    for strategy, color in zip(archive.FEATURED, COLORS):
+    for strategy, color in zip(archive.FEATURED, COLORS, strict=True):
         entries, ranks = archive.signal_inputs(strategy, closes, positions)
         plans = archive.contract_plans(dates[:history_end], contracts, quotes, strategy.hold)
         pnl, count, exposure = archive.simulate(
@@ -112,6 +112,8 @@ def build_dashboard(dates, closes, positions, snapshots, *, publish):
         report = current.get(strategy.key, {**today, **live})
         items.append({
             'key': strategy.key, 'name': strategy.name, 'color': color, 'cost': 0,
+            'seat': strategy.seat, 'require_down': strategy.require_down,
+            'trend_window': strategy.trend_window,
             'hold': strategy.hold, 'entry_rank': strategy.entry_rank, 'exit_rank': strategy.exit_rank,
             'entry_on_close_day': not strategy.cooldown,
             'total': history['total_pct'] / 100, 'sharpe': history['sharpe'],

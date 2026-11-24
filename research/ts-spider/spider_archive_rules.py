@@ -33,6 +33,7 @@ class Strategy:
     cooldown: int
     exit_rank: float | None = None
     trend_window: int = 0
+    require_down: bool = True
 
     def control(self):
         return replace(self, key=f'{self.key}-control', exit_rank=None, trend_window=0)
@@ -43,7 +44,12 @@ STRATEGIES = (
     Strategy('PA-DIP5-EXIT20-v1', '平安回踩五日·转弱退出', '平安期货', 5, .75, 0, exit_rank=.20),
     Strategy('TOP20-TREND60-DIP5-v1', '前二十顺势回踩五日', '前20大合计', 5, .80, 0, trend_window=60),
 )
-FEATURED = STRATEGIES[:2]
+FEATURED = (
+    *STRATEGIES[:2],
+    Strategy('PA-DIP3-FIXED-v1', '平安逢跌纯多·固定三日', '平安期货', 3, .80, 1),
+    Strategy('PA-GRID75-H10-v1', '网格·点数王', '平安期货', 10, .75, 0, require_down=False),
+    STRATEGIES[2],
+)
 
 
 def contract_ranks(dates, snapshots):
@@ -83,7 +89,9 @@ def signal_inputs(strategy, close, positions):
     values = np.asarray(positions[strategy.seat], dtype=float)
     daily_net = np.diff(values[:, 0] - values[:, 1], prepend=np.nan)
     ranks = signal.rolling_pct(daily_net, win=60, min_obs=30)
-    entries = (np.diff(close, prepend=np.nan) < 0) & (ranks >= strategy.entry_rank)
+    entries = ranks >= strategy.entry_rank
+    if strategy.require_down:
+        entries &= np.diff(close, prepend=np.nan) < 0
     if strategy.trend_window:
         yesterday = pd.Series(close).shift(1)
         average = yesterday.rolling(strategy.trend_window, min_periods=strategy.trend_window).mean()
@@ -140,7 +148,7 @@ def forward_signal(strategy, day, contracts, entry, rank, price_change):
             # Allow for a holiday closure until the next yearly calendar is available.
             cutoff += np.timedelta64(9, 'D')
         contract = choose_contract(contracts, str(cutoff))
-    valid = np.isfinite(rank) and np.isfinite(price_change)
+    valid = np.isfinite(rank) and (not strategy.require_down or np.isfinite(price_change))
     return {
         'raw': '多' if entry else '无触发' if valid else '数据缺失',
         'buy_contract': contract, 'weak': bool(strategy.exit_rank is not None and rank < strategy.exit_rank),

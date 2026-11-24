@@ -48,7 +48,7 @@ footer{padding:2px 1px 8px}.empty{padding:10px 0;color:var(--muted)}
 </section>
 <section class="panel" id="rules" aria-labelledby="rules-title">
 <div class="heading"><h2 id="rules-title">开平仓规则</h2></div>
-<p class="rule-note">收盘后看两项。TS 连续收盘价是否低于上一交易日，以及平安期货净多头日变动在最近 60 个交易日中的分位。净多头是多头持仓减空头持仓，日变动是当日与上一交易日的差额。分位含当日，至少需要 30 个有效观测。</p>
+<p class="rule-note">净多头是多头持仓减空头持仓，日变动是当日与上一交易日的差额。分位用最近 60 个交易日计算，含当日，至少需要 30 个有效观测。TS 当日涨跌用连续收盘价计算。</p>
 <div class="rule-grid" id="rule-grid"></div>
 <p class="note">T 为信号日，T+n 按交易日计。空仓时按 T 日成交量从高到低选合约，要求合约晚于计划平仓日到期。开盘无报价则跳过该笔入场。每条策略一次最多持有一笔。</p>
 </section>
@@ -57,13 +57,13 @@ footer{padding:2px 1px 8px}.empty{padding:10px 0;color:var(--muted)}
 <option value="all">全样本</option><option value="since2024">2024 年起</option><option value="year">今年以来</option><option value="recent">近 120 个交易日</option></select></label></div>
 <svg id="chart" viewBox="0 0 900 255" role="img" aria-label="所选策略与持有到期基准的累计净值曲线"></svg>
 <div class="legend" id="legend" role="group" aria-label="显示或隐藏净值曲线"></div>
-<p class="note">点击图例隐藏或恢复曲线。两条策略与基准统一按固定名义本金、零手续费与滑点、逐日盯市。切换区间后从 1 重新计算。</p>
+<p class="note">点击图例隐藏或恢复曲线。策略与基准统一按固定名义本金、零手续费与滑点、逐日盯市。切换区间后从 1 重新计算。</p>
 <p class="note">持有到期基准买入最近季月 TS，到期按交易所结算价计值，下一交易日开盘换月。</p>
 </section>
 <section class="panel" aria-labelledby="stats-title">
 <div class="heading"><h2 id="stats-title">归案回测</h2><span class="muted" id="span"></span></div>
 <div class="scroll"><table><thead><tr><th>策略</th><th>累计收益</th><th>夏普</th><th>最大回撤</th><th>2024 年起收益</th><th>2024 年起夏普</th></tr></thead><tbody id="metrics"></tbody></table></div>
-<p class="note">三日版的全样本夏普更高，五日版的累计收益更高。两条策略使用同一个平安席位信号。2024 年起的数据参与了筛选。</p>
+<p class="note">2024 年起的数据参与了筛选。固定三日原版曾用连续合约、平仓日一次性入账，夏普为 1.426。本页按实际合约逐日盯市。网格·点数王来自历史挑参。</p>
 </section>
 <footer><div class="links"><a href="../../">FICC 看板</a><a href="TS_每日信号.json">信号 JSON</a><a href="TS_前瞻记录.json">前瞻记录</a></div></footer>
 </main>
@@ -86,10 +86,17 @@ $('signals').innerHTML=d.strategies.map(s=>{
   '<td data-label="仓位">'+esc(s.position)+(s.entry?' <small>'+esc(s.entry)+' 开仓</small>':'')+'</td>'+
   '<td data-label="下一步">'+esc(s.action)+(s.contract?' <strong>'+esc(s.contract)+'</strong>':'')+'</td></tr>';
 }).join('');
-$('rule-grid').innerHTML=d.strategies.map(s=>'<article class="rule-card" id="'+esc(s.key)+'"><h3>'+esc(s.name)+'</h3><dl>'+
-  '<dt>开仓</dt><dd>TS 当日收跌，净多头日变动分位至少 '+(100*s.entry_rank)+'%，T+1 开盘做多。</dd>'+
-  '<dt>平仓</dt><dd>默认 T+'+(s.hold+1)+' 收盘。持仓期间若收盘后分位低于 '+(100*s.exit_rank)+'%，改为下个交易日开盘平仓。开盘缺价则延续持仓，最迟在计划日收盘平仓。</dd>'+
-  '<dt>再开仓</dt><dd>'+(s.entry_on_close_day?'平仓日收盘后可以发出次日信号。':'平仓日跳过新信号，从下一交易日收盘开始重新判断。')+'</dd></dl></article>').join('');
+$('rule-grid').innerHTML=d.strategies.map(s=>{
+  const entry=esc(s.seat)+'净多头日变动分位至少 '+(100*s.entry_rank)+'%，'+
+    (s.require_down?'且 TS 当日收跌。':'TS 涨跌不限。')+
+    (s.trend_window?'另要求昨日收盘高于截至昨日的 '+s.trend_window+' 日收盘均线。':'')+'T+1 开盘做多。';
+  const scheduled='T+'+(s.hold+1)+' 收盘平仓。';
+  const exit=s.exit_rank===null?'固定 '+scheduled:'默认 '+scheduled+
+    '持仓期间若收盘后分位低于 '+(100*s.exit_rank)+'%，改为下个交易日开盘平仓。开盘缺价时继续持仓至下一次有效退出，最迟在计划日收盘平仓。';
+  return '<article class="rule-card" id="'+esc(s.key)+'"><h3>'+esc(s.name)+'</h3><dl>'+
+    '<dt>开仓</dt><dd>'+entry+'</dd><dt>平仓</dt><dd>'+exit+'</dd>'+
+    '<dt>再开仓</dt><dd>'+(s.entry_on_close_day?'平仓日收盘后可以发出次日信号。':'平仓日跳过新信号，从下一交易日收盘开始重新判断。')+'</dd></dl></article>';
+}).join('');
 $('metrics').innerHTML=d.strategies.map(s=>'<tr><td class="strategy">'+esc(s.name)+'</td>'+
   [pct(s.total),s.sharpe.toFixed(2),pct(s.drawdown),pct(s.validation),s.validation_sharpe.toFixed(2)].map(x=>'<td class="number">'+x+'</td>').join('')+'</tr>').join('');
 const series=[...d.strategies, {...d.benchmark, isBenchmark:true}];
