@@ -4,6 +4,7 @@
 数据源（均为本目录已有产物，不重跑回测）：
   TS_席位对比.json / TS_平安纯多头.json / TS_平安净多策略.json
   TS_策略回测.json / TS_持仓整理.json / TS_规则杠杆归因.json
+  TS_网格优选_明细.json（由 spider_grid_detail.py 补算两个最优格子的净值）
 输出：TS_研究汇总.html（数据内嵌、离线可开）
 """
 import json
@@ -39,6 +40,7 @@ def main():
     bt = J('TS_策略回测.json')
     hold = J('TS_持仓整理.json')
     diag = J('TS_规则杠杆归因.json')
+    gd = J('TS_网格优选_明细.json')
 
     dates = seat['dates']
     N = len(dates)
@@ -68,6 +70,11 @@ def main():
         '全程在场 · 不做任何择时', bt['benchmark']['metrics'])
     add('SPIDER', '蜘蛛网原策略（前20）', seat['benchmark']['蜘蛛网原策略_前20'], '#b0b8c4', 1.3,
         '报告口径 · dB/dS 规则', bt['periods']['all']['series']['前20大合计'])
+    gv = gd['variants']
+    add('GRID_SHARP', '网格·夏普王（事后挑参）', gv['GRID_SHARP']['nav'], '#b7791f', 1.7,
+        '120 格按夏普挑出 · 不能上仓', gv['GRID_SHARP']['segments']['all'])
+    add('GRID_PTS', '网格·点数王（事后挑参）', gv['GRID_PTS']['nav'], '#8f5b34', 1.7,
+        '120 格按点数挑出 · 不能上仓', gv['GRID_PTS']['segments']['all'])
 
     # ---------- ② 指标对照表 ----------
     key_of = {
@@ -104,9 +111,23 @@ def main():
             '扣1tick': o['扣1tick点数'], '扣2tick': o['扣2tick点数'],
             '备注': o['备注'],
         })
+    for key, name in [('GRID_SHARP', '网格·夏普王'), ('GRID_PTS', '网格·点数王')]:
+        v = gd['variants'][key]
+        a = v['segments']['all']
+        rows.append({
+            '口径': name, '标记': '事后挑参 · 不可上仓',
+            '累计点数': a['累计点数'], '夏普比率': a['夏普比率'],
+            '交易笔数': a['交易笔数'], '胜率': a['胜率'],
+            '逐笔t值': a['逐笔t值'], '每笔平均点数': a['每笔平均点数'],
+            '最大回撤%': rnd(a['最大回撤'] * 100, 3),
+            '探索段': v['segments']['explore']['累计点数'],
+            '验证段': v['segments']['verify']['累计点数'],
+            '扣1tick': v['costs'][2]['累计点数'], '扣2tick': v['costs'][3]['累计点数'],
+            '备注': v['rule'] + '；120 格里按指标挑出，带前视',
+        })
     # 按两个主口径优先排序
-    order = ['平安 · 只做多', '中信 · 多空双侧', '平安 · 多空双侧',
-             '中信 · 只做多', '前20 · 只做多', '前20 · 多空双侧']
+    order = ['平安 · 只做多', '中信 · 多空双侧', '网格·夏普王', '网格·点数王',
+             '平安 · 多空双侧', '中信 · 只做多', '前20 · 只做多', '前20 · 多空双侧']
     rows.sort(key=lambda x: order.index(x['口径']) if x['口径'] in order else 99)
     rows.append({
         '口径': '买入持有 TS', '标记': '基准', '累计点数': bt['benchmark']['metrics']['累计点数'],
@@ -132,6 +153,9 @@ def main():
                     ('PA_FULL', '平安期货', 'full'), ('ZX_LONG', '中信期货', 'long')]:
         yearly[k] = [{'年份': str(y['年份']), '点数': num(y['累计点数']),
                       '笔数': int(y['交易笔数'])} for y in S[s][m]['yearly']]
+    for k in ('GRID_SHARP', 'GRID_PTS'):
+        yearly[k] = [{'年份': str(y['年份']), '点数': num(y['累计点数']),
+                      '笔数': int(y['交易笔数'])} for y in gd['variants'][k]['yearly']]
 
     costs = {'labels': ['0', '1 tick', '2 tick', '4 tick'],
              'series': []}
@@ -140,6 +164,12 @@ def main():
         s, m = ('平安期货', 'long') if key == 'PA_LONG' else ('中信期货', 'full')
         vals = [num(c['累计点数']) for c in S[s][m]['costs']]
         costs['series'].append({'name': name, 'values': vals, 'color': color})
+    for name, key, color in [('网格·夏普王', 'GRID_SHARP', '#b7791f'),
+                             ('网格·点数王', 'GRID_PTS', '#8f5b34')]:
+        cs = gd['variants'][key]['costs']
+        costs['series'].append({'name': name,
+                                'values': [num(cs[i]['累计点数']) for i in (0, 2, 3, 4)],
+                                'color': color})
 
     # ---------- ④ A/B/C 归因与多空腿 ----------
     abc = []
@@ -242,6 +272,17 @@ def main():
                 '★ 「9 个里挑最大」零假设：随机最大值均值 1.572、p95 2.749，真实 2.525 只排 92.7 分位、<b>p=0.0733 不显著</b>；扣 4 tick 后 2.525 → 0.005 点（归零）。',
             ],
         },
+        {
+            'no': '⑥', 'title': '参数网格里的两个「最优格子」', 'href': 'TS_平安纯多头_策略.html',
+            'tag': '事后挑参 · 只作刻度',
+            'points': [
+                '规则与前面完全同源，只改两个旋钮：<b>夏普王</b> = dNet 分位≥0.75 <b>且当日收跌</b>、持有 3 日（T+1 开盘 → T+4 收盘）；<b>点数王</b> = 分位≥0.75 <b>不看涨跌</b>、持有 10 日（T+1 开盘 → T+11 收盘）。都是单仓位、不做空。',
+                '全样本 <b>3.863 点 / 夏普 1.617 / 128 笔</b>（验证段 1.756、6 年全正、扣 2 tick 还有 2.583 点）；点数王 <b>4.528 点 / 夏普 1.346 / 92 笔</b>（验证段 1.146、扣 2 tick 3.608 点，但 <b>2025 年亏 0.591 点</b>）。两条已叠加在顶部净值图里，勾选可见。',
+                '<b>为什么不能当策略</b>：这两格是从 2 个信号源 × 2 种价格条件 × 5 个阈值 × 6 个持有期 = <b>120 个组合</b>里按全样本点数/夏普挑出来的最大值，天然带前视与多重比较。',
+                '证据：探索段与验证段点数相关只有 <b>0.30</b>；探索段挑出的最优持有期是 H=10，到验证段只剩 0.683 点；按「每年用之前数据选参」的 walk-forward 跑下来 4 年合计 <b>1.753 点 / 夏普 0.876</b>，2025 年 −0.546 点。',
+                '所以图中这两条更高的线只说明「规则面还有空间」这个刻度，<b>不能推断真能拿到 4.5 点</b>。要真用，必须事前锁参数再走一次干净的样本外。',
+            ],
+        },
     ]
 
     # ---------- ⑦ 其它数字 ----------
@@ -261,6 +302,10 @@ def main():
         'short_t': seat['short_info']['中信期货']['逐笔t值'],
         'short_welch': seat['short_info']['中信期货']['Welch_t_vs_收涨日'],
         'skipped': pure['decomposition']['skipped'],
+        'grid_wf_pts': pure['walk_forward']['all']['累计点数'],
+        'grid_wf_sharpe': pure['walk_forward']['all']['夏普比率'],
+        'grid_corr': pure['grid']['robust']['两段相关'],
+        'grid_n': 120,
         'quad': quad,
         'generated': M['generated'],
         'start': M['start'], 'end': M['end'], 'n_days': N,
