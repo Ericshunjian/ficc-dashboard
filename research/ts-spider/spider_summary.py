@@ -92,14 +92,15 @@ def signal_inputs(closes, positions, rule):
     return raw, np.isfinite(q) & np.isfinite(change), {'dnet': net[-1], 'pct': q[-1], 'price_change': change[-1]}
 
 
-def run_rule(dates, opens, closes, signals, rule, start, end, *, hold=3, live=False):
+def run_rule(dates, opens, closes, signals, rule, start, end, *, hold=3, live=False, cost=None):
+    c = COST if cost is None else cost
     if rule == 'static':
         mapping = {day: int(signal) for day, signal in zip(dates, signals) if signal}
-        result = bt.run_state(dates, opens, closes, mapping, start, end, COST, live=live)
+        result = bt.run_state(dates, opens, closes, mapping, start, end, c, live=live)
         returns, trades = result[:2]
         state = dict(result[2], trades=trades) if live else None
         return np.asarray(returns), bt.metrics(returns, trades), state
-    returns, trades = sb.run(signals, opens, closes, hold, COST, start, end, mark_open=live)
+    returns, trades = sb.run(signals, opens, closes, hold, c, start, end, mark_open=live)
     state = None
     if live:
         state = {'position': 0, 'entry': None, 'exit': None, 'next_open': 0,
@@ -123,14 +124,16 @@ def rank_candidates(dates, opens, closes, positions):
             raw, valid, drivers = signal_inputs(closes, positions[seat], rule)
             if valid[max(0, cutoff - 59):cutoff + 1].mean() < 0.9:
                 continue
-            holds = (1, 3, 5, 10) if (seat, rule) == ('平安期货', 'long') else (3,)
+            pingan_long = (seat, rule) == ('平安期货', 'long')
+            holds = (3,)  # 用户 2026-11-24 指定：平安纯多维持 H=3
+            c = 0.0 if pingan_long else COST  # 用户指定：平安纯多不扣成本
             for hold in holds:
-                _, full, _ = run_rule(dates, opens, closes, raw, rule, 0, cutoff, hold=hold)
-                _, recent, _ = run_rule(dates, opens, closes, raw, rule, split, cutoff, hold=hold)
+                _, full, _ = run_rule(dates, opens, closes, raw, rule, 0, cutoff, hold=hold, cost=c)
+                _, recent, _ = run_rule(dates, opens, closes, raw, rule, split, cutoff, hold=hold, cost=c)
                 if full['累计收益率'] <= 0 or recent['累计收益率'] <= 0 or full['交易笔数'] < 40:
                     continue
                 candidates.append({'seat': seat, 'rule': rule, 'hold': hold, 'raw': raw, 'valid': valid,
-                                   'drivers': drivers, 'full': full, 'recent': recent, 'rank': 0})
+                                   'drivers': drivers, 'full': full, 'recent': recent, 'rank': 0, 'cost': c})
     # 网格两条由用户指定保留，不参与排名，直接占两席；事后挑参，只作刻度。
     forced = []
     for rule, hold in GRID:
@@ -138,7 +141,8 @@ def rank_candidates(dates, opens, closes, positions):
         _, full, _ = run_rule(dates, opens, closes, raw, rule, 0, cutoff, hold=hold)
         _, recent, _ = run_rule(dates, opens, closes, raw, rule, split, cutoff, hold=hold)
         forced.append({'seat': '平安期货', 'rule': rule, 'hold': hold, 'raw': raw, 'valid': valid,
-                       'drivers': drivers, 'full': full, 'recent': recent, 'rank': 0, 'forced': True})
+                       'drivers': drivers, 'full': full, 'recent': recent, 'rank': 0, 'forced': True,
+                       'cost': COST})
     for metric in ('累计收益率', '夏普比率'):
         for rank, candidate in enumerate(sorted(candidates, key=lambda c: -c['full'][metric])):
             candidate['rank'] += rank
@@ -189,7 +193,7 @@ def update_forward(dates, opens, closes, selected, payload, *, record_today):
             directions = {'多': 1, '空': -1}
             raw = np.array([directions.get(daily.get(day, {}).get(name), 0) for day in dates])
             _, _, result = run_rule(dates, opens, closes, raw, rule, first, len(dates) - 1,
-                                    hold=candidate['hold'], live=True)
+                                    hold=candidate['hold'], live=True, cost=candidate['cost'])
             for trade in result['trades']:
                 if rule == 'static':
                     signal, entry, exit_day = (trade[key] for key in ('信号日', '开仓日', '平仓日'))
@@ -243,7 +247,7 @@ def main():
     asof = dates[-1]
     payload = {
         'asof': asof, 'selection_end': SELECTION_END, 'start': dates[0],
-        'selection_note': '用户 2026-11-24 指定：剔除华泰系；保留网格点数王/夏普王（120格事后挑参，仅作刻度，不参与排名）',
+        'selection_note': '用户 2026-11-24 指定：剔除华泰系；保留网格点数王/夏普王（120格事后挑参，仅作刻度）；平安纯多零成本 + H=3，其余策略成本 0.005 点',
         'source': '中金所盘后数据' if asof > anchor.isoformat() else 'Wind 历史快照',
         'close_change': round(float(closes[-1] - closes[-2]), 4),
         'strategies': [],
@@ -253,11 +257,13 @@ def main():
     for candidate, color in zip(selected, COLORS):
         seat, rule, raw, valid = (candidate[k] for k in ('seat', 'rule', 'raw', 'valid'))
         hold = candidate['hold']
-        r, m, state = run_rule(dates, opens, closes, raw, rule, 0, len(dates) - 1, hold=hold, live=True)
+        r, m, state = run_rule(dates, opens, closes, raw, rule, 0, len(dates) - 1, hold=hold, live=True,
+                               cost=candidate['cost'])
         label, description = RULES[rule]
         name = label if candidate.get('forced') else f'{seat} · {label}' + (f' H={hold}' if rule != 'static' else '')
         payload['strategies'].append({
             'name': name, 'rule': description.format(exit=hold + 1), 'color': color,
+            'cost': candidate['cost'],
             'total': m['累计收益率'], 'sharpe': m['夏普比率'], 'drawdown': m['最大回撤'],
             'trades': m['交易笔数'], 'validation': candidate['recent']['累计收益率'],
             **display_state(raw[-1], valid[-1], state, dates),
