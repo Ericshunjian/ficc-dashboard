@@ -51,6 +51,7 @@ footer{padding:2px 1px 8px}.empty{padding:10px 0;color:var(--muted)}
 <p class="rule-note">净多头是多头持仓减空头持仓，日变动是当日与上一交易日的差额。分位用最近 60 个交易日计算，含当日，至少需要 30 个有效观测。TS 当日涨跌用连续收盘价计算。</p>
 <div class="rule-grid" id="rule-grid"></div>
 <p class="note">T 为信号日，T+n 按交易日计。空仓时按 T 日成交量从高到低选合约，要求合约晚于计划平仓日到期。开盘无报价则跳过该笔入场。每条策略一次最多持有一笔。</p>
+<p class="note">前五、前二十分别加总多头排名和空头排名的前 5 名或前 20 名持仓，再计算净多头。</p>
 </section>
 <section class="panel" aria-labelledby="nav-title">
 <div class="heading"><h2 id="nav-title">净值对比</h2><label class="muted">区间 <select id="range">
@@ -63,7 +64,7 @@ footer{padding:2px 1px 8px}.empty{padding:10px 0;color:var(--muted)}
 <section class="panel" aria-labelledby="stats-title">
 <div class="heading"><h2 id="stats-title">归案回测</h2><span class="muted" id="span"></span></div>
 <div class="scroll"><table><thead><tr><th>策略</th><th>累计收益</th><th>夏普</th><th>最大回撤</th><th>2024 年起收益</th><th>2024 年起夏普</th></tr></thead><tbody id="metrics"></tbody></table></div>
-<p class="note">2024 年起的数据参与了筛选。固定三日原版曾用连续合约、平仓日一次性入账，夏普为 1.426。本页按实际合约逐日盯市。网格·点数王来自历史挑参。</p>
+<p class="note">2024 年起的数据参与了筛选。前五版兼顾 2021–2023 和 2024 年起两个历史阶段，后段收益主要来自 2024 年。网格·点数王来自历史挑参。</p>
 </section>
 <footer><div class="links"><a href="../../">FICC 看板</a><a href="TS_每日信号.json">信号 JSON</a><a href="TS_前瞻记录.json">前瞻记录</a></div></footer>
 </main>

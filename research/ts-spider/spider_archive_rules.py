@@ -46,8 +46,8 @@ STRATEGIES = (
 )
 FEATURED = (
     *STRATEGIES[:2],
-    Strategy('PA-DIP3-FIXED-v1', '平安逢跌纯多·固定三日', '平安期货', 3, .80, 1),
     Strategy('PA-GRID75-H10-v1', '网格·点数王', '平安期货', 10, .75, 0, require_down=False),
+    Strategy('TOP5-TREND60-DIP5-Q70-v1', '前五顺势回踩五日', '前5大合计', 5, .70, 0, trend_window=60),
     STRATEGIES[2],
 )
 

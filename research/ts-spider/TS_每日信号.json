@@ -60,36 +60,9 @@
       }
     },
     {
-      "key": "PA-DIP3-FIXED-v1",
-      "name": "平安逢跌纯多·固定三日",
-      "color": "#7951b5",
-      "cost": 0,
-      "seat": "平安期货",
-      "require_down": true,
-      "trend_window": 0,
-      "hold": 3,
-      "entry_rank": 0.8,
-      "exit_rank": null,
-      "entry_on_close_day": false,
-      "total": 0.029609999999999984,
-      "sharpe": 1.3383628396341956,
-      "drawdown": 0.0042506919731121195,
-      "trades": 113,
-      "validation": 0.016439999999999913,
-      "validation_sharpe": 1.6134309443787953,
-      "raw": "无触发",
-      "position": "空仓",
-      "contract": null,
-      "action": "下一交易日起观察",
-      "entry": null,
-      "drivers": {
-        "pct": 0.5
-      }
-    },
-    {
       "key": "PA-GRID75-H10-v1",
       "name": "网格·点数王",
-      "color": "#ac542f",
+      "color": "#7951b5",
       "cost": 0,
       "seat": "平安期货",
       "require_down": false,
@@ -111,6 +84,33 @@
       "entry": null,
       "drivers": {
         "pct": 0.5
+      }
+    },
+    {
+      "key": "TOP5-TREND60-DIP5-Q70-v1",
+      "name": "前五顺势回踩五日",
+      "color": "#ac542f",
+      "cost": 0,
+      "seat": "前5大合计",
+      "require_down": true,
+      "trend_window": 60,
+      "hold": 5,
+      "entry_rank": 0.7,
+      "exit_rank": null,
+      "entry_on_close_day": true,
+      "total": 0.024180000000000205,
+      "sharpe": 1.0075456410205412,
+      "drawdown": 0.0042453748782862455,
+      "trades": 79,
+      "validation": 0.009900000000000091,
+      "validation_sharpe": 0.989068969858893,
+      "raw": "无触发",
+      "position": "空仓",
+      "contract": null,
+      "action": "下一交易日起观察",
+      "entry": null,
+      "drivers": {
+        "pct": 0.216667
       }
     },
     {

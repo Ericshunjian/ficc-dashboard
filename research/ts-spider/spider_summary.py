@@ -38,17 +38,17 @@ def append_sessions(dates, opens, closes, positions, snapshots):
         opens.append(round(closes[-1] + op - c0, 6))
         closes.append(round(closes[-1] + cl - c0, 6))
         dates.append(day)
-        for seat in SEATS:
+        for seat in positions:
             positions[seat].append(session['positions'].get(seat, (None, None)))
         previous = session
     return dates, np.array(opens), np.array(closes), positions
 
 
-def load_data(snapshots, target=None):
+def load_data(snapshots, target=None, *, seats=SEATS):
     holdings, dates, opens, closes, _, _ = bt.load_data()
     indices = {day: i for i, day in enumerate(holdings['dates'])}
     positions = {}
-    for seat in SEATS:
+    for seat in seats:
         series = holdings['series'][seat]
         pairs = [(series['long'][indices[day]], series['short'][indices[day]]) for day in dates]
         # Fill an absent Wind snapshot only when the exchange published a complete row.
