@@ -167,6 +167,31 @@ def run(sig, O, C, H, cost=0.0, a=0, b=None, tag='', *, block_short=False,
     return ret, trades
 
 
+def run_legacy(sig, O, C, H, cost=0.0, a=0, b=None, tag=''):
+    """旧版口径：整笔盈亏一次性记在平仓日，平仓日不发次日信号（free=x+1）。"""
+    if b is None:
+        b = len(sig) - 1
+    ret = np.zeros(len(sig))
+    trades = []
+    free = a
+    for t in range(a, b + 1):
+        if sig[t] == 0 or t < free:
+            continue
+        e, x = t + 1, t + 1 + H
+        if x > b or not np.isfinite(O[e]) or not np.isfinite(C[x]):
+            continue
+        pts = float(sig[t] * (C[x] - O[e]) - cost)
+        ret[x] += pts / PRICE_REF
+        trades.append({
+            'signal_idx': t, 'signal_date': '', 'entry_idx': e, 'exit_idx': x,
+            'dir': int(sig[t]), 'entry_px': round(float(O[e]), 4),
+            'exit_px': round(float(C[x]), 4), 'pnl_pts': round(pts, 5),
+            'ret': round(pts / PRICE_REF, 8), 'tag': tag,
+        })
+        free = x + 1
+    return ret, trades
+
+
 def jitter_candidates(source, pool, window):
     """One eligibility window per signal, with its original date always eligible."""
     return [pool[np.abs(pool - i) <= window] for i in source]
