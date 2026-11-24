@@ -46,7 +46,7 @@ OUTPUTS = [
     'TS_平安净多策略.json', 'TS_平安净多策略_明细.xlsx', 'TS_平安净多_策略.html',
     'TS_平安纯多头.json', 'TS_平安纯多头_明细.xlsx', 'TS_平安纯多头_策略.html',
     'TS_席位对比.json', 'TS_席位对比_明细.xlsx', 'TS_席位对比_净值.html',
-    'TS_网格优选_明细.json', 'TS_叠加仓位.json', 'TS_持有期专项.json', 'TS_研究汇总.html', 'TS_每日信号.json', 'TS_每日信号.html', 'TS_前瞻记录.json',
+    'TS_网格优选_明细.json', 'TS_叠加仓位.json', 'TS_持有期专项.json', 'index.html', 'TS_研究汇总.html', 'TS_每日信号.json', 'TS_每日信号.html', 'TS_前瞻记录.json',
 ]
 
 
@@ -98,8 +98,9 @@ def verify():
         holdings = json.load(f)
     with open(os.path.join(BASE, 'TS_每日信号.json'), encoding='utf-8') as f:
         daily = json.load(f)
-    with open(os.path.join(BASE, 'TS_研究汇总.html'), encoding='utf-8') as f:
-        html = f.read()
+    html = (Path(BASE) / 'index.html').read_text(encoding='utf-8')
+    if html != (Path(BASE) / 'TS_研究汇总.html').read_text(encoding='utf-8'):
+        return ['网站入口与汇总页不同步'], False
     m = re.search(r'<script type="application/json" id="data">(.*?)</script>', html, re.S)
     if not m:
         return ['汇总页缺少数据'], False

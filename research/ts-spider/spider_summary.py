@@ -13,7 +13,8 @@ import spider_pingan_signal as sb
 
 BASE = Path(__file__).resolve().parent
 TEMPLATE = BASE / 'spider_summary_template.html'
-HTML = BASE / 'TS_研究汇总.html'
+HTML = BASE / 'index.html'
+SUMMARY_ALIAS = BASE / 'TS_研究汇总.html'
 SIGNALS = BASE / 'TS_每日信号.json'
 FORWARD = BASE / 'TS_前瞻记录.json'
 FORWARD_START = '2026-11-24'
@@ -274,6 +275,7 @@ def main():
     page = TEMPLATE.read_text(encoding='utf-8').replace('__PAYLOAD__', page_data)
     page = page.replace('__ASOF__', escape(asof))
     write_if_changed(HTML, page)
+    write_if_changed(SUMMARY_ALIAS, page)
     write_if_changed(BASE / 'TS_每日信号.html',
                      (BASE / 'daily_signal_template.html').read_text(encoding='utf-8'))
     digest(payload, args.date)
