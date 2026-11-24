@@ -21,6 +21,8 @@ import sys
 import time
 from pathlib import Path
 
+from spider_archive_rules import FEATURED
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 STATE = os.path.join(BASE, 'TS_更新状态.json')
 
@@ -99,14 +101,17 @@ def verify():
     with open(os.path.join(BASE, 'TS_每日信号.json'), encoding='utf-8') as f:
         daily = json.load(f)
     html = (Path(BASE) / 'index.html').read_text(encoding='utf-8')
-    if html != (Path(BASE) / 'TS_研究汇总.html').read_text(encoding='utf-8'):
-        return ['网站入口与汇总页不同步'], False
+    alias = (Path(BASE) / 'daily_signal_template.html').read_text(encoding='utf-8')
+    if any((Path(BASE) / name).read_text(encoding='utf-8') != alias
+           for name in ('TS_研究汇总.html', 'TS_每日信号.html')):
+        return ['旧入口与每日信号跳转模板不同步'], False
     m = re.search(r'<script type="application/json" id="data">(.*?)</script>', html, re.S)
     if not m:
         return ['汇总页缺少数据'], False
     payload = json.loads(m.group(1))
     ok = (payload['asof'] == daily['asof'] and daily['asof'] >= holdings['dates'][-1]
-          and len(daily['strategies']) == 5 and payload['strategies'] == daily['strategies'])
+          and [item.get('key') for item in daily['strategies']] == [rule.key for rule in FEATURED]
+          and payload['strategies'] == daily['strategies'])
     return [f"持仓快照 {holdings['dates'][-1]}，日更 {daily['asof']}，"
             f"{len(daily['strategies'])} 个策略"], ok
 

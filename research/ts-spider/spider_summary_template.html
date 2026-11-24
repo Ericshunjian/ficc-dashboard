@@ -15,10 +15,15 @@ h1,h2,p{margin:0}h1{font-size:clamp(27px,5vw,43px);letter-spacing:-.045em;line-h
 .panel{background:white;border:1px solid var(--line);border-radius:13px;padding:18px 20px;margin-bottom:16px;box-shadow:0 3px 12px #172c4910}
 .heading{display:flex;flex-wrap:wrap;gap:9px 14px;align-items:center;justify-content:space-between;margin-bottom:13px}
 .muted,small{color:var(--muted)}.status{border-radius:999px;padding:3px 8px;background:#eaf1fb;color:#17458b;display:inline-block;white-space:nowrap;font-weight:600}
-.status.long{background:#e2f3eb;color:#146245}.status.short{background:#fbece9;color:#943419}.status.missing{background:#fff0ce;color:#674900}
+.status.long{background:#e2f3eb;color:#146245}.status.missing{background:#fff0ce;color:#674900}
 table{width:100%;text-align:left;border-collapse:collapse}th,td{padding:11px 8px;border-bottom:1px solid #e8edf4;vertical-align:top}
 th{font-size:12px;color:var(--muted);font-weight:600}tbody tr:last-child td{border-bottom:0}.strategy{font-weight:700;display:block}.strategy small{display:block;font-weight:400;margin-top:3px;line-height:1.45}
-.scroll{overflow-x:auto}.scroll table{min-width:600px}
+.scroll{overflow-x:auto}.scroll table{min-width:590px}
+.rule-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
+.rule-card{padding:12px 14px;border:1px solid var(--line);border-radius:9px}
+.rule-card h3{font-size:15px;margin:0 0 9px}.rule-card dl{display:grid;grid-template-columns:auto 1fr;gap:7px 10px;margin:0;line-height:1.5}
+.rule-card dt{font-weight:700;color:var(--accent)}.rule-card dd{margin:0}
+.rule-note{color:var(--muted);line-height:1.6}
 select{font:inherit;border:1px solid var(--line);border-radius:7px;background:white;color:#14263c;padding:5px 7px}
 #chart{width:100%;display:block;min-height:195px}#chart text{fill:#50647d;font:12px system-ui,sans-serif}
 .legend{display:flex;flex-wrap:wrap;gap:6px;font-size:12px}
@@ -29,7 +34,7 @@ select{font:inherit;border:1px solid var(--line);border-radius:7px;background:wh
 .swatch.benchmark{border-top-style:dashed}.legend button[aria-pressed="false"] .swatch{opacity:.35}
 .note{color:var(--muted);line-height:1.65;font-size:12px;margin:9px 0 0}.links{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px}
 footer{padding:2px 1px 8px}.empty{padding:10px 0;color:var(--muted)}
-@media(max-width:620px){main{padding:20px 12px}header{display:block}.date{display:block;margin-top:9px}.panel{padding:13px 12px}
+@media(max-width:620px){main{padding:20px 12px}header{display:block}.date{display:block;margin-top:9px}.panel{padding:13px 12px}.rule-grid{grid-template-columns:1fr}
  .signals thead{display:none}.signals tbody{display:grid;gap:0}.signals tr{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:10px 0;border-bottom:1px solid #e8edf4}.signals tr:last-child{border:0}.signals td{border:0;padding:2px 0}.signals td:first-child{grid-column:1/-1}.signals td:last-child{grid-column:1/-1}.signals td[data-label]::before{content:attr(data-label) " ";font-size:11px;color:var(--muted)}}
 </style>
 </head>
@@ -38,23 +43,29 @@ footer{padding:2px 1px 8px}.empty{padding:10px 0;color:var(--muted)}
 <time class="date" datetime="__ASOF__">信号日期 __ASOF__</time></header>
 <section class="panel" aria-labelledby="signal-title">
 <div class="heading"><h2 id="signal-title">盘后信号</h2><span class="muted" id="delta"></span></div>
-<table class="signals"><thead><tr><th>策略</th><th>当日触发</th><th>盘后仓位</th><th>下一步</th></tr></thead><tbody id="signals"></tbody></table>
-<p class="note">仓位和开平仓动作均来自策略模拟。交易日按中金所日历顺延。</p>
+<table class="signals"><thead><tr><th>策略</th><th>当日开仓条件</th><th>盘后仓位</th><th>下一步</th></tr></thead><tbody id="signals"></tbody></table>
+<p class="note" id="forward"></p>
+</section>
+<section class="panel" id="rules" aria-labelledby="rules-title">
+<div class="heading"><h2 id="rules-title">开平仓规则</h2></div>
+<p class="rule-note">收盘后看两项。TS 连续收盘价是否低于上一交易日，以及平安期货净多头日变动在最近 60 个交易日中的分位。净多头是多头持仓减空头持仓，日变动是当日与上一交易日的差额。分位含当日，至少需要 30 个有效观测。</p>
+<div class="rule-grid" id="rule-grid"></div>
+<p class="note">T 为信号日，T+n 按交易日计。空仓时按 T 日成交量从高到低选合约，要求合约晚于计划平仓日到期。开盘无报价则跳过该笔入场。每条策略一次最多持有一笔。</p>
 </section>
 <section class="panel" aria-labelledby="nav-title">
 <div class="heading"><h2 id="nav-title">净值对比</h2><label class="muted">区间 <select id="range">
-<option value="all">全样本</option><option value="year">今年以来</option><option value="recent">近 120 个交易日</option></select></label></div>
+<option value="all">全样本</option><option value="since2024">2024 年起</option><option value="year">今年以来</option><option value="recent">近 120 个交易日</option></select></label></div>
 <svg id="chart" viewBox="0 0 900 255" role="img" aria-label="所选策略与持有到期基准的累计净值曲线"></svg>
 <div class="legend" id="legend" role="group" aria-label="显示或隐藏净值曲线"></div>
-<p class="note">点击图例隐藏或恢复曲线。固定 5 手 TS。平安纯多为旧版一次性入账（零成本、H=3，盈亏记在平仓日），其余策略与基准逐日盯市、每笔来回扣 0.005 点；两种口径不可直接横比。切换区间后起点重置为 1。</p>
-<p class="note">持有到期基准使用中金所逐合约行情。买入最近季月，到期按交易所结算价计值，下一交易日开盘换月。</p>
+<p class="note">点击图例隐藏或恢复曲线。两条策略与基准统一按固定名义本金、零手续费与滑点、逐日盯市。切换区间后从 1 重新计算。</p>
+<p class="note">持有到期基准买入最近季月 TS，到期按交易所结算价计值，下一交易日开盘换月。</p>
 </section>
 <section class="panel" aria-labelledby="stats-title">
-<div class="heading"><h2 id="stats-title">策略表现</h2><span class="muted" id="span"></span></div>
-<div class="scroll"><table><thead><tr><th>策略</th><th>累计收益</th><th>夏普</th><th>最大回撤</th><th>已平仓</th><th>2024 年起筛选段收益</th></tr></thead><tbody id="metrics"></tbody></table></div>
-<p class="note" id="method"></p><p class="note" id="forward"></p>
+<div class="heading"><h2 id="stats-title">归案回测</h2><span class="muted" id="span"></span></div>
+<div class="scroll"><table><thead><tr><th>策略</th><th>累计收益</th><th>夏普</th><th>最大回撤</th><th>2024 年起收益</th><th>2024 年起夏普</th></tr></thead><tbody id="metrics"></tbody></table></div>
+<p class="note">三日版的全样本夏普更高，五日版的累计收益更高。两条策略使用同一个平安席位信号。2024 年起的数据参与了筛选。</p>
 </section>
-<footer><div class="links"><a href="../../">FICC 看板</a><a href="TS_蜘蛛网_策略回测.html">静态版回测</a><a href="TS_蜘蛛网_持仓整理.html">持仓数据</a><a href="TS_平安纯多头_策略.html">平安纯多研究</a><a href="TS_席位对比_净值.html">九席位研究</a><a href="TS_每日信号.json">信号 JSON</a><a href="TS_前瞻记录.json">前瞻记录</a><a href="README.md">计算说明</a></div></footer>
+<footer><div class="links"><a href="../../">FICC 看板</a><a href="TS_每日信号.json">信号 JSON</a><a href="TS_前瞻记录.json">前瞻记录</a></div></footer>
 </main>
 <script type="application/json" id="data">__PAYLOAD__</script>
 <script>
@@ -64,18 +75,23 @@ const pct=v=>(100*v).toFixed(2)+'%';
 const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 $('source').textContent=d.source+' · 收盘后更新';
 $('delta').textContent='TS 日变动 '+(d.close_change>0?'+':'')+d.close_change.toFixed(3)+' 点';
-$('span').textContent=d.start+' 至 '+d.asof;
-$('method').textContent='以 '+d.selection_end+' 为筛选截止日。完整历史期收益和夏普等权排序，保留全期和 2024 年起筛选段扣成本后都为正、且有至少 40 笔的候选；已剔除华泰系席位。网格·点数王 / 网格·夏普王 由用户指定保留，是 120 格事后挑参的刻度，不参与排名、不能当作样本外证据。平安纯多按用户指定用零成本 + H=3 + 旧版一次性入账（复现历史 3.096 点 / 1.426 夏普），其余策略逐日盯市、成本 0.005 点，两种口径不可直接横比。';
-$('forward').textContent='前瞻从 '+d.forward.start+' 起算，已记录 '+d.forward.sessions+' 个交易日、'+d.forward.closed+' 笔已平仓交易。';
+$('span').textContent=d.start+' 至 '+d.selection_end;
+$('forward').textContent='前瞻模型在 '+d.forward.after+' 归案后从空仓起算，已发布 '+d.forward.sessions+' 日信号，已平仓 '+d.forward.closed+' 笔。';
 $('signals').innerHTML=d.strategies.map(s=>{
-  const kind={多:'long',空:'short',数据缺失:'missing'}[s.raw]||'';
-  return '<tr><td><span class="strategy">'+esc(s.name)+'<small>'+esc(s.rule)+'</small></span></td>'+
-  '<td data-label="触发"><span class="status '+kind+'">'+esc(s.raw)+'</span></td>'+
+  const kind={多:'long',数据缺失:'missing'}[s.raw]||'';
+  const signal={多:'满足',无触发:'未满足',数据缺失:'数据缺失'}[s.raw];
+  const rank=s.drivers.pct===null?'分位缺失':'分位 '+pct(s.drivers.pct);
+  return '<tr><td><a class="strategy" href="#'+esc(s.key)+'">'+esc(s.name)+'</a></td>'+
+  '<td data-label="开仓条件"><span class="status '+kind+'">'+esc(signal)+'</span> <small>'+rank+'</small></td>'+
   '<td data-label="仓位">'+esc(s.position)+(s.entry?' <small>'+esc(s.entry)+' 开仓</small>':'')+'</td>'+
-  '<td data-label="下一步">'+esc(s.action)+'</td></tr>';
+  '<td data-label="下一步">'+esc(s.action)+(s.contract?' <strong>'+esc(s.contract)+'</strong>':'')+'</td></tr>';
 }).join('');
+$('rule-grid').innerHTML=d.strategies.map(s=>'<article class="rule-card" id="'+esc(s.key)+'"><h3>'+esc(s.name)+'</h3><dl>'+
+  '<dt>开仓</dt><dd>TS 当日收跌，净多头日变动分位至少 '+(100*s.entry_rank)+'%，T+1 开盘做多。</dd>'+
+  '<dt>平仓</dt><dd>默认 T+'+(s.hold+1)+' 收盘。持仓期间若收盘后分位低于 '+(100*s.exit_rank)+'%，改为下个交易日开盘平仓。开盘缺价则延续持仓，最迟在计划日收盘平仓。</dd>'+
+  '<dt>再开仓</dt><dd>'+(s.entry_on_close_day?'平仓日收盘后可以发出次日信号。':'平仓日跳过新信号，从下一交易日收盘开始重新判断。')+'</dd></dl></article>').join('');
 $('metrics').innerHTML=d.strategies.map(s=>'<tr><td class="strategy">'+esc(s.name)+'</td>'+
-  [pct(s.total),s.sharpe.toFixed(2),pct(s.drawdown),s.trades,pct(s.validation)].map(x=>'<td class="number">'+x+'</td>').join('')+'</tr>').join('');
+  [pct(s.total),s.sharpe.toFixed(2),pct(s.drawdown),pct(s.validation),s.validation_sharpe.toFixed(2)].map(x=>'<td class="number">'+x+'</td>').join('')+'</tr>').join('');
 const series=[...d.strategies, {...d.benchmark, isBenchmark:true}];
 const visible=new Set(series.map(s=>s.name));
 for(const item of series){
@@ -98,7 +114,8 @@ for(const item of series){
 function plot(){
   const n=d.dates.length;
   const choice=$('range').value;
-  const start=choice==='recent'?Math.max(0,n-120):choice==='year'?Math.max(0,d.dates.findIndex(x=>x.startsWith(d.asof.slice(0,4)))):0;
+  const since=choice==='year'?d.asof.slice(0,4):'2024';
+  const start=choice==='recent'?Math.max(0,n-120):choice==='all'?0:Math.max(0,d.dates.findIndex(x=>x.slice(0,4)>=since));
   const width=Math.max(280,$('chart').clientWidth), right=width-14;
   $('chart').setAttribute('viewBox','0 0 '+width+' 255');
   const curves=series.filter(s=>visible.has(s.name)).map(s=>{

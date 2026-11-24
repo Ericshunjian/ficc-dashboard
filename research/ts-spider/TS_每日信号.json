@@ -1,114 +1,62 @@
 {
   "asof": "2026-11-24",
-  "selection_end": "2026-11-23",
+  "selection_end": "2026-11-24",
   "start": "2021-01-04",
-  "selection_note": "用户 2026-11-24 指定：剔除华泰系；保留网格点数王/夏普王（120格事后挑参，仅作刻度）；平安纯多零成本 + H=3 + 旧版一次性入账（每笔盈亏记在平仓日，平仓日不发次日信号），其余策略成本 0.005 点逐日盯市；两种口径不可直接横比",
   "source": "中金所盘后数据",
   "close_change": 0.002,
   "strategies": [
     {
-      "name": "网格·点数王",
-      "rule": "平安 dNet 60日分位≥75%，不看当日涨跌 → T+1开盘做多、T+11收盘平仓",
+      "key": "PA-DIP3-EXIT20-v1",
+      "name": "平安回踩三日·转弱退出",
       "color": "#2e65c2",
-      "cost": 0.005,
-      "total": 0.04246,
-      "sharpe": 1.1554,
-      "drawdown": 0.010926,
-      "trades": 98,
-      "validation": 0.01176,
+      "cost": 0,
+      "hold": 3,
+      "entry_rank": 0.8,
+      "exit_rank": 0.2,
+      "entry_on_close_day": false,
+      "total": 0.03271999999999977,
+      "sharpe": 1.8009278506174975,
+      "drawdown": 0.0029343179168288547,
+      "trades": 118,
+      "validation": 0.017899999999999635,
+      "validation_sharpe": 1.972343113862797,
       "raw": "无触发",
       "position": "空仓",
-      "action": "维持空仓",
+      "contract": null,
+      "action": "下一交易日起观察",
       "entry": null,
       "drivers": {
-        "dnet": -120.0,
-        "pct": 0.5,
-        "price_change": 0.002
+        "pct": 0.5
       }
     },
     {
-      "name": "网格·夏普王",
-      "rule": "当日收跌 且 平安 dNet 60日分位≥75% → T+1开盘做多、T+4收盘平仓",
+      "key": "PA-DIP5-EXIT20-v1",
+      "name": "平安回踩五日·转弱退出",
       "color": "#0d836a",
-      "cost": 0.005,
-      "total": 0.02697,
-      "sharpe": 1.0589,
-      "drawdown": 0.004493,
-      "trades": 136,
-      "validation": 0.01256,
+      "cost": 0,
+      "hold": 5,
+      "entry_rank": 0.75,
+      "exit_rank": 0.2,
+      "entry_on_close_day": true,
+      "total": 0.03896000000000015,
+      "sharpe": 1.7451593094925342,
+      "drawdown": 0.00390876255504391,
+      "trades": 131,
+      "validation": 0.023019999999999926,
+      "validation_sharpe": 2.222022844606151,
       "raw": "无触发",
       "position": "空仓",
-      "action": "维持空仓",
+      "contract": null,
+      "action": "下一交易日起观察",
       "entry": null,
       "drivers": {
-        "dnet": -120.0,
-        "pct": 0.5,
-        "price_change": 0.002
-      }
-    },
-    {
-      "name": "平安期货 · 逢跌纯多 H=3",
-      "rule": "收跌且净持仓变化达到 60 日 80% 分位，T+4 收盘平仓",
-      "color": "#ac542f",
-      "cost": 0.0,
-      "total": 0.03096,
-      "sharpe": 1.4261,
-      "drawdown": 0.002896,
-      "trades": 113,
-      "validation": 0.01665,
-      "raw": "无触发",
-      "position": "空仓",
-      "action": "维持空仓",
-      "entry": null,
-      "drivers": {
-        "dnet": -120.0,
-        "pct": 0.5,
-        "price_change": 0.002
-      }
-    },
-    {
-      "name": "前20大合计 · 逢跌纯多 H=3",
-      "rule": "收跌且净持仓变化达到 60 日 80% 分位，T+4 收盘平仓",
-      "color": "#7951b5",
-      "cost": 0.005,
-      "total": 0.01552,
-      "sharpe": 0.5738,
-      "drawdown": 0.00611,
-      "trades": 134,
-      "validation": 0.00429,
-      "raw": "无触发",
-      "position": "多",
-      "action": "持多",
-      "entry": "2026-11-23",
-      "drivers": {
-        "dnet": 1459.0,
-        "pct": 0.95,
-        "price_change": 0.002
-      }
-    },
-    {
-      "name": "平安期货 · 持仓双变动",
-      "rule": "多增空减做多，反向做空，T+2 收盘平仓，可提前平仓",
-      "color": "#9a690b",
-      "cost": 0.005,
-      "total": 0.01378,
-      "sharpe": 0.4224,
-      "drawdown": 0.012624,
-      "trades": 464,
-      "validation": 0.00526,
-      "raw": "无触发",
-      "position": "空仓",
-      "action": "维持空仓",
-      "entry": null,
-      "drivers": {
-        "duo": -1881.0,
-        "kong": -1761.0
+        "pct": 0.5
       }
     }
   ],
   "forward": {
-    "start": "2026-11-24",
-    "sessions": 1,
+    "after": "2026-11-24",
+    "sessions": 0,
     "closed": 0
   }
 }
