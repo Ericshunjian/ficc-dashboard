@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>TS 蜘蛛网研究 · 一页汇总（平安纯多 vs 中信多空）</title>
+<style>
+:root{--bg:#f6f8fb;--card:#fff;--tx:#1f2937;--tx2:#5b6675;--tx3:#8a95a5;
+--line:#e3e8ef;--accent:#2c5aa0;--up:#d64545;--down:#2f9e6f;--warn:#b7791f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);
+ font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:30px 22px 70px}
+h1{font-size:25px;margin:0 0 4px;letter-spacing:.3px}
+h2{font-size:17px;margin:0 0 4px}
+h3{font-size:13.5px;margin:2px 0 8px;color:var(--tx2)}
+.sub{color:var(--tx2);font-size:13px;margin:0 0 16px}
+.anchors{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}
+.anchors a{font-size:12px;color:var(--accent);text-decoration:none;background:#fff;
+ border:1px solid var(--line);border-radius:6px;padding:4px 10px}
+.anchors a:hover{border-color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+ padding:18px 20px;margin-bottom:16px;scroll-margin-top:12px}
+.desc{color:var(--tx2);font-size:12.5px;margin:2px 0 14px;line-height:1.7}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.kpi .lab{font-size:12px;color:var(--tx2)}
+.kpi .val{font-size:23px;font-weight:650;letter-spacing:-.5px;margin-top:2px}
+.kpi .hint{font-size:11.5px;color:var(--tx3);margin-top:2px;line-height:1.5}
+.verdict{background:#fffaf0;border:1px solid #f0d9a8;border-left:4px solid var(--warn);
+ border-radius:8px;padding:15px 20px;margin-bottom:18px;font-size:13.5px;line-height:1.9}
+.verdict b{color:#8a5a08}
+.ctrl{display:flex;flex-wrap:wrap;gap:9px 22px;align-items:center;margin-bottom:12px}
+.ctrl .grp{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ctrl .lab{font-size:12px;color:var(--tx2);margin-right:2px}
+.btn{border:1px solid var(--line);background:#fff;color:var(--tx2);border-radius:6px;
+ padding:4px 10px;font-size:12px;cursor:pointer;transition:.12s}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.chk{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--tx2);
+ border:1px solid var(--line);border-radius:6px;padding:3px 8px;cursor:pointer;background:#fff}
+.chk input{margin:0;cursor:pointer}
+.chk.on{border-color:var(--accent);color:var(--accent);background:#f2f6fc}
+.chart{width:100%;overflow-x:auto;position:relative}
+.chart svg{display:block;max-width:100%;height:auto;margin:0 auto}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:10px;font-size:11.5px;color:var(--tx2)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{width:11px;height:11px;border-radius:2px;display:inline-block}
+.tbl{width:100%;border-collapse:collapse;font-size:12.2px}
+.tbl th,.tbl td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:right;white-space:nowrap}
+.tbl th{background:#f7f9fc;color:var(--tx2);font-weight:600;position:sticky;top:0}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl th:nth-child(2),.tbl td:nth-child(2){text-align:left}
+.tbl tr:hover td{background:#fafcff}
+.scroll{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+.pos{color:var(--up);font-weight:600}.neg{color:var(--down);font-weight:600}
+.small{font-size:11.5px;color:var(--tx3)}
+.note{font-size:12.5px;color:var(--tx2);background:#f7f9fc;border-radius:8px;
+ padding:11px 15px;margin-top:12px;line-height:1.85}
+.note b{color:var(--tx)}
+.tip{position:absolute;pointer-events:none;background:rgba(255,255,255,.97);
+ border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:11.5px;
+ box-shadow:0 4px 14px rgba(30,50,80,.12);display:none;z-index:9;line-height:1.6}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.two{grid-template-columns:1fr}}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+.mini{border:1px solid var(--line);border-radius:9px;padding:14px 16px;background:#fff;display:flex;flex-direction:column}
+.mini h3{margin:0 0 2px;font-size:14.5px;color:var(--tx)}
+.mini .tag{font-size:11px;color:var(--accent);background:#eef3fb;border-radius:4px;
+ padding:1px 6px;display:inline-block;align-self:flex-start;margin-bottom:8px}
+.mini ul{margin:0;padding-left:17px;font-size:12.3px;line-height:1.8;flex:1}
+.mini li{margin-bottom:5px}
+.mini a.go{font-size:12px;color:var(--accent);text-decoration:none;margin-top:10px;display:inline-block}
+.mini a.go:hover{text-decoration:underline}
+ul.pts{margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.9}
+a.back{color:var(--accent);text-decoration:none;font-size:12.5px}
+code{background:#f0f3f8;padding:1px 5px;border-radius:4px;font-size:11.5px}
+.hl{background:#fff3f3;border-left:3px solid var(--up);padding:9px 13px;border-radius:6px;
+ font-size:12.5px;line-height:1.8;margin-top:12px}
+footer{color:var(--tx3);font-size:11.5px;text-align:center;margin-top:22px;line-height:1.8}
+</style>
+</head>
+<body><div class="wrap">
+
+<h1>TS 蜘蛛网研究 · 一页汇总</h1>
+<p class="sub"><span id="spanMeta"></span> · <a class="back" href="index.html">← 研究目录</a> · <a class="back" href="../../">← FICC 看板</a></p>
+<div class="anchors">
+  <a href="#s1">① 双策略净值</a><a href="#s2">② 指标 / 分年 / 成本</a>
+  <a href="#s3">③ 差在哪：A·B·C</a><a href="#s4">④ 证伪零假设</a>
+  <a href="#s5">⑤ 前期 5 页精简</a><a href="#s6">⑥ 口径与文件</a>
+</div>
+
+<div class="kpis" id="kpis"></div>
+<div class="verdict" id="verdict"></div>
+
+<div class="card" id="s1">
+  <h2>① 双策略净值对比：平安「只做多」 vs 中信「多空双侧」</h2>
+  <div class="desc">同一段行情、同一套参数（<code>dNet</code> 60 日分位 ≥80% / ≤20%、持有 3 日、T+1 开盘建仓、单仓位不叠加、固定 5 手 TS、点数累加不复利）。
+  纵轴是<b>区间内累计点数</b>（1 点 = 10 万元 = 初始 1000 万的 1%），切换区间时首日归零、不做复利重定仓。默认高亮两条主口径，其余可勾选叠加。</div>
+  <div class="ctrl">
+    <div class="grp"><span class="lab">区间</span><span id="rangeBtns"></span></div>
+  </div>
+  <div class="ctrl" id="chkBoxes"></div>
+  <div class="chart" id="chartNav"></div>
+  <div class="legend" id="navLegend"></div>
+  <div class="tip" id="navTip"></div>
+  <div class="note" id="navNote"></div>
+</div>
+
+<div class="card" id="s2">
+  <h2>② 指标对照 / 分年 / 成本</h2>
+  <div class="desc">口径一眼对齐：<b>平安纯多</b>是本次对比里最抗成本、样本外不衰减的一条；<b>中信 2.525</b> 的领先只存在于多空双侧口径，换成只做多只剩 1.016 点且验证段转负。</div>
+  <div class="scroll" id="metricTable"></div>
+  <h3 style="margin-top:16px">分年累计点数（两条主口径）</h3>
+  <div class="chart" id="chartYear"></div><div class="legend" id="legendYear"></div>
+  <h3 style="margin-top:14px">成本敏感性（每笔来回扣 N 个 tick，1 tick = 0.005 点）</h3>
+  <div class="chart" id="chartCost"></div><div class="legend" id="legendCost"></div>
+  <div class="hl" id="costNote"></div>
+</div>
+
+<div class="card" id="s3">
+  <h2>③ 两条线为什么差这么多：A / B / C 仓位隔离</h2>
+  <div class="desc">B = 只做多；C = 空头信号仍占住仓位、但不开空单；A = 完整多空双侧。
+  中信从 1.016 → 2.525 的 1.509 点，可以拆成「空单自己赚的」+「空单占仓位挡掉的多单」。</div>
+  <div class="two">
+    <div><div class="chart" id="chartABC"></div>
+      <div class="legend" id="legendABC"></div>
+      <div class="small" style="margin-top:4px">柱高 = 累计点数；B / C / A 三组自左至右。</div></div>
+    <div><div id="legTable"></div></div>
+  </div>
+  <div class="note" id="abcNote"></div>
+</div>
+
+<div class="card" id="s4">
+  <h2>④ 证伪：两条策略各自的主判据</h2>
+  <div class="desc">零假设必须<b>保持原来的执行结构</b>（信号成簇、单仓位不叠加、同样密度），否则会把「执行纪律」的功劳错记成「席位的预测力」。灰柱 = 随机分布，红线 = 真实值。</div>
+  <div class="two">
+    <div>
+      <h3>平安纯多 · 信号日在收跌日内抖动 ±3 天</h3>
+      <div class="chart" id="histA"></div><div class="small" id="histANote"></div>
+    </div>
+    <div>
+      <h3>中信多空 · 9 个席位循环移位后「取最大」</h3>
+      <div class="chart" id="histB"></div><div class="small" id="histBNote"></div>
+    </div>
+  </div>
+  <div id="falsifyTable" style="margin-top:16px"></div>
+  <div class="note" id="falsifyNote"></div>
+</div>
+
+<div class="card" id="s5">
+  <h2>⑤ 前期研究精简汇总（5 页合 1 页）</h2>
+  <div class="desc">每张卡片是一份完整研究的结论摘要，点「打开详细页」看全部图表、参数面与逐笔明细。所有结论共用一句话：<b>刻度 + 证伪，不能上仓</b>。</div>
+  <div class="cards" id="cards"></div>
+</div>
+
+<div class="card" id="s6">
+  <h2>⑥ 数据口径、警告与文件</h2>
+  <div id="foot"></div>
+</div>
+
+<footer>单文件网页 · 数据已内嵌 · 可离线打开 · 研究快照，不构成投资建议</footer>
+</div>
+
+<script>const D=/*__DATA__*/;</script>
+<script>
+const $=id=>document.getElementById(id);
+const E=x=>(typeof x==='string'?$(x):x);
+const DATES=D.dates,N=DATES.length,M=D.meta,X=D.extra;
+const SPLIT=DATES.findIndex(d=>d>=M.split);
+const fmt=(v,k=2)=>(v===null||v===undefined||Number.isNaN(v))?'—':Number(v).toFixed(k);
+const pct=(v,k=1)=>(v===null||v===undefined)?'—':(v*100).toFixed(k)+'%';
+const C=v=>(v===null||v===undefined)?'—':'<span class="'+(v>=0?'pos':'neg')+'">'+(v>=0?'+':'')+fmt(v,3)+'</span>';
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const tableHtml=(head,rows)=>'<table class="tbl"><thead><tr>'+head.map(h=>'<th>'+esc(h)+'</th>').join('')+
+ '</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+const W=900,PAD={l:56,r:14,t:14,b:28};
+
+function svgHead(el,h){
+  el=E(el);
+  el.innerHTML='<svg viewBox="0 0 '+W+' '+h+'" width="'+W+'" height="'+h+'" '+
+    'style="font-family:inherit;background:#fff"></svg>';
+  return el.querySelector('svg');
+}
+function axes(svg,x0,y0,x1,y1,ymin,ymax,yfmt,xticks){
+  const ns='http://www.w3.org/2000/svg';
+  const add=(tag,attr,txt)=>{const e=document.createElementNS(ns,tag);
+    for(const k in attr)e.setAttribute(k,attr[k]);if(txt!==undefined)e.textContent=txt;svg.appendChild(e);return e;};
+  for(let i=0;i<=4;i++){
+    const y=y0+(y1-y0)*i/4, v=ymax-(ymax-ymin)*i/4;
+    add('line',{x1:x0,y1:y,x2:x1,y2:y,stroke:'#eef1f6','stroke-width':1});
+    add('text',{x:x0-6,y:y+3.5,'text-anchor':'end','font-size':10.5,fill:'#8a95a5'},yfmt(v));
+  }
+  add('line',{x1:x0,y1:y0,x2:x0,y2:y1,stroke:'#d8dfe8','stroke-width':1});
+  add('line',{x1:x0,y1:y1,x2:x1,y2:y1,stroke:'#d8dfe8','stroke-width':1});
+  (xticks||[]).forEach(t=>{
+    add('line',{x1:t.x,y1:y1,x2:t.x,y2:y1+4,stroke:'#c9d2de','stroke-width':1});
+    add('text',{x:t.x,y:y1+16,'text-anchor':t.anchor||'middle','font-size':10,fill:'#8a95a5'},t.label);
+  });
+  return add;
+}
+function pathFrom(vals,x0,x1,y0,y1,ymin,ymax){
+  const sx=(x1-x0)/Math.max(1,vals.length-1), sy=v=>y1-(v-ymin)/(ymax-ymin||1)*(y1-y0);
+  return vals.map((v,i)=>(i?'L':'M')+(x0+i*sx).toFixed(1)+' '+sy(v).toFixed(1)).join(' ');
+}
+function dateTicks(a,b,x0,x1){
+  const out=[];
+  for(let i=0;i<=6;i++){
+    const j=Math.round(a+(b-a)*i/6);
+    out.push({x:x0+(x1-x0)*i/6,label:DATES[j]?DATES[j].slice(0,7):'',
+      anchor:i===0?'start':(i===6?'end':'middle')});
+  }
+  return out;
+}
+function drawLine(el,series,opt){
+  el=E(el);opt=opt||{};
+  const h=opt.h||320,svg=svgHead(el,h);
+  const x0=PAD.l,x1=W-PAD.r,y0=PAD.t,y1=h-PAD.b;
+  let vals=[];series.forEach(s=>{s.values.forEach(v=>{if(typeof v==='number'&&isFinite(v))vals.push(v);});});
+  if(!vals.length)return;
+  let ymin=Math.min.apply(null,vals),ymax=Math.max.apply(null,vals);
+  if(opt.zeroLine!==undefined){ymin=Math.min(ymin,opt.zeroLine);ymax=Math.max(ymax,opt.zeroLine);}
+  const pad=(ymax-ymin)*0.12||0.002;ymin-=pad;ymax+=pad;
+  const add=axes(svg,x0,y0,x1,y1,ymin,ymax,opt.yfmt||(v=>v.toFixed(2)),
+    opt.xticks||dateTicks(0,series[0].values.length-1,x0,x1));
+  if(opt.zeroLine!==undefined){
+    const y=y1-(opt.zeroLine-ymin)/(ymax-ymin)*(y1-y0);
+    add('line',{x1:x0,y1:y,x2:x1,y2:y,stroke:'#c9d2de','stroke-width':1,'stroke-dasharray':'4 4'});
+  }
+  if(opt.vline!==undefined&&series[0].values.length>1){
+    const x=x0+opt.vline/(series[0].values.length-1)*(x1-x0);
+    add('line',{x1:x,y1:y0,x2:x,y2:y1,stroke:'#b7791f','stroke-width':1.2,'stroke-dasharray':'5 4'});
+    add('text',{x:x+4,y:y0+11,'font-size':10,fill:'#b7791f'},opt.vlabel||'样本外');
+  }
+  series.forEach(s=>{
+    const p=add('path',{d:pathFrom(s.values,x0,x1,y0,y1,ymin,ymax),fill:'none',
+      stroke:s.color||'#2c5aa0','stroke-width':s.width||1.7,'stroke-linejoin':'round',
+      opacity:s.opacity===undefined?.92:s.opacity});
+    const t=document.createElementNS('http://www.w3.org/2000/svg','title');
+    t.textContent=s.name+' 末值 '+fmt(s.values[s.values.length-1],3)+' 点';p.appendChild(t);
+  });
+  return svg;
+}
+function drawBars(el,items,opt){
+  el=E(el);opt=opt||{};
+  const h=opt.h||270,svg=svgHead(el,h);
+  const x0=PAD.l,x1=W-PAD.r,y0=PAD.t,y1=h-PAD.b-(opt.rotate?54:0);
+  const groups=opt.groups||1;
+  let vals=[];items.forEach(it=>(it.values||[it.value]).forEach(v=>{if(typeof v==='number')vals.push(v);}));
+  if(!vals.length)return;
+  let ymin=Math.min(0,Math.min.apply(null,vals)),ymax=Math.max(0,Math.max.apply(null,vals));
+  const pad=(ymax-ymin)*0.14||0.01;ymin-=pad;ymax+=pad;
+  const add=axes(svg,x0,y0,x1,y1,ymin,ymax,opt.yfmt||(v=>fmt(v,2)),opt.xticks||[]);
+  const gw=(x1-x0)/items.length, bw=Math.min(30,gw*0.72/groups);
+  const yOf=v=>y1-(v-ymin)/(ymax-ymin)*(y1-y0);
+  items.forEach((it,i)=>{
+    const arr=it.values||[it.value];
+    arr.forEach((v,k)=>{
+      const cx=x0+gw*(i+0.5)+(k-(groups-1)/2)*(bw+3);
+      const yA=yOf(0),yB=yOf(v);
+      const col=it.colors?it.colors[k]:(it.color||(v>=0?'#d64545':'#2f9e6f'));
+      const r=add('rect',{x:cx-bw/2,y:Math.min(yA,yB),width:bw,height:Math.max(1,Math.abs(yB-yA)),
+        fill:col,opacity:.9,rx:2});
+      const t=document.createElementNS('http://www.w3.org/2000/svg','title');
+      t.textContent=it.label+(opt.groupNames?' · '+opt.groupNames[k]:'')+' '+fmt(v,3);r.appendChild(t);
+      if(opt.showVal!==false&&arr.length<=2)
+        add('text',{x:cx,y:v>=0?Math.min(yA,yB)-4:Math.max(yA,yB)+12,'text-anchor':'middle',
+          'font-size':9.5,fill:'#5c6878'},fmt(v,2));
+    });
+    const lx=x0+gw*(i+0.5),ly=y1+14;
+    if(opt.rotate){
+      add('text',{x:lx,y:ly,'text-anchor':'end','font-size':11,fill:'#5c6878',
+        transform:'rotate(-42 '+lx+' '+ly+')'},it.label);
+    }else add('text',{x:lx,y:ly,'text-anchor':'middle','font-size':10.5,fill:'#5c6878'},it.label);
+  });
+  return svg;
+}
+function drawHist(el,hist,opt){
+  el=E(el);opt=opt||{};
+  const h=opt.h||250,svg=svgHead(el,h);
+  const x0=PAD.l,x1=W-PAD.r,y0=PAD.t,y1=h-PAD.b;
+  const lo=Math.min.apply(null,hist),hi=Math.max.apply(null,hist);
+  const nb=30,bins=new Array(nb).fill(0);
+  hist.forEach(v=>{const k=Math.min(nb-1,Math.floor((v-lo)/(hi-lo||1)*nb));bins[k]++;});
+  const ymax=Math.max.apply(null,bins)*1.15;
+  const add=axes(svg,x0,y0,x1,y1,0,ymax,v=>Math.round(v).toString(),[]);
+  const bw=(x1-x0)/nb;
+  bins.forEach((c,i)=>{
+    const bh=c/ymax*(y1-y0);
+    const r=add('rect',{x:x0+i*bw,y:y1-bh,width:Math.max(1,bw-1),height:bh,fill:'#93a9c9',opacity:.85});
+    const t=document.createElementNS('http://www.w3.org/2000/svg','title');
+    t.textContent='['+fmt(lo+(hi-lo)*i/nb,2)+', '+fmt(lo+(hi-lo)*(i+1)/nb,2)+') : '+c+' 次';r.appendChild(t);
+  });
+  [0,.25,.5,.75,1].forEach(p=>{
+    add('text',{x:x0+(x1-x0)*p,y:y1+16,'text-anchor':'middle','font-size':10,fill:'#8a95a5'},fmt(lo+(hi-lo)*p,2));
+  });
+  if(opt.real!==undefined){
+    const x=x0+(opt.real-lo)/(hi-lo||1)*(x1-x0);
+    add('line',{x1:x,y1:y0,x2:x,y2:y1,stroke:'#c0392b','stroke-width':2});
+    const right=x>x1-110;
+    add('text',{x:right?x-6:x+5,y:y0+12,'text-anchor':right?'end':'start',
+      'font-size':11,fill:'#c0392b','font-weight':600},'真实 '+fmt(opt.real,2)+' 点');
+  }
+  return svg;
+}
+
+const legendHtml=(names,colors)=>names.map((n,i)=>
+  '<span><i style="background:'+colors[i]+'"></i>'+esc(n)+'</span>').join('');
+
+/* ---------------- 顶部 ---------------- */
+$('spanMeta').textContent=M.start+' ~ '+M.end+' · '+N+' 个交易日 · 9 个持仓序列 · 生成于 '+M.generated;
+const PA=D.series.PA_LONG.metrics,ZX=D.series.ZX_FULL.metrics;
+$('kpis').innerHTML=[
+  ['平安 · 只做多',fmt(PA['累计点数'],3)+' <span style="font-size:14px">点</span>','夏普 '+fmt(PA['夏普比率'],2)+' · '+PA['交易笔数']+' 笔 · 6 年全正','var(--up)'],
+  ['中信 · 多空双侧',fmt(ZX['累计点数'],3)+' <span style="font-size:14px">点</span>','夏普 '+fmt(ZX['夏普比率'],2)+' · '+ZX['交易笔数']+' 笔 · 9 席位里最大','var(--accent)'],
+  ['基准 · 买入持有',fmt(X.buy_hold,3)+' <span style="font-size:14px">点</span>','全程在场 · 夏普 0.82 · 年化 '+pct(X.bh_ann,2),'var(--tx2)'],
+  ['主判据 p 值',fmt(D.hist_jitter.p,3)+' / '+fmt(D.hist_max.p,3),'抖动 ±3 日 / 9 席位取最大，均不显著','var(--warn)'],
+].map(k=>'<div class="kpi"><div class="lab">'+k[0]+'</div><div class="val" style="color:'+k[3]+'">'+k[1]+
+  '</div><div class="hint">'+k[2]+'</div></div>').join('');
+
+$('verdict').innerHTML='<b>一句话</b>：两条线都没跑赢「什么都不做」——买入持有 '+fmt(X.buy_hold,3)+
+ ' 点，平安纯多 '+fmt(PA['累计点数'],3)+' 点、中信多空 '+fmt(ZX['累计点数'],3)+' 点。'+
+ '平安纯多看着更稳（夏普 '+fmt(PA['夏普比率'],2)+'、验证段 1.665 点不衰减、扣 1 tick 还剩 2.531 点），'+
+ '但把它的信号日在收跌日内前后挪 3 天、保持「成簇 + 不叠加」，仍能赚 '+
+ fmt(D.hist_jitter.mean,3)+' 点（p='+fmt(D.hist_jitter.p,4)+'）；'+
+ '中信 2.525 是 9 个席位里挑出来的最大值，按「取最大」的随机分布只排 92.7 分位（p='+fmt(D.hist_max.p,4)+'）。'+
+ '<b>两边赚的都是「这段 TS 慢牛 + 逢跌做多 + 成簇时只进第一笔」，不是席位独有的信息。</b>'+
+ '公平地说：平安纯多只在场 '+pct(X.exposure,1)+'，按占用资金年化 '+pct(X.exposure_ann,2)+
+ ' 高于买入持有的 '+pct(X.bh_ann,2)+'，但那是资金效率，不是预测力。'+
+ '<b>定位：刻度 + 证伪，不能上仓。</b>';
+
+/* ---------------- ① 净值主图 ---------------- */
+const KEYS=Object.keys(D.series);
+const DEFAULT=['PA_LONG','ZX_FULL','BH','SPIDER'];
+let chosen=new Set(DEFAULT),curRange='all';
+const years=[];
+for(let y=2021;y<=2026;y++){
+  const s=String(y),a=DATES.findIndex(d=>d.startsWith(s));
+  let b=-1;for(let i=N-1;i>=0;i--){if(DATES[i].startsWith(s)){b=i;break;}}
+  if(a>=0&&b>=a)years.push({k:s,lab:String(y),a:a,b:b});
+}
+const RANGES=[{k:'all',lab:'全样本',a:0,b:N-1},
+  {k:'explore',lab:'探索段 21-23',a:0,b:SPLIT-1},
+  {k:'verify',lab:'验证段 24-26',a:SPLIT,b:N-1}].concat(years);
+const R=()=>RANGES.find(r=>r.k===curRange)||RANGES[0];
+
+$('rangeBtns').innerHTML=RANGES.map(r=>'<button class="btn'+(r.k===curRange?' on':'')+
+  '" data-k="'+r.k+'">'+r.lab+'</button>').join(' ');
+$('rangeBtns').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  curRange=b.dataset.k;
+  [...$('rangeBtns').querySelectorAll('button')].forEach(x=>x.classList.toggle('on',x===b));
+  renderNav();
+});
+$('chkBoxes').innerHTML='<span class="lab">曲线</span>'+KEYS.map(k=>{
+  const s=D.series[k];
+  return '<label class="chk'+(chosen.has(k)?' on':'')+'" data-k="'+k+'"><input type="checkbox" '+
+    (chosen.has(k)?'checked':'')+'>'+esc(s.name)+'</label>';
+}).join('');
+$('chkBoxes').addEventListener('change',e=>{
+  const l=e.target.closest('label');if(!l)return;
+  const k=l.dataset.k;
+  if(e.target.checked){chosen.add(k);l.classList.add('on');}else{chosen.delete(k);l.classList.remove('on');}
+  renderNav();
+});
+
+function renderNav(){
+  const r=R(),a=r.a,b=r.b,L=b-a+1;
+  const ss=KEYS.filter(k=>chosen.has(k)).map(k=>{
+    const s=D.series[k],base=s.nav[a];
+    return {key:k,name:s.name,color:s.color,width:s.width,
+      values:s.nav.slice(a,b+1).map(v=>(v-base)*100)};
+  });
+  if(!ss.length){$('chartNav').innerHTML='<div class="small">请至少勾选一条曲线</div>';
+    $('navLegend').innerHTML='';return;}
+  const svg=drawLine('chartNav',ss,{h:345,zeroLine:0,
+    yfmt:v=>(v>=0?'+':'')+fmt(v,2)+'点',
+    xticks:dateTicks(a,b,PAD.l,W-PAD.r),
+    vline:(curRange==='all'?(SPLIT-a):undefined),vlabel:'2024 起 = 样本外'});
+  $('navLegend').innerHTML=ss.map(s=>'<span><i style="background:'+s.color+'"></i>'+
+    esc(s.name)+' <b>'+(s.values[L-1]>=0?'+':'')+fmt(s.values[L-1],3)+' 点</b></span>').join('');
+  const tip=$('navTip');
+  if(svg){
+    svg.addEventListener('mousemove',e=>{
+      const rect=svg.getBoundingClientRect();
+      const px=(e.clientX-rect.left)/rect.width*W;
+      let i=Math.round((px-PAD.l)/(W-PAD.r-PAD.l)*(L-1));
+      i=Math.max(0,Math.min(L-1,i));
+      tip.innerHTML='<b>'+DATES[a+i]+'</b><br>'+ss.map(s=>
+        '<span style="color:'+s.color+'">●</span> '+esc(s.name)+' '+
+        (s.values[i]>=0?'+':'')+fmt(s.values[i],3)+' 点').join('<br>');
+      tip.style.display='block';
+      const host=$('chartNav').getBoundingClientRect();
+      tip.style.left=Math.min(e.clientX-host.left+12,host.width-190)+'px';
+      tip.style.top=Math.max(4,e.clientY-host.top-70)+'px';
+    });
+    svg.addEventListener('mouseleave',()=>tip.style.display='none');
+  }
+  $('navNote').innerHTML='<b>怎么读</b>：全样本里平安纯多 '+fmt(PA['累计点数'],3)+
+    ' 点、中信多空 '+fmt(ZX['累计点数'],3)+' 点、买入持有 '+fmt(X.buy_hold,3)+' 点、蜘蛛网原策略 '+
+    fmt(X.spider,3)+' 点。平安多空双侧只有 1.112 点、中信只做多只有 1.016 点 ⇒ '+
+    '<b>「关不关做空腿」比「用哪个席位」影响大得多</b>。切换上面的区间可以看探索段 / 验证段 / 分年，'+
+    '竖虚线之后是样本外（2024-01-02 起）。<br>'+
+    '<b>两个分段数字口径不同，别混</b>：图例里的区间点数 = 净值差分（按盈亏<b>兑现日</b>），'+
+    '指标表「探索段 / 验证段」= 按<b>信号日</b>归属的逐笔盈亏汇总；分段点上有未平仓库位时两者会差一点'+
+    '（如中信多空验证段：表 0.893 点、图 1.061 点，跨段持仓 0.168 点落在了验证段）。<b>分段绩效以表格为准</b>。';
+}
+renderNav();
+
+/* ---------------- ② 指标表 / 分年 / 成本 ---------------- */
+const HEAD=['口径','标记','累计点数','夏普','笔数','胜率','逐笔t','每笔点数','回撤%',
+  '探索段','验证段','扣1tick','扣2tick'];
+$('metricTable').innerHTML=tableHtml(HEAD,D.rows.map(r=>[
+  esc(r['口径']),'<span class="small">'+esc(r['标记'])+'</span>',
+  C(r['累计点数']),fmt(r['夏普比率'],2),r['交易笔数'],
+  pct(r['胜率'],1),fmt(r['逐笔t值'],2),fmt(r['每笔平均点数'],4),
+  fmt(r['最大回撤%'],2),C(r['探索段']),C(r['验证段']),C(r['扣1tick']),C(r['扣2tick'])
+]));
+const yrs=D.yearly.PA_LONG.map(o=>o['年份']);
+const yItems=yrs.map((y,i)=>({label:y,values:[D.yearly.PA_LONG[i]['点数'],D.yearly.ZX_FULL[i]['点数']],
+  colors:['#d64545','#2c5aa0']}));
+drawBars('chartYear',yItems,{h:270,groups:2,yfmt:v=>fmt(v,2)+'点'});
+$('legendYear').innerHTML=legendHtml(['平安·只做多','中信·多空双侧'],['#d64545','#2c5aa0']);
+const cItems=D.costs.labels.map((l,i)=>({label:l.replace('\n',' '),
+  values:D.costs.series.map(s=>s.values[i]),colors:D.costs.series.map(s=>s.color)}));
+drawBars('chartCost',cItems,{h:270,groups:2,yfmt:v=>fmt(v,2)+'点'});
+$('legendCost').innerHTML=legendHtml(D.costs.series.map(s=>s.name),D.costs.series.map(s=>s.color));
+$('costNote').innerHTML='<b>成本是分水岭</b>：平安纯多每笔 0.0274 点（约 5.5 个 tick），扣 1 / 2 / 4 tick 后 '+
+  '<b>2.531 / 1.966 / 0.836 点</b>；中信多空每笔只有 0.0200 点，扣 1 / 2 / 4 tick 后 '+
+  '<b>1.895 / 1.265 / 0.005 点（归零）</b>。第七节含做空的平安版本更脆：扣 1 tick 就从 1.112 掉到 0.292 点（−74%）。'+
+  '分年看，平安纯多 6 年全正；中信多空 2021–2025 连续 5 年正、2026 −0.061，但它的空腿分年在 −0.19 ~ +0.79 之间摆动，'+
+  '稳定的是做多腿与执行结构，不是空头判断。<br>'+
+ '另外两条基准只作刻度：买入持有<b>全程在场</b>，平安纯多只在场 '+pct(X.exposure,1)+
+ '（按占用资金年化 '+pct(X.exposure_ann,2)+' vs '+pct(X.bh_ann,2)+'，总收益与资金效率是两回事）；'+
+ '蜘蛛网原策略用的是 <code>dB/dS</code> 信号、规则完全不同，不与这两条策略直接比高低。';
+
+/* ---------------- ③ A/B/C ---------------- */
+drawBars('chartABC',D.abc.map(a=>({label:a.label,values:a.values,
+  colors:['#8a95a5','#3f8fa8','#2c5aa0']})),
+  {h:285,groups:3,yfmt:v=>fmt(v,2)+'点',showVal:false});
+$('legendABC').innerHTML=legendHtml(['B 只做多','C 空信号占仓位','A 完整双侧'],
+  ['#8a95a5','#3f8fa8','#2c5aa0']);
+const zx=D.abc[0].extra,pa=D.abc[1].extra;
+$('legTable').innerHTML=tableHtml(['拆解','中信','平安'],[
+  ['做多腿',C(zx['多腿']),C(pa['多腿'])],
+  ['做空腿',C(zx['空腿']),C(pa['空腿'])],
+  ['B 只做多',C(D.abc[0].values[0]),C(D.abc[1].values[0])],
+  ['C 空信号占仓位',C(D.abc[0].values[1]),C(D.abc[1].values[1])],
+  ['A 完整双侧',C(D.abc[0].values[2]),C(D.abc[1].values[2])],
+  ['空单自身盈亏',C(zx['空单自身盈亏']),C(pa['空单自身盈亏'])],
+  ['挤掉多单的效应',C(zx['挤掉多单的效应']),C(pa['挤掉多单的效应'])],
+  ['被挡掉的多单',zx['被挤掉多单笔数']+' 笔 / '+C(zx['被挤掉多单在只做多里合计']),
+    pa['被挤掉多单笔数']+' 笔 / '+C(pa['被挤掉多单在只做多里合计'])],
+]);
+$('abcNote').innerHTML='<b>大白话</b>：两个席位的做多腿几乎一样（中信 1.614、平安 1.724，中信还少 0.110 点）。'+
+ '中信之所以 2.525，是因为它的空单碰巧赚了 0.911 点，而且空单占住仓位时挡掉了 29 笔本来要亏 0.769 点的多单（合计 +0.598）。'+
+ '平安反过来：空单亏 0.612 点，还挡掉 34 笔本来能赚 1.180 点的多单。'+
+ '但<b>中信的空头信号本身没有信息</b>：113 个信号日未来 3 日均值 −0.00509 点、逐笔 t='+fmt(X.short_t,2)+
+ '，相对全体收涨日 Welch t='+fmt(X.short_welch,2)+'，都不显著。成交的 68 个空信号后来确实跌了，'+
+ '被跳过的 45 个反而涨了 —— 又是「成簇时只进第一笔」把亏损追单滤掉了，'+
+ '和第八节平安纯多里被跳过的 49 个信号是同一个机制。';
+
+/* ---------------- ④ 证伪 ---------------- */
+drawHist('histA',D.hist_jitter.hist,{real:D.hist_jitter.real,h:250});
+drawHist('histB',D.hist_max.hist,{real:D.hist_max.real,h:250});
+$('histANote').innerHTML='抖动 ±3 日 · 仍收跌（800 次）：随机均值 <b>'+fmt(D.hist_jitter.mean,3)+
+ '</b> 点、p95 '+fmt(D.hist_jitter.p95,3)+' 点，真实 <b>'+fmt(D.hist_jitter.real,3)+
+ '</b> 点，<b>p='+fmt(D.hist_jitter.p,4)+' 不显著</b>。±5 日 p=0.0362 并列如实报告，但主判据不变。';
+$('histBNote').innerHTML='9 席位各自循环移位、每组取最大（300 组）：随机最大值均值 <b>'+
+ fmt(D.hist_max.mean,3)+'</b> 点、p95 '+fmt(D.hist_max.p95,3)+' 点，真实 <b>'+
+ fmt(D.hist_max.real,3)+'</b> 点只排 92.7 分位，<b>p='+fmt(D.hist_max.p,4)+' 不显著</b>。';
+$('falsifyTable').innerHTML=tableHtml(['对象','零假设做法','真实(点)','随机均值','p','判读'],
+ D.falsify.map(f=>[esc(f['对象']),'<span class="small">'+esc(f['做法'])+'</span>',
+   fmt(f['真实'],3),fmt(f['随机均值'],3),
+   '<b style="color:'+(f.p<0.05?'var(--up)':'var(--tx2)')+'">'+fmt(f.p,4)+'</b>',
+   '<span class="small">'+esc(f['判读'])+'</span>']));
+$('falsifyNote').innerHTML='<b>为什么零假设要「同构」</b>：早年做的均匀随机抽日会把「信号成簇 + 单仓位不叠加」'+
+ '的执行结构一起打乱，p 会小得好看，但显著的是纪律不是信号。所以主判据用<b>时点抖动</b>'+
+ '（保持价格条件、密度、成簇结构，只打乱平安挑了哪天）。'+
+ '另外两层增量检验也不支持席位有独占信息：平安「大幅加多」比「力度不足」每笔只多 0.0055 点、'+
+ '<b>Welch t=0.682</b>；中信空头信号 <b>t='+fmt(X.short_t,2)+'</b>。'+
+ '反倒「随机移位后 9 席位平均只有 '+fmt(X.rand_mean_of_means,3)+' 点、真实横截面均值 '+
+ fmt(X.real_cross_mean,3)+' 点」说明规则结构本身在这段行情里普遍有效 —— 这是 beta，不是 alpha。'+
+ '<b>数据窥探警告</b>：平安是看过全样本净值后才被挑中的席位，中信又是看过第七节结果后才被注意到的最大值；'+
+ '样本外切分只能防参数过拟合，防不了「挑序列 / 反复改规则」。';
+
+/* ---------------- ⑤ 前期研究卡片 ---------------- */
+$('cards').innerHTML=D.cards.map(c=>'<div class="mini"><span class="tag">'+esc(c.tag)+'</span>'+
+ '<h3>'+c.no+' '+esc(c.title)+'</h3><ul>'+c.points.map(p=>'<li>'+p+'</li>').join('')+
+ '</ul><a class="go" href="'+c.href+'">打开详细页 →</a></div>').join('');
+
+/* ---------------- ⑥ 页脚 ---------------- */
+$('foot').innerHTML=
+ '<ul class="pts">'+
+ '<li><b>净值口径</b>：固定 5 手 TS（面值 200 万/手，报价按 100 元面值 ⇒ 1 点 = 2 万元/手 = 10 万元/组 = 初始 1000 万的 1%），'+
+ '名义敞口恒定、单倍杠杆、零成本。逐笔盈亏 = 方向 × (平仓价 − 开仓价) 点，'+
+ '<b>净值 = 1 + Σ(点数/100) 直接累加、不复利</b>；年化按单利 = 累计收益 × 243 / 交易日数。</li>'+
+ '<li><b>规则口径</b>：力度 = 净持仓日变动 <code>dNet</code> 在过去 60 个交易日的百分位（只用历史，无前视）；'+
+ 'T 日盘后信号 → T+1 开盘建仓 → 持有 3 个交易日 → T+4 收盘平仓；持仓期间不叠加。'+
+ '第七 / 九节为多空双侧，第八节只做多。参数完全沿用口述规则，<b>未重新调参</b>。</li>'+
+ '<li><b>样本切分</b>：探索段 '+M.start+' ~ '+DATES[SPLIT-1]+'，验证段 '+M.split+' ~ '+M.end+
+ '；切换区间时净值按首日点数归零重画，不改变逐笔盈亏。</li>'+
+ '<li><b>数据</b>：Wind 会员持仓导出 45 张表 + <code>TS.CFE.xlsx</code> 主力连续行情；'+
+ '2020 全年持仓缺失、2026 海通源表缺失，报告动态调参版（需 n=1~20 逐档）无法复现。研报 PDF 有版权未发布。</li>'+
+ '<li><b>定位</b>：三项研究（第七节多空检验 / 第八节只做多 / 第九节 9 席位对比）结论一致 —— '+
+ '可作为「逢跌做多、单仓位不追单」的执行刻度，<b>不能据此推断某个席位有独占信息，也不能直接上仓</b>。</li>'+
+ '</ul>'+
+ '<div class="note" style="margin-top:14px"><b>详细页与源码</b>：'+
+ '<a class="back" href="TS_蜘蛛网_持仓整理.html">持仓整理</a> · '+
+ '<a class="back" href="TS_蜘蛛网_策略回测.html">策略回测</a> · '+
+ '<a class="back" href="TS_平安净多_策略.html">平安逆势加多检验</a> · '+
+ '<a class="back" href="TS_平安纯多头_策略.html">平安只做多</a> · '+
+ '<a class="back" href="TS_席位对比_净值.html">9 席位对比</a> · '+
+ '<a class="back" href="README.md">README / 复现步骤</a><br>'+
+ '<span class="small">本页由 <code>spider_summary.py</code> + <code>spider_summary_template.html</code> 从 6 份结果 JSON 生成；'+
+ '数据已内嵌，可离线打开。Wind 导出数据仅供个人研究，请勿二次分发。</span></div>';
+</script>
+</body></html>
