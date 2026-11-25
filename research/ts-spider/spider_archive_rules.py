@@ -124,7 +124,25 @@ def signal_inputs(strategy, close, positions):
     return entries, ranks
 
 
-def simulate(strategy, dates, quotes, plans, entries, ranks, start, end, *, exit_signals=None):
+def trade_record(strategy, contract, signal_day, entry_day, entry_price, *,
+                 exit_day=None, exit_price=None, exit_kind=None, reason=None, exit_signal=None):
+    return {
+        '策略key': strategy.key, '策略': strategy.name, '合约': contract,
+        '信号日': signal_day, '开仓日': entry_day, '开仓价': round(float(entry_price), 5),
+        '平仓信号日': exit_signal, '平仓日': exit_day,
+        '平仓价': round(float(exit_price), 5) if exit_price is not None else None,
+        '平仓时点': exit_kind, '平仓原因': reason, '方向': '多',
+        '盈亏点数': round(float(exit_price - entry_price), 5) if exit_price is not None else None,
+        '状态': '已兑现' if exit_day else '持仓中',
+    }
+
+
+def early_exit_reason(strategy):
+    return '净多日变动转负开盘' if strategy.negative_exit else '转弱开盘'
+
+
+def simulate(strategy, dates, quotes, plans, entries, ranks, start, end, *,
+             exit_signals=None, trade_log=None):
     """Return daily fixed-notional point P&L, filled trades and exposure days."""
     if exit_signals is None and strategy.exit_rank is not None:
         exit_signals = ranks < strategy.exit_rank
@@ -139,18 +157,27 @@ def simulate(strategy, dates, quotes, plans, entries, ranks, start, end, *, exit
             continue
         entry_price = quotes[dates[entry]][contract][0]
         exit_price = quotes[dates[exit_day]][contract][1]
+        exit_signal = None
         if exit_signals is not None:
             for j in range(entry, exit_day):
                 if exit_signals[j]:
                     next_open = quotes[dates[j + 1]][contract][0]
                     if next_open is not None:
                         exit_day, exit_price = j + 1, next_open
+                        exit_signal = dates[j]
                         break
         marks = [quotes[dates[j]][contract][1] for j in range(entry, exit_day)]
         pnl[entry - start:exit_day - start + 1] += np.diff([entry_price, *marks, exit_price])
         free = exit_day + strategy.cooldown
         trades += 1
         exposure += exit_day - entry + 1
+        if trade_log is not None:
+            trade_log.append(trade_record(
+                strategy, contract, dates[t], dates[entry], entry_price,
+                exit_day=dates[exit_day], exit_price=exit_price, exit_signal=exit_signal,
+                exit_kind='开盘' if exit_signal else '收盘',
+                reason=early_exit_reason(strategy) if exit_signal else '计划日收盘',
+            ))
     return pnl, trades, exposure
 
 
@@ -189,7 +216,7 @@ def forward_signal(strategy, day, contracts, entry, rank, price_change, *, holdi
     }
 
 
-def simulate_forward(strategy, dates, quotes, signals, start):
+def simulate_forward(strategy, dates, quotes, signals, start, *, open_trades=None):
     """Run the first-published inputs from flat, in open/close order."""
     pnl = np.zeros(len(dates) - start)
     trades = []
@@ -211,20 +238,20 @@ def simulate_forward(strategy, dates, quotes, signals, start):
             expiry_day = expiry.scheduled_expiry(active['contract']).isoformat()
             exit_price = None
             if sell_at_open and opening is not None:
-                exit_price = opening
-                exit_reason = '净多日变动转负开盘' if strategy.negative_exit else '转弱开盘'
+                exit_price, exit_kind, exit_reason = opening, '开盘', early_exit_reason(strategy)
             elif day >= expiry_day:
-                exit_price, exit_reason = settlement, '到期结算'
+                exit_price, exit_kind, exit_reason = settlement, '结算', '到期结算'
             elif i == active['exit_idx']:
-                exit_price, exit_reason = close, '计划日收盘'
+                exit_price, exit_kind, exit_reason = close, '收盘', '计划日收盘'
             pnl[i - start] = (close if exit_price is None else exit_price) - active['mark']
             if exit_price is None:
                 active['mark'] = close
             else:
-                trades.append({'策略key': strategy.key, '策略': strategy.name, '合约': active['contract'],
-                               '信号日': active['signal'], '开仓日': active['entry'], '平仓日': day,
-                               '方向': '多', '盈亏点数': round(exit_price - active['opening'], 5),
-                               '平仓原因': exit_reason, '状态': '已兑现'})
+                trades.append(trade_record(
+                    strategy, active['contract'], active['signal'], active['entry'], active['opening'],
+                    exit_day=day, exit_price=exit_price, exit_kind=exit_kind, reason=exit_reason,
+                    exit_signal=dates[i - 1] if exit_kind == '开盘' else None,
+                ))
                 active, closed = None, True
 
         signal_today = signals[day]
@@ -247,4 +274,8 @@ def simulate_forward(strategy, dates, quotes, signals, start):
         state = {'position': '多' if active else '空仓',
                  'entry': active['entry'] if active else None,
                  'contract': active['contract'] if active else buy_contract, 'action': action}
+    if active is not None and open_trades is not None:
+        open_trades.append(trade_record(
+            strategy, active['contract'], active['signal'], active['entry'], active['opening'],
+        ))
     return pnl, trades, state

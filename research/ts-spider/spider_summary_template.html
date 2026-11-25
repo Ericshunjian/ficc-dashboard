@@ -36,6 +36,18 @@ select{font:inherit;border:1px solid var(--line);border-radius:7px;background:wh
 .swatch.benchmark{border-top-style:dashed}.legend button[aria-pressed="false"] .swatch{opacity:.35}
 .note{color:var(--muted);line-height:1.65;font-size:12px;margin:9px 0 0}.links{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px}
 footer{padding:2px 1px 8px}.empty{padding:10px 0;color:var(--muted)}
+.history{border-top:1px solid var(--line)}
+.history details{border-bottom:1px solid var(--line)}
+.history summary{padding:12px 4px;cursor:pointer;font-weight:700}
+.history summary:hover,.history summary:focus-visible{color:var(--accent)}
+.history summary small{margin-left:10px;font-weight:400}
+.history-scroll{max-height:min(360px,52vh);overflow:auto;overscroll-behavior:contain;margin:0 0 10px;border:1px solid var(--line);border-radius:7px}
+.history-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.history-scroll table{min-width:745px;border-collapse:separate;border-spacing:0}
+.history-scroll th{position:sticky;top:0;background:#f3f6fa;white-space:nowrap}
+.history-scroll td{line-height:1.45;white-space:nowrap}
+.history-scroll td small{display:block;margin-top:2px}.pnl-up{color:#146245}.pnl-down{color:#a14030}
+.history .orders table{min-width:480px}.history h3{font-size:13px;margin:12px 0 7px}
 @media(max-width:620px){main{padding:20px 12px}header{display:block}.date{display:block;margin-top:9px}.panel{padding:13px 12px}.rule-grid{grid-template-columns:1fr}
  .signals thead{display:none}.signals tbody{display:grid;gap:0}.signals tr{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:10px 0;border-bottom:1px solid #e8edf4}.signals tr:last-child{border:0}.signals td{border:0;padding:2px 0}.signals td:first-child{grid-column:1/-1}.signals td:last-child{grid-column:1/-1}.signals td[data-label]::before{content:attr(data-label) " ";font-size:11px;color:var(--muted)}}
 </style>
@@ -44,7 +56,7 @@ footer{padding:2px 1px 8px}.empty{padding:10px 0;color:var(--muted)}
 <header><div><h1>TS 蜘蛛网 · 每日信号</h1><p class="subtitle" id="source"></p></div>
 <time class="date" datetime="__ASOF__">信号日期 __ASOF__</time></header>
 <section class="panel" aria-labelledby="signal-title">
-<div class="heading"><h2 id="signal-title">盘后信号</h2><span class="muted" id="delta"></span></div>
+<div class="heading"><h2 id="signal-title">盘后信号</h2><span class="muted"><span id="delta"></span> · <a href="#trade-history">今年开平仓</a></span></div>
 <table class="signals"><thead><tr><th>策略</th><th>当日开仓条件</th><th>盘后仓位</th><th>下一步</th></tr></thead><tbody id="signals"></tbody></table>
 <p class="note" id="forward"></p>
 </section>
@@ -67,6 +79,12 @@ footer{padding:2px 1px 8px}.empty{padding:10px 0;color:var(--muted)}
 <div class="heading"><h2 id="stats-title">归案回测</h2><span class="muted" id="span"></span></div>
 <div class="scroll"><table><thead><tr><th>策略</th><th>累计收益</th><th>夏普</th><th>最大回撤</th><th>2024 年起收益</th><th>2024 年起夏普</th></tr></thead><tbody id="metrics"></tbody></table></div>
 <p class="note">2024 年起的数据参与了筛选。新增规则于 2026-11-25 锁定，并从当天盘后信号开始向前跟踪。</p>
+</section>
+<section class="panel" id="trade-history" aria-labelledby="trade-history-title">
+<div class="heading"><h2 id="trade-history-title">今年以来开平仓</h2><span class="muted" id="trade-span"></span></div>
+<p class="rule-note">点击策略名展开，表内可滚动。历史回放列出成交对应的信号，前瞻模拟另列首次发布的开平仓动作。</p>
+<div class="history" id="history-list"></div>
+<p class="note">组合按腿列原始盈亏点数，净值里两腿各按 50% 计。组合内的五日腿与单列五日版是同一条记录。</p>
 </section>
 <footer><div class="links"><a href="../../">FICC 看板</a><a href="TS_每日信号.json">信号 JSON</a><a href="TS_前瞻记录.json">前瞻记录</a></div></footer>
 </main>
@@ -118,6 +136,42 @@ $('rule-grid').innerHTML=d.strategies.map(s=>{
 }).join('');
 $('metrics').innerHTML=d.strategies.map(s=>'<tr><td class="strategy">'+esc(s.name)+'</td>'+
   [pct(s.total),s.sharpe.toFixed(2),pct(s.drawdown),pct(s.validation),s.validation_sharpe.toFixed(2)].map(x=>'<td class="number">'+x+'</td>').join('')+'</tr>').join('');
+$('trade-span').textContent=d.activity.year+'-01-01 至 '+d.asof;
+const valueOrDash=v=>v==null?'—':esc(v);
+const quote=v=>Number.isFinite(v)?v.toFixed(3):'—';
+const points=v=>Number.isFinite(v)?(v>0?'+':'')+quote(v):'—';
+const sub=v=>v?'<small>'+esc(v)+'</small>':'';
+function historyTable(name, label, headings, body, extra=''){
+  return '<div class="history-scroll '+extra+'" tabindex="0" role="region" aria-label="'+esc(name+' '+label)+'">'+
+    '<table><thead><tr>'+headings.map(h=>'<th scope="col">'+h+'</th>').join('')+
+    '</tr></thead><tbody>'+body+'</tbody></table></div>';
+}
+function tradeRow(t, showLeg){
+  const pnl=t.盈亏点数;
+  const reason=t.平仓原因||t.状态;
+  return '<tr><td>'+esc(t.来源)+sub(showLeg?t.策略:'')+'</td><td>'+esc(t.合约)+'</td>'+
+    '<td class="number">'+esc(t.信号日)+'</td>'+
+    '<td class="number">'+esc(t.开仓日)+sub('开盘 '+quote(t.开仓价))+'</td>'+
+    '<td class="number">'+valueOrDash(t.平仓日)+(t.平仓日?sub((t.平仓时点||'')+' '+quote(t.平仓价)):'')+'</td>'+
+    '<td>'+valueOrDash(reason)+sub(t.平仓信号日?'信号 '+t.平仓信号日:'')+'</td>'+
+    '<td class="number '+(pnl>0?'pnl-up':pnl<0?'pnl-down':'')+'">'+points(pnl)+'</td></tr>';
+}
+$('history-list').innerHTML=d.strategies.map(s=>{
+  const legs=s.legs||[s];
+  const trades=legs.flatMap(leg=>d.activity.books[leg.key].trades).sort((a,b)=>
+    (b.平仓日||b.开仓日).localeCompare(a.平仓日||a.开仓日) || b.信号日.localeCompare(a.信号日));
+  const orders=legs.flatMap(leg=>d.activity.books[leg.key].orders.map(order=>({...order,leg:leg.name})))
+    .sort((a,b)=>b.日期.localeCompare(a.日期));
+  const tradesTable=trades.length?historyTable(s.name,'交易记录',
+    ['来源','合约','开仓信号日','开仓成交','平仓成交','平仓原因 / 信号日','盈亏（点）'],
+    trades.map(t=>tradeRow(t,!!s.legs)).join('')):'<p class="empty">今年暂无成交记录。</p>';
+  const signalsTable=orders.length?historyTable(s.name,'前瞻开平仓信号',['信号日','动作','合约'],
+    orders.map(o=>'<tr><td class="number">'+esc(o.日期)+'</td><td>'+esc(o.动作)+
+      sub(s.legs?o.leg:'')+'</td><td>'+valueOrDash(o.合约)+'</td></tr>').join(''),'orders'):
+    '<p class="empty">今年暂无已发布的前瞻开平仓动作。</p>';
+  return '<details><summary>'+esc(s.name)+'<small>'+trades.length+' 笔记录</small></summary>'+
+    tradesTable+'<h3>前瞻开平仓信号</h3>'+signalsTable+'</details>';
+}).join('');
 const series=[...d.strategies, {...d.benchmark, isBenchmark:true}];
 const visible=new Set(series.map(s=>s.name));
 for(const item of series){

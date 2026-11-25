@@ -20,6 +20,7 @@ SIGNALS = BASE / 'TS_每日信号.json'
 FORWARD = BASE / 'TS_前瞻记录.json'
 COLORS = ('#2e65c2', '#0d836a', '#7951b5', '#ac542f', '#8a6408')
 SEATS = tuple(dict.fromkeys(strategy.seat for strategy in archive.ACTIVE_RULES))
+ORDER_ACTIONS = {'下个交易日开盘做多', '下个交易日开盘平仓', '下个交易日收盘平仓'}
 
 
 def append_sessions(dates, opens, closes, positions, snapshots):
@@ -61,6 +62,34 @@ def load_data(snapshots, target=None, *, seats=SEATS):
     return append_sessions(dates, opens, closes, positions, snapshots)
 
 
+def year_activity(key, asof, historical, simulated, open_trades, records, sessions):
+    year = asof[:4]
+    closed = {trade['信号日']: trade for trade in simulated}
+    for saved in records:
+        if saved['策略key'] != key or saved['平仓日'] > asof:
+            continue
+        replayed = closed.get(saved['信号日'], {})
+        same_trade = all(replayed.get(field) == saved.get(field)
+                         for field in ('合约', '开仓日', '平仓日', '平仓原因'))
+        closed[saved['信号日']] = {**replayed, **saved} if same_trade else saved
+
+    active = [trade for trade in open_trades if trade['信号日'] not in closed]
+    trades = []
+    for source, rows in (('历史回放', historical), ('前瞻模拟', [*closed.values(), *active])):
+        for trade in rows:
+            if any((trade.get(field) or '').startswith(year) for field in ('信号日', '开仓日', '平仓日')):
+                trades.append({**trade, '来源': source})
+    trades.sort(key=lambda t: (t['平仓日'] or t['开仓日'], t['信号日']), reverse=True)
+
+    orders = []
+    for day in sorted(sessions, reverse=True):
+        if day <= asof and day.startswith(year):
+            signal = sessions[day].get(key, {})
+            if signal.get('action') in ORDER_ACTIONS:
+                orders.append({'日期': day, '动作': signal['action'], '合约': signal.get('contract')})
+    return {'trades': trades, 'orders': orders}
+
+
 def build_dashboard(dates, closes, positions, snapshots, *, publish):
     asof = dates[-1]
     history_end = int(np.searchsorted(dates, archive.ASOF, side='right'))
@@ -78,14 +107,15 @@ def build_dashboard(dates, closes, positions, snapshots, *, publish):
 
     plans = {hold: archive.contract_plans(dates[:history_end], contracts, quotes, hold)
              for hold in {rule.hold for rule in archive.ACTIVE_RULES}}
-    results = {}
+    results, books = {}, {}
     for strategy in archive.ACTIVE_RULES:
         entries, ranks = archive.signal_inputs(strategy, closes, positions)
         holding = archive.holding_changes(positions[strategy.seat]) if strategy.flow_entry else None
         exits = holding[:, 0] < holding[:, 1] if strategy.negative_exit else None
+        historical = []
         full = archive.simulate(
             strategy, dates, quotes, plans[strategy.hold], entries, ranks, 0, history_end - 1,
-            exit_signals=exits,
+            exit_signals=exits, trade_log=historical,
         )
         recent = archive.simulate(
             strategy, dates, quotes, plans[strategy.hold], entries, ranks, split, history_end - 1,
@@ -103,8 +133,9 @@ def build_dashboard(dates, closes, positions, snapshots, *, publish):
                     strategy, day, contracts[day], entries[i], ranks[i], changes[i],
                     holding_change=holding[i] if holding is not None else None,
                 )
+        open_trades = []
         live_pnl, trades, live = archive.simulate_forward(
-            strategy, dates, quotes, live_signals, history_end,
+            strategy, dates, quotes, live_signals, history_end, open_trades=open_trades,
         )
         today = live_signals.get(asof) or archive.forward_signal(
             strategy, asof, contracts[asof], entries[-1], ranks[-1], changes[-1],
@@ -121,6 +152,7 @@ def build_dashboard(dates, closes, positions, snapshots, *, publish):
                     records.append(trade)
                     known.add(key)
 
+        books[strategy.key] = year_activity(strategy.key, asof, historical, trades, open_trades, records, sessions)
         report = current.get(strategy.key, {**today, **live})
         item = {
             'key': strategy.key, 'name': strategy.name,
@@ -153,7 +185,7 @@ def build_dashboard(dates, closes, positions, snapshots, *, publish):
         write_if_changed(FORWARD, json.dumps(state, ensure_ascii=False, indent=2) + '\n')
     forward = {'after': archive.ASOF, 'sessions': sum(day <= asof for day in sessions),
                'closed': sum(trade['平仓日'] <= asof for trade in records)}
-    return items, nav, forward
+    return items, nav, forward, {'year': asof[:4], 'books': books}
 
 
 def combine_portfolio(strategy, results):
@@ -207,12 +239,12 @@ def main():
     dates, _, closes, positions = load_data(snapshots)
     asof = dates[-1]
     publish = args.date == exchange.today() and asof == args.date.isoformat() and asof > anchor.isoformat()
-    strategies, nav, forward = build_dashboard(dates, closes, positions, snapshots, publish=publish)
+    strategies, nav, forward, activity = build_dashboard(dates, closes, positions, snapshots, publish=publish)
     payload = {
         'asof': asof, 'selection_end': min(archive.ASOF, asof), 'start': dates[0],
         'source': '中金所盘后数据' if asof > anchor.isoformat() else 'Wind 历史快照',
         'close_change': round(float(closes[-1] - closes[-2]), 4),
-        'strategies': strategies, 'forward': forward,
+        'strategies': strategies, 'forward': forward, 'activity': activity,
     }
     write_if_changed(SIGNALS, json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + '\n')
     page_data = json.dumps({**payload, 'dates': dates, 'nav': nav,

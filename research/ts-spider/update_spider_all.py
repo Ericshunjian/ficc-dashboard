@@ -109,9 +109,14 @@ def verify():
     if not m:
         return ['汇总页缺少数据'], False
     payload = json.loads(m.group(1))
+    activity = daily.get('activity', {})
+    legs = {leg['key'] for item in daily['strategies'] for leg in item.get('legs', [item])}
     ok = (payload['asof'] == daily['asof'] and daily['asof'] >= holdings['dates'][-1]
           and [item.get('key') for item in daily['strategies']] == [rule.key for rule in FEATURED]
-          and payload['strategies'] == daily['strategies'])
+          and payload['strategies'] == daily['strategies']
+          and activity == payload.get('activity')
+          and activity.get('year') == daily['asof'][:4]
+          and set(activity.get('books', {})) == legs)
     return [f"持仓快照 {holdings['dates'][-1]}，日更 {daily['asof']}，"
             f"{len(daily['strategies'])} 个策略"], ok
 
