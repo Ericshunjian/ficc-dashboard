@@ -34,9 +34,18 @@ class Strategy:
     exit_rank: float | None = None
     trend_window: int = 0
     require_down: bool = True
+    flow_entry: bool = False
+    negative_exit: bool = False
 
     def control(self):
-        return replace(self, key=f'{self.key}-control', exit_rank=None, trend_window=0)
+        return replace(self, key=f'{self.key}-control', exit_rank=None, trend_window=0, negative_exit=False)
+
+
+@dataclass(frozen=True)
+class Portfolio:
+    key: str
+    name: str
+    legs: tuple[Strategy, Strategy]
 
 
 STRATEGIES = (
@@ -44,12 +53,19 @@ STRATEGIES = (
     Strategy('PA-DIP5-EXIT20-v1', '平安回踩五日·转弱退出', '平安期货', 5, .75, 0, exit_rank=.20),
     Strategy('TOP20-TREND60-DIP5-v1', '前二十顺势回踩五日', '前20大合计', 5, .80, 0, trend_window=60),
 )
+PA_FLOW3 = Strategy('PA-FLOW3-v1', '平安多增空减·三日', '平安期货', 3, 0, 0,
+                    require_down=False, flow_entry=True)
+TOP20_FLOW3 = Strategy('TOP20-FLOW3-NEG-v1', '前二十多增空减·净多转负退出', '前20大合计', 3, 0, 0,
+                       require_down=False, flow_entry=True, negative_exit=True)
 FEATURED = (
-    *STRATEGIES[:2],
-    Strategy('PA-GRID75-H10-v1', '网格·点数王', '平安期货', 10, .75, 0, require_down=False),
+    Portfolio('PA-COMB50-v1', '平安等权组合', (STRATEGIES[1], PA_FLOW3)),
+    STRATEGIES[1],
     Strategy('TOP5-TREND60-DIP5-Q70-v1', '前五顺势回踩五日', '前5大合计', 5, .70, 0, trend_window=60),
     STRATEGIES[2],
+    TOP20_FLOW3,
 )
+ACTIVE_RULES = tuple(dict.fromkeys(rule for item in FEATURED
+                                   for rule in (item.legs if isinstance(item, Portfolio) else (item,))))
 
 
 def contract_ranks(dates, snapshots):
@@ -85,11 +101,20 @@ def contract_plans(dates, contracts, quotes, hold):
     return plans
 
 
+def holding_changes(rows):
+    return np.diff(np.asarray(rows, dtype=float), axis=0, prepend=np.full((1, 2), np.nan))
+
+
 def signal_inputs(strategy, close, positions):
     values = np.asarray(positions[strategy.seat], dtype=float)
-    daily_net = np.diff(values[:, 0] - values[:, 1], prepend=np.nan)
-    ranks = signal.rolling_pct(daily_net, win=60, min_obs=30)
-    entries = ranks >= strategy.entry_rank
+    if strategy.flow_entry:
+        long, short = holding_changes(values).T
+        ranks = np.full(len(values), np.nan)
+        entries = (long > 0) & (short < 0)
+    else:
+        daily_net = np.diff(values[:, 0] - values[:, 1], prepend=np.nan)
+        ranks = signal.rolling_pct(daily_net, win=60, min_obs=30)
+        entries = ranks >= strategy.entry_rank
     if strategy.require_down:
         entries &= np.diff(close, prepend=np.nan) < 0
     if strategy.trend_window:
@@ -142,7 +167,7 @@ def metrics(pnl, trades, exposure):
     }
 
 
-def forward_signal(strategy, day, contracts, entry, rank, price_change):
+def forward_signal(strategy, day, contracts, entry, rank, price_change, *, holding_change=None):
     contract = None
     if entry:
         cutoff = np.busday_offset(day, strategy.hold + 1, roll='forward', holidays=HOLIDAYS_2027)
@@ -151,9 +176,15 @@ def forward_signal(strategy, day, contracts, entry, rank, price_change):
             cutoff += np.timedelta64(9, 'D')
         contract = choose_contract(contracts, str(cutoff))
     valid = np.isfinite(rank) and (not strategy.require_down or np.isfinite(price_change))
+    weak = strategy.exit_rank is not None and rank < strategy.exit_rank
+    if strategy.flow_entry:
+        valid = bool(np.isfinite(holding_change).all())
+    if strategy.negative_exit:
+        long, short = holding_change
+        weak = long < short
     return {
         'raw': '多' if entry else '无触发' if valid else '数据缺失',
-        'buy_contract': contract, 'weak': bool(strategy.exit_rank is not None and rank < strategy.exit_rank),
+        'buy_contract': contract, 'weak': bool(weak),
         'pct': round(float(rank), 6) if np.isfinite(rank) else None,
     }
 
@@ -180,7 +211,8 @@ def simulate_forward(strategy, dates, quotes, signals, start):
             expiry_day = expiry.scheduled_expiry(active['contract']).isoformat()
             exit_price = None
             if sell_at_open and opening is not None:
-                exit_price, exit_reason = opening, '转弱开盘'
+                exit_price = opening
+                exit_reason = '净多日变动转负开盘' if strategy.negative_exit else '转弱开盘'
             elif day >= expiry_day:
                 exit_price, exit_reason = settlement, '到期结算'
             elif i == active['exit_idx']:

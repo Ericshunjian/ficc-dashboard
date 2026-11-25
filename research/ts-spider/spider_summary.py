@@ -19,7 +19,7 @@ SUMMARY_ALIAS = BASE / 'TS_研究汇总.html'
 SIGNALS = BASE / 'TS_每日信号.json'
 FORWARD = BASE / 'TS_前瞻记录.json'
 COLORS = ('#2e65c2', '#0d836a', '#7951b5', '#ac542f', '#8a6408')
-SEATS = tuple(dict.fromkeys(strategy.seat for strategy in archive.FEATURED))
+SEATS = tuple(dict.fromkeys(strategy.seat for strategy in archive.ACTIVE_RULES))
 
 
 def append_sessions(dates, opens, closes, positions, snapshots):
@@ -76,31 +76,43 @@ def build_dashboard(dates, closes, positions, snapshots, *, publish):
     publish_today = publish and asof > archive.ASOF
     current = sessions.setdefault(asof, {}) if publish_today else sessions.get(asof, {})
 
-    items, nav = [], {}
-    for strategy, color in zip(archive.FEATURED, COLORS, strict=True):
+    plans = {hold: archive.contract_plans(dates[:history_end], contracts, quotes, hold)
+             for hold in {rule.hold for rule in archive.ACTIVE_RULES}}
+    results = {}
+    for strategy in archive.ACTIVE_RULES:
         entries, ranks = archive.signal_inputs(strategy, closes, positions)
-        plans = archive.contract_plans(dates[:history_end], contracts, quotes, strategy.hold)
-        pnl, count, exposure = archive.simulate(
-            strategy, dates, quotes, plans, entries, ranks, 0, history_end - 1,
+        holding = archive.holding_changes(positions[strategy.seat]) if strategy.flow_entry else None
+        exits = holding[:, 0] < holding[:, 1] if strategy.negative_exit else None
+        full = archive.simulate(
+            strategy, dates, quotes, plans[strategy.hold], entries, ranks, 0, history_end - 1,
+            exit_signals=exits,
         )
-        history = archive.metrics(pnl, count, exposure)
-        recent = archive.metrics(*archive.simulate(
-            strategy, dates, quotes, plans, entries, ranks, split, history_end - 1,
-        ))
+        recent = archive.simulate(
+            strategy, dates, quotes, plans[strategy.hold], entries, ranks, split, history_end - 1,
+            exit_signals=exits,
+        )
 
         live_signals = {}
         for i in range(history_end, len(dates)):
             day = dates[i]
             issued = sessions.get(day, {}).get(strategy.key)
-            live_signals[day] = issued or archive.forward_signal(
-                strategy, day, contracts[day], entries[i], ranks[i], changes[i],
-            )
+            if issued:
+                live_signals[day] = issued
+            else:
+                live_signals[day] = archive.forward_signal(
+                    strategy, day, contracts[day], entries[i], ranks[i], changes[i],
+                    holding_change=holding[i] if holding is not None else None,
+                )
         live_pnl, trades, live = archive.simulate_forward(
             strategy, dates, quotes, live_signals, history_end,
         )
         today = live_signals.get(asof) or archive.forward_signal(
             strategy, asof, contracts[asof], entries[-1], ranks[-1], changes[-1],
+            holding_change=holding[-1] if holding is not None else None,
         )
+        if holding is not None:
+            today = {**today, **{key: int(value) if np.isfinite(value) else None
+                                 for key, value in zip(('long_change', 'short_change'), holding[-1])}}
         if publish_today:
             current.setdefault(strategy.key, {**today, **live})
             for trade in trades:
@@ -110,20 +122,31 @@ def build_dashboard(dates, closes, positions, snapshots, *, publish):
                     known.add(key)
 
         report = current.get(strategy.key, {**today, **live})
-        items.append({
-            'key': strategy.key, 'name': strategy.name, 'color': color, 'cost': 0,
+        item = {
+            'key': strategy.key, 'name': strategy.name,
             'seat': strategy.seat, 'require_down': strategy.require_down,
-            'trend_window': strategy.trend_window,
+            'trend_window': strategy.trend_window, 'flow_entry': strategy.flow_entry,
+            'negative_exit': strategy.negative_exit,
             'hold': strategy.hold, 'entry_rank': strategy.entry_rank, 'exit_rank': strategy.exit_rank,
             'entry_on_close_day': not strategy.cooldown,
+            **{key: report[key] for key in ('raw', 'position', 'contract', 'action', 'entry')},
+            'drivers': {key: report.get(key) for key in ('pct', 'long_change', 'short_change')},
+        }
+        results[strategy.key] = (item, full, recent, live_pnl)
+
+    items, nav = [], {}
+    for strategy, color in zip(archive.FEATURED, COLORS, strict=True):
+        item, full, recent, live_pnl = (combine_portfolio(strategy, results)
+                                        if isinstance(strategy, archive.Portfolio) else results[strategy.key])
+        history = archive.metrics(*full)
+        validation = archive.metrics(*recent)
+        items.append({
+            **item, 'color': color, 'cost': 0,
             'total': history['total_pct'] / 100, 'sharpe': history['sharpe'],
             'drawdown': history['drawdown_pct'] / 100, 'trades': history['trades'],
-            'validation': recent['total_pct'] / 100, 'validation_sharpe': recent['sharpe'],
-            **{key: report[key] for key in ('raw', 'position', 'contract', 'action', 'entry')},
-            'drivers': {'pct': report['pct']},
+            'validation': validation['total_pct'] / 100, 'validation_sharpe': validation['sharpe'],
         })
-        nav[strategy.name] = np.round(1 + np.cumsum(np.r_[pnl, live_pnl]) / bt.PRICE_REF, 7).tolist()
-
+        nav[strategy.name] = np.round(1 + np.cumsum(np.r_[full[0], live_pnl]) / bt.PRICE_REF, 7).tolist()
     nav[expiry.NAME] = expiry.net_values(dates, quotes, 0, bt.PRICE_REF)
     if publish_today:
         records.sort(key=lambda trade: (trade['信号日'], trade['策略key']))
@@ -131,6 +154,26 @@ def build_dashboard(dates, closes, positions, snapshots, *, publish):
     forward = {'after': archive.ASOF, 'sessions': sum(day <= asof for day in sessions),
                'closed': sum(trade['平仓日'] <= asof for trade in records)}
     return items, nav, forward
+
+
+def combine_portfolio(strategy, results):
+    (first, first_full, first_recent, first_live), (second, second_full, second_recent, second_live) = (
+        results[leg.key] for leg in strategy.legs
+    )
+    sides = [first, second]
+    triggers = {leg['raw'] for leg in sides}
+    exposure = sum(leg['position'] == '多' for leg in sides) * 50
+    actions = '、'.join(f"{leg['name']} {leg['action']}" + (f" {leg['contract']}" if leg['contract'] else '')
+                       for leg in sides)
+    item = {
+        'key': strategy.key, 'name': strategy.name, 'legs': sides,
+        'raw': '多' if '多' in triggers else '数据缺失' if '数据缺失' in triggers else '无触发',
+        'position': f'多 {exposure}%' if exposure else '空仓',
+        'action': actions, 'contract': None, 'entry': None,
+    }
+    full = ((first_full[0] + second_full[0]) / 2, first_full[1] + second_full[1], 0)
+    recent = ((first_recent[0] + second_recent[0]) / 2, first_recent[1] + second_recent[1], 0)
+    return item, full, recent, (first_live + second_live) / 2
 
 
 def digest(payload, target):

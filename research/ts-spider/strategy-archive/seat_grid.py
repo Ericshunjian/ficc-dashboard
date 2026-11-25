@@ -1,5 +1,6 @@
 """Compare entry rules for TS holdings aggregates on the frozen sample."""
 import argparse
+from dataclasses import replace
 from datetime import date
 from itertools import product
 from pathlib import Path
@@ -48,8 +49,7 @@ def report(seat, candidates):
 
 
 def holding_changes(seat, positions):
-    holdings = np.asarray(positions[seat], dtype=float)
-    return np.diff(holdings, axis=0, prepend=np.full((1, 2), np.nan)).T
+    return archive.holding_changes(positions[seat]).T
 
 
 def print_periods(identifier, results):
@@ -127,10 +127,9 @@ def portfolio_uncertainty(first, second):
 
 def report_portfolio(close, positions, run, periods):
     five_day = archive.STRATEGIES[1]
-    flow = archive.Strategy('PA-FLOW3-v1', '平安多增空减·三日', five_day.seat, 3, 0, 0)
+    flow = archive.PA_FLOW3
     entries, ranks = archive.signal_inputs(five_day, close, positions)
-    long_change, short_change = holding_changes(five_day.seat, positions)
-    flow_entries = (long_change > 0) & (short_change < 0)
+    flow_entries, _ = archive.signal_inputs(flow, close, positions)
     print('\n平安等权组合 | 各占一半固定名义仓位，日盈亏相关性及收益 / 夏普 / 回撤')
     print('区间 | 相关性 | 五日转弱 | 多增空减三日 | 等权')
     for name, lo, hi in periods:
@@ -146,6 +145,37 @@ def report_portfolio(close, positions, run, periods):
             gain, sharpe = portfolio_uncertainty(first, second)
             print(f'  相对五日转弱的 95% 区间 | 收益差 {gain[0]:+.3f} 到 {gain[1]:+.3f} 个百分点'
                   f' | 夏普差 {sharpe[0]:+.3f} 到 {sharpe[1]:+.3f}')
+
+
+def report_neighborhood(close, positions, run, periods):
+    windows = periods[:3]
+    five = archive.STRATEGIES[1]
+    flow = archive.PA_FLOW3
+    front = archive.TOP20_FLOW3
+    five_entries, five_ranks = archive.signal_inputs(five, close, positions)
+    flow_entries, _ = archive.signal_inputs(flow, close, positions)
+    front_entries, _ = archive.signal_inputs(front, close, positions)
+    long_change, short_change = holding_changes(front.seat, positions)
+    negative = long_change < short_change
+    twice = negative & np.r_[False, negative[:-1]]
+    fixed_leg = {label: run(five, five_entries, five_ranks, lo, hi) for label, lo, hi in windows}
+
+    print('\n邻近参数 | 全样本、前段、后段的累计收益 / 夏普 / 最大回撤 / 笔数')
+    for hold in (2, 3, 4):
+        varied = replace(flow, hold=hold)
+        paths = {label: run(varied, flow_entries, None, lo, hi) for label, lo, hi in windows}
+        for weight in (.4, .5, .6):
+            metrics = {
+                label: archive.metrics(weight * fixed_leg[label][0] + (1 - weight) * pnl,
+                                       fixed_leg[label][1] + count, 0)
+                for label, (pnl, count, _) in paths.items()
+            }
+            print_periods(['平安组合', f'多增空减 H={hold}', f'转弱版 {weight:.0%}'], metrics)
+        varied = replace(front, hold=hold)
+        for label, mask in [('单日转负', negative), ('连续两日为负', twice)]:
+            metrics = {window: archive.metrics(*run(varied, front_entries, None, lo, hi, exit_signals=mask))
+                       for window, lo, hi in windows}
+            print_periods(['前二十', f'H={hold}', label], metrics)
 
 
 def main():
@@ -172,7 +202,7 @@ def main():
         periods.append((str(year), lo, hi))
     quotes = expiry.read_quotes(snapshots)
     contracts = archive.contract_ranks(dates, snapshots)
-    holds = (0, *HOLDS) if args.exit_study else HOLDS
+    holds = (0, 1, 2, 3, 4, 5, 10) if args.exit_study else HOLDS
     plans = {hold: archive.contract_plans(dates, contracts, quotes, hold) for hold in holds}
 
     def run(rule, entries, ranks, lo, hi, *, exit_signals=None):
@@ -189,6 +219,7 @@ def main():
         for seat in seats:
             report_exit_study(seat, positions, backtest)
         report_portfolio(close, positions, run, periods)
+        report_neighborhood(close, positions, run, periods)
         return
 
     for seat in seats:
