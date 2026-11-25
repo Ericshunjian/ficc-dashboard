@@ -18,6 +18,8 @@ import spider_summary as summary
 SEATS = ('前5大合计', '前10大合计')
 HOLDS = (1, 3, 5, 10)
 RANKS = (.60, .65, .70, .75, .80, .85, .90, .95)
+FLOW_SEATS = (*SEATS, '前20大合计')
+FLOW_FLOORS = (0, 50, 100, 250, 500)
 
 
 def report(seat, candidates):
@@ -45,9 +47,19 @@ def report(seat, candidates):
                   f" | 最大回撤 {metrics['drawdown_pct']:.3f}% | {metrics['trades']} 笔")
 
 
-def report_directions(seat, close, positions, backtest):
+def holding_changes(seat, positions):
     holdings = np.asarray(positions[seat], dtype=float)
-    long_change, short_change = np.diff(holdings, axis=0, prepend=np.full((1, 2), np.nan)).T
+    return np.diff(holdings, axis=0, prepend=np.full((1, 2), np.nan)).T
+
+
+def print_periods(identifier, results):
+    cells = [f"{m['total_pct']:.3f}% / {m['sharpe']:.3f} / "
+             f"{m['drawdown_pct']:.3f}% / {m['trades']}" for m in results.values()]
+    print(' | '.join([*identifier, *cells]))
+
+
+def report_directions(seat, close, positions, backtest):
+    long_change, short_change = holding_changes(seat, positions)
     both = (long_change > 0) & (short_change < 0)
     net = long_change > short_change
     dip = np.diff(close, prepend=np.nan) < 0
@@ -66,17 +78,83 @@ def report_directions(seat, close, positions, backtest):
     for name, entries, holds in rules:
         for hold in holds:
             rule = archive.Strategy('direction', name, seat, hold, 0, 0)
-            results = backtest(rule, entries, no_rank)
-            cells = [f"{m['total_pct']:.3f}% / {m['sharpe']:.3f} / "
-                     f"{m['drawdown_pct']:.3f}% / {m['trades']}" for m in results.values()]
-            print(' | '.join([name, str(hold), str(np.count_nonzero(entries)), *cells]))
+            print_periods([name, str(hold), str(np.count_nonzero(entries))], backtest(rule, entries, no_rank))
+
+
+def report_exit_study(seat, positions, backtest):
+    long_change, short_change = holding_changes(seat, positions)
+    both = (long_change > 0) & (short_change < 0)
+    exits = {
+        '固定': None,
+        '反向双变动': (long_change < 0) & (short_change > 0),
+        '净多转负': long_change < short_change,
+    }
+    results = {}
+    for hold, floor, exit_name in product((0, *HOLDS), FLOW_FLOORS, exits):
+        if hold == 0 and exit_name != '固定':
+            continue
+        entries = both & (long_change >= floor) & (-short_change >= floor)
+        rule = archive.Strategy('flow-exit', seat, seat, hold, 0, 0)
+        results[hold, floor, exit_name] = backtest(rule, entries, None, exit_signals=exits[exit_name])
+
+    eligible = [key for key, periods in results.items()
+                if all(periods[phase]['trades'] >= 20 and periods[phase]['total_pct'] > 0
+                       for phase in ('前段', '后段'))]
+    ordered = sorted(eligible, key=lambda key: min(results[key]['前段']['sharpe'],
+                                                   results[key]['后段']['sharpe']), reverse=True)
+    print(f'\n{seat} | {len(results)} 组 | 收益 / 夏普 / 回撤 / 笔数')
+    print('H | 两侧最低手数 | 退出 | 全样本 | 前段 | 后段 | 2024 | 2025 | 2026')
+    controls = [(0, 0, '固定'), (1, 0, '固定'), (3, 0, '固定'), (3, 0, '净多转负')]
+    for key in dict.fromkeys([*ordered[:3], *controls]):
+        print_periods([str(part) for part in key], results[key])
+
+
+def portfolio_uncertainty(first, second):
+    """Resample matched 20-session blocks of both sleeves together."""
+    size, block, draws = len(first), 20, 3000
+    rng = np.random.default_rng(20261125)
+    starts = rng.integers(0, size - block + 1, size=(draws, (size + block - 1) // block))
+    indices = (starts[:, :, None] + np.arange(block)).reshape(draws, -1)[:, :size]
+    benchmark = first[indices]
+    combined = (benchmark + second[indices]) / 2
+
+    def sharpe(pnl):
+        return pnl.mean(axis=1) / pnl.std(axis=1, ddof=1) * np.sqrt(243)
+
+    return (np.percentile((combined - benchmark).sum(axis=1), (2.5, 97.5)),
+            np.percentile(sharpe(combined) - sharpe(benchmark), (2.5, 97.5)))
+
+
+def report_portfolio(close, positions, run, periods):
+    five_day = archive.STRATEGIES[1]
+    flow = archive.Strategy('PA-FLOW3-v1', '平安多增空减·三日', five_day.seat, 3, 0, 0)
+    entries, ranks = archive.signal_inputs(five_day, close, positions)
+    long_change, short_change = holding_changes(five_day.seat, positions)
+    flow_entries = (long_change > 0) & (short_change < 0)
+    print('\n平安等权组合 | 各占一半固定名义仓位，日盈亏相关性及收益 / 夏普 / 回撤')
+    print('区间 | 相关性 | 五日转弱 | 多增空减三日 | 等权')
+    for name, lo, hi in periods:
+        first = run(five_day, entries, ranks, lo, hi)[0]
+        second = run(flow, flow_entries, None, lo, hi)[0]
+        cells = []
+        for pnl in (first, second, (first + second) / 2):
+            m = archive.metrics(pnl, 0, 0)
+            cells.append(f"{m['total_pct']:.3f}% / {m['sharpe']:.3f} / {m['drawdown_pct']:.3f}%")
+        correlation = np.corrcoef(first, second)[0, 1]
+        print(' | '.join([name, f'{correlation:.3f}', *cells]))
+        if name in ('全样本', '后段'):
+            gain, sharpe = portfolio_uncertainty(first, second)
+            print(f'  相对五日转弱的 95% 区间 | 收益差 {gain[0]:+.3f} 到 {gain[1]:+.3f} 个百分点'
+                  f' | 夏普差 {sharpe[0]:+.3f} 到 {sharpe[1]:+.3f}')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--direction', action='store_true', help='比较前五、前十、前二十的不设分位入场规则')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--direction', action='store_true', help='比较前五、前十、前二十的不设分位入场规则')
+    mode.add_argument('--exit-study', action='store_true', help='比较多增空减的手数门槛、退出规则与等权组合')
     args = parser.parse_args()
-    seats = (*SEATS, '前20大合计') if args.direction else SEATS
+    seats = (*FLOW_SEATS, '平安期货') if args.exit_study else FLOW_SEATS if args.direction else SEATS
     cutoff = date.fromisoformat(archive.ASOF)
     snapshots = {day: row for day, row in exchange.read_inputs().items() if day <= archive.ASOF}
     dates, _, close, positions = summary.load_data(snapshots, cutoff, seats=seats)
@@ -94,13 +172,24 @@ def main():
         periods.append((str(year), lo, hi))
     quotes = expiry.read_quotes(snapshots)
     contracts = archive.contract_ranks(dates, snapshots)
-    plans = {hold: archive.contract_plans(dates, contracts, quotes, hold) for hold in HOLDS}
+    holds = (0, *HOLDS) if args.exit_study else HOLDS
+    plans = {hold: archive.contract_plans(dates, contracts, quotes, hold) for hold in holds}
 
-    def backtest(rule, entries, ranks):
+    def run(rule, entries, ranks, lo, hi, *, exit_signals=None):
+        return archive.simulate(rule, dates, quotes, plans[rule.hold], entries, ranks, lo, hi,
+                                exit_signals=exit_signals)
+
+    def backtest(rule, entries, ranks, *, exit_signals=None):
         return {
-            label: archive.metrics(*archive.simulate(rule, dates, quotes, plans[rule.hold], entries, ranks, lo, hi))
+            label: archive.metrics(*run(rule, entries, ranks, lo, hi, exit_signals=exit_signals))
             for label, lo, hi in periods
         }
+
+    if args.exit_study:
+        for seat in seats:
+            report_exit_study(seat, positions, backtest)
+        report_portfolio(close, positions, run, periods)
+        return
 
     for seat in seats:
         if args.direction:

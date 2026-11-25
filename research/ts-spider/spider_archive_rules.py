@@ -99,8 +99,10 @@ def signal_inputs(strategy, close, positions):
     return entries, ranks
 
 
-def simulate(strategy, dates, quotes, plans, entries, ranks, start, end):
+def simulate(strategy, dates, quotes, plans, entries, ranks, start, end, *, exit_signals=None):
     """Return daily fixed-notional point P&L, filled trades and exposure days."""
+    if exit_signals is None and strategy.exit_rank is not None:
+        exit_signals = ranks < strategy.exit_rank
     pnl = np.zeros(end - start + 1)
     trades, exposure = 0, 0
     free = start
@@ -112,9 +114,9 @@ def simulate(strategy, dates, quotes, plans, entries, ranks, start, end):
             continue
         entry_price = quotes[dates[entry]][contract][0]
         exit_price = quotes[dates[exit_day]][contract][1]
-        if strategy.exit_rank is not None:
+        if exit_signals is not None:
             for j in range(entry, exit_day):
-                if ranks[j] < strategy.exit_rank:
+                if exit_signals[j]:
                     next_open = quotes[dates[j + 1]][contract][0]
                     if next_open is not None:
                         exit_day, exit_price = j + 1, next_open
