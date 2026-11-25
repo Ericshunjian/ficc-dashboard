@@ -1,9 +1,9 @@
 {
-  "asof": "2026-11-24",
+  "asof": "2026-11-25",
   "selection_end": "2026-11-24",
   "start": "2021-01-04",
   "source": "中金所盘后数据",
-  "close_change": 0.002,
+  "close_change": 0.0,
   "strategies": [
     {
       "key": "PA-COMB50-v1",
@@ -24,10 +24,10 @@
           "raw": "无触发",
           "position": "空仓",
           "contract": null,
-          "action": "下一交易日起观察",
+          "action": "维持空仓",
           "entry": null,
           "drivers": {
-            "pct": 0.5,
+            "pct": 0.233333,
             "long_change": null,
             "short_change": null
           }
@@ -47,18 +47,18 @@
           "raw": "无触发",
           "position": "空仓",
           "contract": null,
-          "action": "下一交易日起观察",
+          "action": "维持空仓",
           "entry": null,
           "drivers": {
             "pct": null,
-            "long_change": -1881,
-            "short_change": -1761
+            "long_change": 273,
+            "short_change": 999
           }
         }
       ],
       "raw": "无触发",
       "position": "空仓",
-      "action": "平安回踩五日·转弱退出 下一交易日起观察、平安多增空减·三日 下一交易日起观察",
+      "action": "平安回踩五日·转弱退出 维持空仓、平安多增空减·三日 维持空仓",
       "contract": null,
       "entry": null,
       "color": "#2e65c2",
@@ -85,10 +85,10 @@
       "raw": "无触发",
       "position": "空仓",
       "contract": null,
-      "action": "下一交易日起观察",
+      "action": "维持空仓",
       "entry": null,
       "drivers": {
-        "pct": 0.5,
+        "pct": 0.233333,
         "long_change": null,
         "short_change": null
       },
@@ -116,10 +116,10 @@
       "raw": "无触发",
       "position": "空仓",
       "contract": null,
-      "action": "下一交易日起观察",
+      "action": "维持空仓",
       "entry": null,
       "drivers": {
-        "pct": 0.216667,
+        "pct": 0.9,
         "long_change": null,
         "short_change": null
       },
@@ -147,10 +147,10 @@
       "raw": "无触发",
       "position": "空仓",
       "contract": null,
-      "action": "下一交易日起观察",
+      "action": "维持空仓",
       "entry": null,
       "drivers": {
-        "pct": 0.95,
+        "pct": 0.7,
         "long_change": null,
         "short_change": null
       },
@@ -177,13 +177,13 @@
       "entry_on_close_day": true,
       "raw": "多",
       "position": "空仓",
-      "contract": null,
-      "action": "下一交易日起观察",
+      "contract": "TS2703",
+      "action": "下个交易日开盘做多",
       "entry": null,
       "drivers": {
         "pct": null,
-        "long_change": 633,
-        "short_change": -826
+        "long_change": 129,
+        "short_change": -290
       },
       "color": "#8a6408",
       "cost": 0,
@@ -197,7 +197,7 @@
   ],
   "forward": {
     "after": "2026-11-24",
-    "sessions": 0,
+    "sessions": 1,
     "closed": 0
   },
   "activity": {
@@ -1722,7 +1722,13 @@
             "来源": "历史回放"
           }
         ],
-        "orders": []
+        "orders": [
+          {
+            "日期": "2026-11-25",
+            "动作": "下个交易日开盘做多",
+            "合约": "TS2703"
+          }
+        ]
       }
     }
   }

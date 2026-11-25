@@ -14,5 +14,67 @@
       "前20大合计 · 逢跌纯多 H=3": "无触发",
       "平安期货 · 持仓双变动": "无触发"
     }
+  },
+  "archive_v1": {
+    "after": "2026-11-24",
+    "sessions": {
+      "2026-11-25": {
+        "PA-DIP5-EXIT20-v1": {
+          "raw": "无触发",
+          "buy_contract": null,
+          "weak": false,
+          "pct": 0.233333,
+          "position": "空仓",
+          "entry": null,
+          "contract": null,
+          "action": "维持空仓"
+        },
+        "PA-FLOW3-v1": {
+          "raw": "无触发",
+          "buy_contract": null,
+          "weak": false,
+          "pct": null,
+          "long_change": 273,
+          "short_change": 999,
+          "position": "空仓",
+          "entry": null,
+          "contract": null,
+          "action": "维持空仓"
+        },
+        "TOP5-TREND60-DIP5-Q70-v1": {
+          "raw": "无触发",
+          "buy_contract": null,
+          "weak": false,
+          "pct": 0.9,
+          "position": "空仓",
+          "entry": null,
+          "contract": null,
+          "action": "维持空仓"
+        },
+        "TOP20-TREND60-DIP5-v1": {
+          "raw": "无触发",
+          "buy_contract": null,
+          "weak": false,
+          "pct": 0.7,
+          "position": "空仓",
+          "entry": null,
+          "contract": null,
+          "action": "维持空仓"
+        },
+        "TOP20-FLOW3-NEG-v1": {
+          "raw": "多",
+          "buy_contract": "TS2703",
+          "weak": false,
+          "pct": null,
+          "long_change": 129,
+          "short_change": -290,
+          "position": "空仓",
+          "entry": null,
+          "contract": "TS2703",
+          "action": "下个交易日开盘做多"
+        }
+      }
+    },
+    "records": []
   }
 }
