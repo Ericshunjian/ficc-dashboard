@@ -11,6 +11,7 @@ import spider_archive_rules as archive
 import spider_backtest as bt
 import spider_daily_data as exchange
 import spider_expiry_benchmark as expiry
+import spider_pingan_signal as pingan
 
 BASE = Path(__file__).resolve().parent
 TEMPLATE = BASE / 'spider_summary_template.html'
@@ -225,6 +226,15 @@ def write_if_changed(path, data):
     temporary.replace(path)
 
 
+def pingan_quantiles(positions):
+    holdings = np.asarray(positions['平安期货'], dtype=float)
+    daily_net = np.diff(holdings[:, 0] - holdings[:, 1], prepend=np.nan)
+    return {
+        str(pct): [int(value) if np.isfinite(value) else None for value in series]
+        for pct, series in zip((20, 75), pingan.rolling_quantile_levels(daily_net, (20, 75)), strict=True)
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--refresh', action='store_true', help='从中金所获取目标日数据')
@@ -247,7 +257,7 @@ def main():
         'strategies': strategies, 'forward': forward, 'activity': activity,
     }
     write_if_changed(SIGNALS, json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + '\n')
-    page_data = json.dumps({**payload, 'dates': dates, 'nav': nav,
+    page_data = json.dumps({**payload, 'dates': dates, 'nav': nav, 'pingan_quantiles': pingan_quantiles(positions),
                             'benchmark': {'name': expiry.NAME, 'color': '#46596f'}}, ensure_ascii=False,
                            separators=(',', ':'), allow_nan=False).replace('<', '\\u003c')
     page = TEMPLATE.read_text(encoding='utf-8').replace('__PAYLOAD__', page_data)

@@ -48,6 +48,15 @@ footer{padding:2px 1px 8px}.empty{padding:10px 0;color:var(--muted)}
 .history-scroll td{line-height:1.45;white-space:nowrap}
 .history-scroll td small{display:block;margin-top:2px}.pnl-up{color:#146245}.pnl-down{color:#a14030}
 .history .orders table{min-width:480px}.history h3{font-size:13px;margin:12px 0 7px}
+.quantile-controls,.quantile-key{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+.quantile-controls input[type=date]{font:inherit;color:inherit;border:1px solid var(--line);border-radius:7px;padding:4px 6px}
+#quantile-chart{width:100%;height:240px;display:block;cursor:grab;touch-action:pan-y;user-select:none}
+#quantile-chart.dragging{cursor:grabbing}#quantile-chart text{fill:var(--muted);font:12px system-ui,sans-serif}
+.quantile-key{min-height:34px}.quantile-key span{display:inline-flex;align-items:center;gap:6px}
+#quantile-values{font-variant-numeric:tabular-nums;color:#14263c;font-weight:600}
+.quantile-timeline{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;align-items:center}
+.quantile-timeline input{width:100%;margin:0;accent-color:var(--accent)}
+#quantile-window{grid-column:2;text-align:right;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 @media(max-width:620px){main{padding:20px 12px}header{display:block}.date{display:block;margin-top:9px}.panel{padding:13px 12px}.rule-grid{grid-template-columns:1fr}
  .signals thead{display:none}.signals tbody{display:grid;gap:0}.signals tr{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:10px 0;border-bottom:1px solid #e8edf4}.signals tr:last-child{border:0}.signals td{border:0;padding:2px 0}.signals td:first-child{grid-column:1/-1}.signals td:last-child{grid-column:1/-1}.signals td[data-label]::before{content:attr(data-label) " ";font-size:11px;color:var(--muted)}}
 </style>
@@ -56,7 +65,7 @@ footer{padding:2px 1px 8px}.empty{padding:10px 0;color:var(--muted)}
 <header><div><h1>TS 蜘蛛网 · 每日信号</h1><p class="subtitle" id="source"></p></div>
 <time class="date" datetime="__ASOF__">信号日期 __ASOF__</time></header>
 <section class="panel" aria-labelledby="signal-title">
-<div class="heading"><h2 id="signal-title">盘后信号</h2><span class="muted"><span id="delta"></span> · <a href="#trade-history">今年开平仓</a></span></div>
+<div class="heading"><h2 id="signal-title">盘后信号</h2><span class="muted"><span id="delta"></span> · <a href="#pingan-quantiles">平安分位</a> · <a href="#trade-history">今年开平仓</a></span></div>
 <table class="signals"><thead><tr><th>策略</th><th>当日开仓条件</th><th>盘后仓位</th><th>下一步</th></tr></thead><tbody id="signals"></tbody></table>
 <p class="note" id="forward"></p>
 </section>
@@ -74,6 +83,22 @@ footer{padding:2px 1px 8px}.empty{padding:10px 0;color:var(--muted)}
 <div class="legend" id="legend" role="group" aria-label="显示或隐藏净值曲线"></div>
 <p class="note">点击图例隐藏或恢复曲线。策略与基准统一按固定名义本金、零手续费与滑点、逐日盯市。切换区间后从 1 重新计算。</p>
 <p class="note">持有到期基准买入最近季月 TS，到期按交易所结算价计值，下一交易日开盘换月。</p>
+</section>
+<section class="panel" id="pingan-quantiles" aria-labelledby="quantile-title">
+<div class="heading"><h2 id="quantile-title">平安净多日变动分位</h2>
+<div class="quantile-controls">
+<label class="muted">区间 <select id="quantile-size"><option value="242">近 1 年</option><option value="120">近半年</option><option value="60">近 60 个交易日</option><option value="all">全样本</option></select></label>
+<label class="muted">查日期 <input type="date" id="quantile-date"></label>
+</div></div>
+<div class="quantile-key">
+<span><i class="swatch" style="--series-color:#2e65c2" aria-hidden="true"></i>75% 分位</span>
+<span><i class="swatch benchmark" style="--series-color:#ad5636" aria-hidden="true"></i>20% 分位</span>
+<output id="quantile-values" aria-label="所选交易日分位手数"></output>
+</div>
+<svg id="quantile-chart" viewBox="0 0 900 240" role="img" aria-label="平安净多日变动的 20% 与 75% 历史分位，纵轴单位为手"></svg>
+<div class="quantile-timeline"><label for="quantile-start" class="muted">拖动时间轴</label>
+<input type="range" id="quantile-start" min="0" max="0" step="1"><output id="quantile-window"></output></div>
+<p class="note">拖动图表或滑块平移，悬停或输入日期查看手数。历史分位按含当天实际值的最近 60 个交易日计算，至少需 30 个有效观测。盘前试算时，当天的数据尚待加入窗口。</p>
 </section>
 <section class="panel" aria-labelledby="stats-title">
 <div class="heading"><h2 id="stats-title">归案回测</h2><span class="muted" id="span"></span></div>
@@ -231,4 +256,129 @@ function plot(){
 $('range').addEventListener('change',plot);
 window.addEventListener('resize',plot);
 plot();
+
+(() => {
+  const chart=$('quantile-chart'), length=$('quantile-size'), date=$('quantile-date'), slider=$('quantile-start');
+  const dates=d.dates, series=[
+    {label:'75%',values:d.pingan_quantiles['75'],color:'#2e65c2',dash:''},
+    {label:'20%',values:d.pingan_quantiles['20'],color:'#ad5636',dash:' stroke-dasharray="5 3"'}
+  ];
+  const n=dates.length;
+  const clamp=(value,lo,hi)=>Math.min(hi,Math.max(lo,value));
+  const windowSize=()=>length.value==='all'?n:Math.min(n,Number(length.value));
+  let start=n-windowSize(), selected=n-1, geometry, drag;
+  date.min=dates[0];
+  date.max=date.value=dates[n-1];
+
+  function selectPoint(index, note=''){
+    selected=clamp(index,start,geometry.last);
+    const x=geometry.x(selected);
+    const markers=series.map(line=>{
+      const value=line.values[selected];
+      return value===null?'':'<circle cx="'+x+'" cy="'+geometry.y(value)+'" r="3.5" fill="'+line.color+'"/>';
+    }).join('');
+    $('quantile-cursor').innerHTML='<line x1="'+x+'" x2="'+x+'" y1="24" y2="207" stroke="#8799a9"/>'+markers;
+    $('quantile-values').textContent=dates[selected]+' · '+series.map(line=>{
+      const value=line.values[selected];
+      return line.label+' '+(value===null?'—':signed(value)+' 手');
+    }).join(' · ')+note;
+  }
+
+  function draw(){
+    const count=windowSize(), last=start+count-1;
+    const width=Math.max(270,chart.clientWidth), left=57, right=width-13;
+    const values=series.flatMap(line=>line.values.slice(start,last+1).filter(v=>v!==null));
+    const min=Math.min(0,...values), max=Math.max(0,...values);
+    const step=Math.max(100,Math.ceil((max-min)/400)*100);
+    const low=Math.floor(min/step)*step, high=Math.max(low+step,Math.ceil(max/step)*step);
+    const x=index=>left+(right-left)*(index-start)/Math.max(1,count-1);
+    const y=value=>207-183*(value-low)/(high-low);
+    geometry={last,left,right,width,x,y};
+    chart.setAttribute('viewBox','0 0 '+width+' 240');
+    let content='<text x="9" y="14">手</text>';
+    for(let v=low;v<=high;v+=step){
+      const yy=y(v);
+      content+='<line x1="'+left+'" x2="'+right+'" y1="'+yy+'" y2="'+yy+'" stroke="'+(v===0?'#afbfcc':'#e4ebf2')+'"/>'+
+        '<text x="'+(left-7)+'" y="'+(yy+4)+'" text-anchor="end">'+v+'</text>';
+    }
+    const ticks=Math.min(width<500?2:4,count-1);
+    for(let j=0;j<=ticks;j++){
+      const index=ticks?start+Math.round((count-1)*j/ticks):start;
+      const align=j===0?'start':j===ticks?'end':'middle';
+      content+='<text x="'+x(index)+'" y="232" text-anchor="'+align+'">'+dates[index]+'</text>';
+    }
+    for(const line of series){
+      let path='', gap=true;
+      for(let i=start;i<=last;i++){
+        const v=line.values[i];
+        if(v===null){gap=true;continue;}
+        path+=(gap?'M':'L')+x(i).toFixed(2)+' '+y(v).toFixed(2)+' ';
+        gap=false;
+      }
+      content+='<path class="quantile-series" d="'+path+'" fill="none" stroke="'+line.color+
+        '" stroke-width="2" vector-effect="non-scaling-stroke"'+line.dash+'/>';
+    }
+    if(!values.length) content+='<text x="'+width/2+'" y="116" text-anchor="middle">区间内有效观测不足</text>';
+    chart.innerHTML=content+'<g id="quantile-cursor" pointer-events="none"></g>';
+    slider.max=String(n-count);
+    slider.value=String(start);
+    slider.disabled=count===n;
+    const interval=dates[start]+' 至 '+dates[last];
+    slider.setAttribute('aria-valuetext',interval);
+    $('quantile-window').textContent=interval;
+    selectPoint(selected);
+  }
+
+  function changeStart(next){
+    const position=clamp(next,0,n-windowSize());
+    if(position!==start){start=position;draw();}
+  }
+  function pick(event){
+    const rect=chart.getBoundingClientRect();
+    const x=(event.clientX-rect.left)*geometry.width/rect.width;
+    const offset=(x-geometry.left)/(geometry.right-geometry.left);
+    selectPoint(start+Math.round(offset*(windowSize()-1)));
+  }
+  chart.addEventListener('pointerdown',event=>{
+    if(event.button!==0) return;
+    drag={id:event.pointerId,x:event.clientX,start,moved:false};
+    chart.setPointerCapture(event.pointerId);
+  });
+  chart.addEventListener('pointermove',event=>{
+    if(!drag){pick(event);return;}
+    const dx=event.clientX-drag.x;
+    if(Math.abs(dx)>4) drag.moved=true;
+    if(drag.moved && windowSize()<n){
+      chart.classList.add('dragging');
+      changeStart(drag.start-Math.round(dx*(windowSize()-1)/(geometry.right-geometry.left)));
+    }
+  });
+  chart.addEventListener('pointerup',event=>{
+    if(drag && !drag.moved){pick(event);date.value=dates[selected];}
+    drag=null;
+    chart.classList.remove('dragging');
+  });
+  chart.addEventListener('lostpointercapture',()=>{
+    drag=null;
+    chart.classList.remove('dragging');
+  });
+  slider.addEventListener('input',()=>changeStart(Number(slider.value)));
+  length.addEventListener('change',()=>{
+    start=clamp(selected-windowSize()+1,0,n-windowSize());
+    draw();
+  });
+  date.addEventListener('change',()=>{
+    if(!date.value) return;
+    const requested=date.value;
+    const next=dates.findIndex(day=>day>requested);
+    selected=next<0?n-1:Math.max(0,next-1);
+    if(selected<start||selected>=start+windowSize()){
+      start=clamp(selected-Math.floor(windowSize()/2),0,n-windowSize());
+      draw();
+    }
+    selectPoint(selected,requested===dates[selected]?'':'（上一交易日）');
+  });
+  window.addEventListener('resize',draw);
+  draw();
+})();
 </script></body></html>

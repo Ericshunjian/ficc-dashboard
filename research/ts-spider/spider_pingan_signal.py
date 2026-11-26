@@ -89,18 +89,32 @@ def load():
     return dates, idx, O, C, dP, series
 
 
-def rolling_pct(x, win=WIN, min_obs=MIN_OBS):
-    """当日值在最近 win 个交易日的有效观测里的百分位（含当日，只用 t 及之前，无前视）。"""
-    out = np.full(len(x), np.nan)
+def rolling_windows(x, win, min_obs):
     for i in range(len(x)):
         if np.isnan(x[i]):
             continue
         w = x[max(0, i - win + 1): i + 1]
         w = w[~np.isnan(w)]
-        if len(w) < min_obs:
-            continue
+        if len(w) >= min_obs:
+            yield i, w
+
+
+def rolling_pct(x, win=WIN, min_obs=MIN_OBS):
+    """当日值在最近 win 个交易日的有效观测里的百分位（含当日，只用 t 及之前，无前视）。"""
+    out = np.full(len(x), np.nan)
+    for i, w in rolling_windows(x, win, min_obs):
         out[i] = float(np.mean(w <= x[i]))
     return out
+
+
+def rolling_quantile_levels(x, percentages, win=WIN, min_obs=MIN_OBS):
+    """Return each empirical rank boundary using the same window as rolling_pct."""
+    percentages = np.asarray(percentages, dtype=int)
+    levels = np.full((len(percentages), len(x)), np.nan)
+    for i, w in rolling_windows(x, win, min_obs):
+        indices = (percentages * len(w) + 99) // 100 - 1
+        levels[:, i] = np.sort(w)[indices]
+    return levels
 
 
 # ---------------------------------------------------------------- 信号与回测
