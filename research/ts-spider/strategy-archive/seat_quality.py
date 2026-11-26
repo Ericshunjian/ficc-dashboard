@@ -1,4 +1,5 @@
 """Compare per-trade TS signal outcomes across seats on common data dates."""
+import argparse
 from dataclasses import replace
 from pathlib import Path
 import sys
@@ -48,13 +49,39 @@ def paired_interval(days, first, second):
     return np.quantile(means[0] - means[1], (.025, .975))
 
 
+def report_raw(dates, quotes, plans, positions):
+    changes = {seat: archive.holding_changes(positions[seat]) for seat in SEATS}
+    print('原始持仓双变动 | 每次触发独立成交 | T+1 开盘进、T+2 收盘出')
+    for label, first, last, seats in WINDOWS:
+        lo = int(np.searchsorted(dates, first))
+        hi = int(np.searchsorted(dates, last, side='right')) - 1
+        common = np.logical_and.reduce([np.isfinite(changes[seat]).all(axis=1) for seat in seats])
+        eligible = [t for t in range(lo, hi + 1) if common[t] and t in plans and plans[t][1] <= hi]
+        print(f'\n{label} {dates[lo]} 至 {dates[hi]} | 共同有效 {common[lo:hi+1].sum()} / {hi-lo+1} 日')
+        for seat in seats:
+            long, short = changes[seat].T
+            longs = {dates[t]: fixed_outcome(dates, quotes, plans[t])
+                     for t in eligible if long[t] > 0 and short[t] < 0}
+            shorts = {dates[t]: -fixed_outcome(dates, quotes, plans[t])
+                      for t in eligible if long[t] < 0 and short[t] > 0}
+            print(describe(seat + ' 多空合计', {**longs, **shorts}))
+            print(describe(seat + ' 做多', longs))
+            print(describe(seat + ' 做空', shorts))
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--raw', action='store_true', help='仅比较原始多空双变动与固定退出')
+    args = parser.parse_args()
     snapshots = {day: row for day, row in exchange.read_inputs().items() if day <= archive.ASOF}
     dates, _, closes, positions = summary.load_data(snapshots, seats=SEATS)
     if dates[-1] != archive.ASOF:
         raise ValueError(f'归案行情需要覆盖到 {archive.ASOF}')
     quotes = expiry.read_quotes(snapshots)
     contracts = archive.contract_ranks(dates, snapshots)
+    if args.raw:
+        report_raw(dates, quotes, archive.contract_plans(dates, contracts, quotes, 1), positions)
+        return
     plans = {hold: archive.contract_plans(dates, contracts, quotes, hold) for hold in (3, 5)}
     calendar = {day: i for i, day in enumerate(dates)}
 
