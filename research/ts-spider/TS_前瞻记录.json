@@ -73,6 +73,62 @@
           "contract": "TS2703",
           "action": "下个交易日开盘做多"
         }
+      },
+      "2026-11-26": {
+        "PA-DIP5-EXIT20-v1": {
+          "raw": "无触发",
+          "buy_contract": null,
+          "weak": false,
+          "pct": 0.283333,
+          "position": "空仓",
+          "entry": null,
+          "contract": null,
+          "action": "维持空仓"
+        },
+        "PA-FLOW3-v1": {
+          "raw": "无触发",
+          "buy_contract": null,
+          "weak": false,
+          "pct": null,
+          "long_change": -1585,
+          "short_change": -973,
+          "position": "空仓",
+          "entry": null,
+          "contract": null,
+          "action": "维持空仓"
+        },
+        "TOP5-TREND60-DIP5-Q70-v1": {
+          "raw": "无触发",
+          "buy_contract": null,
+          "weak": false,
+          "pct": 0.733333,
+          "position": "空仓",
+          "entry": null,
+          "contract": null,
+          "action": "维持空仓"
+        },
+        "TOP20-TREND60-DIP5-v1": {
+          "raw": "无触发",
+          "buy_contract": null,
+          "weak": false,
+          "pct": 0.866667,
+          "position": "空仓",
+          "entry": null,
+          "contract": null,
+          "action": "维持空仓"
+        },
+        "TOP20-FLOW3-NEG-v1": {
+          "raw": "无触发",
+          "buy_contract": null,
+          "weak": false,
+          "pct": null,
+          "long_change": -95,
+          "short_change": -905,
+          "position": "多",
+          "entry": "2026-11-26",
+          "contract": "TS2703",
+          "action": "继续持多"
+        }
       }
     },
     "records": []

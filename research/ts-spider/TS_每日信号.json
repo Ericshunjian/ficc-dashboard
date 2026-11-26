@@ -1,9 +1,9 @@
 {
-  "asof": "2026-11-25",
+  "asof": "2026-11-26",
   "selection_end": "2026-11-24",
   "start": "2021-01-04",
   "source": "中金所盘后数据",
-  "close_change": 0.0,
+  "close_change": 0.006,
   "strategies": [
     {
       "key": "PA-COMB50-v1",
@@ -27,7 +27,7 @@
           "action": "维持空仓",
           "entry": null,
           "drivers": {
-            "pct": 0.233333,
+            "pct": 0.283333,
             "long_change": null,
             "short_change": null
           }
@@ -51,8 +51,8 @@
           "entry": null,
           "drivers": {
             "pct": null,
-            "long_change": 273,
-            "short_change": 999
+            "long_change": -1585,
+            "short_change": -973
           }
         }
       ],
@@ -88,7 +88,7 @@
       "action": "维持空仓",
       "entry": null,
       "drivers": {
-        "pct": 0.233333,
+        "pct": 0.283333,
         "long_change": null,
         "short_change": null
       },
@@ -119,7 +119,7 @@
       "action": "维持空仓",
       "entry": null,
       "drivers": {
-        "pct": 0.9,
+        "pct": 0.733333,
         "long_change": null,
         "short_change": null
       },
@@ -150,7 +150,7 @@
       "action": "维持空仓",
       "entry": null,
       "drivers": {
-        "pct": 0.7,
+        "pct": 0.866667,
         "long_change": null,
         "short_change": null
       },
@@ -175,15 +175,15 @@
       "entry_rank": 0,
       "exit_rank": null,
       "entry_on_close_day": true,
-      "raw": "多",
-      "position": "空仓",
+      "raw": "无触发",
+      "position": "多",
       "contract": "TS2703",
-      "action": "下个交易日开盘做多",
-      "entry": null,
+      "action": "继续持多",
+      "entry": "2026-11-26",
       "drivers": {
         "pct": null,
-        "long_change": 129,
-        "short_change": -290
+        "long_change": -95,
+        "short_change": -905
       },
       "color": "#8a6408",
       "cost": 0,
@@ -197,7 +197,7 @@
   ],
   "forward": {
     "after": "2026-11-24",
-    "sessions": 1,
+    "sessions": 2,
     "closed": 0
   },
   "activity": {
@@ -1466,6 +1466,23 @@
       },
       "TOP20-FLOW3-NEG-v1": {
         "trades": [
+          {
+            "策略key": "TOP20-FLOW3-NEG-v1",
+            "策略": "前二十多增空减·净多转负退出",
+            "合约": "TS2703",
+            "信号日": "2026-11-25",
+            "开仓日": "2026-11-26",
+            "开仓价": 102.69,
+            "平仓信号日": null,
+            "平仓日": null,
+            "平仓价": null,
+            "平仓时点": null,
+            "平仓原因": null,
+            "方向": "多",
+            "盈亏点数": null,
+            "状态": "持仓中",
+            "来源": "前瞻模拟"
+          },
           {
             "策略key": "TOP20-FLOW3-NEG-v1",
             "策略": "前二十多增空减·净多转负退出",
